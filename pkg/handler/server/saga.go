@@ -40,117 +40,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network, flavorID string, requested *openapi.ServerV2VolumeList, serverID string) (map[string]*regionv1.Volume, error) {
-	volumes := map[string]*regionv1.Volume{}
-
-	if requested == nil || len(*requested) == 0 {
-		return volumes, nil
-	}
-
-	region := &regionv1.Region{}
-	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: network.Labels[constants.RegionLabel]}, region); err != nil {
-		return nil, fmt.Errorf("%w: unable to lookup region", err)
-	}
-
-	for _, id := range *requested {
-		key := id.String()
-
-		if _, ok := volumes[key]; ok {
-			return nil, errors.HTTPUnprocessableContent("volumes must not contain duplicate IDs")
-		}
-
-		volume, err := validateVolume(ctx, c, network, region, flavorID, key, serverID)
-		if err != nil {
-			return nil, err
-		}
-
-		volumes[key] = volume
-	}
-
-	return volumes, nil
-}
-
-func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network, region *regionv1.Region, flavorID, volumeID, serverID string) (*regionv1.Volume, error) {
-	volume, err := volume.New(c.Client.ClientArgs).GetV2Raw(ctx, volumeID)
-	if err != nil {
-		return nil, err
-	}
-
-	if volume.DeletionTimestamp != nil {
-		return nil, errors.HTTPUnprocessableContent("volume is being deleted")
-	}
-
-	for _, label := range []string{constants.RegionLabel, constants.IdentityLabel, coreconstants.OrganizationLabel, coreconstants.ProjectLabel} {
-		if volume.Labels[label] != network.Labels[label] {
-			return nil, errors.HTTPUnprocessableContent("volume must have the same Region, Identity, organization, and project as the Server")
-		}
-	}
-
-	if claim := volume.Spec.ClaimRef; claim != nil && (claim.Kind != regionv1.VolumeClaimKindServer || claim.ID != serverID) {
-		return nil, errors.HTTPUnprocessableContent("volume is attached to another server")
-	}
-
-	if !volumeClassSupportsFlavor(region, volume.Spec.VolumeClassID, flavorID) {
-		return nil, errors.HTTPUnprocessableContent("volume class does not support the server flavor")
-	}
-
-	return volume, nil
-}
-
-func volumeClassSupportsFlavor(region *regionv1.Region, volumeClassID, flavorID string) bool {
-	if region.Spec.Openstack == nil || region.Spec.Openstack.BlockStorage == nil || region.Spec.Openstack.BlockStorage.VolumeClasses == nil {
-		return true
-	}
-
-	for _, class := range region.Spec.Openstack.BlockStorage.VolumeClasses.Metadata {
-		if class.ID == volumeClassID {
-			if class.SupportedFlavors == nil || len(class.SupportedFlavors.IDs) == 0 {
-				return true
-			}
-
-			flavor, err := regionids.ParseFlavorID(flavorID)
-
-			return err == nil && slices.Contains(class.SupportedFlavors.IDs, flavor)
-		}
-	}
-
-	return true
-}
-
-func setClaims(ctx context.Context, c *ClientV2, volumes map[string]*regionv1.Volume, serverID string) error {
-	changed := make([]struct{ before, after *regionv1.Volume }, 0, len(volumes))
-
-	for _, volume := range volumes {
-		before := volume.DeepCopy()
-		after := volume.DeepCopy()
-
-		if serverID == "" {
-			after.Spec.ClaimRef = nil
-		} else {
-			after.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: serverID}
-		}
-
-		if err := c.Client.Client.Patch(ctx, after, client.MergeFromWithOptions(before, &client.MergeFromWithOptimisticLock{})); err != nil {
-			for _, change := range slices.Backward(changed) {
-				if rollbackErr := c.Client.Client.Patch(ctx, change.before, client.MergeFromWithOptions(change.after, &client.MergeFromWithOptimisticLock{})); rollbackErr != nil {
-					log.FromContext(ctx).Error(rollbackErr, "failed to roll back volume claim", "volume", change.before.Name)
-				}
-			}
-
-			if kerrors.IsConflict(err) {
-				return errors.HTTPConflict().WithError(err)
-			}
-
-			return fmt.Errorf("%w: unable to update volume claim", err)
-		}
-
-		changed = append(changed, struct{ before, after *regionv1.Volume }{before, after})
-		*volume = *after
-	}
-
-	return nil
-}
-
 type createV2Saga struct {
 	client  *ClientV2
 	request *openapi.ServerV2Create
@@ -256,13 +145,13 @@ type updateV2Saga struct {
 	serverID regionids.ServerID
 	request  *openapi.ServerV2Update
 
-	current        *regionv1.Server
-	network        *regionv1.Network
-	organizationID identityids.OrganizationID
-	projectID      identityids.ProjectID
-	updated        *regionv1.Server
-	repair         map[string]*regionv1.Volume
-	added          map[string]*regionv1.Volume
+	current         *regionv1.Server
+	network         *regionv1.Network
+	organizationID  identityids.OrganizationID
+	projectID       identityids.ProjectID
+	updated         *regionv1.Server
+	volumesToRepair map[string]*regionv1.Volume
+	volumesToAdd    map[string]*regionv1.Volume
 }
 
 func (s *updateV2Saga) getCurrent(ctx context.Context) error {
@@ -320,7 +209,7 @@ func (s *updateV2Saga) validate(ctx context.Context) error {
 		return err
 	}
 
-	s.repair = map[string]*regionv1.Volume{}
+	s.volumesToRepair = map[string]*regionv1.Volume{}
 	// Existing Server intent makes a missing claim safe to repair before update.
 	for _, id := range volumeIDs(s.current.Spec.Volumes) {
 		volume, ok := volumes[id]
@@ -329,13 +218,13 @@ func (s *updateV2Saga) validate(ctx context.Context) error {
 		}
 
 		if volume.Spec.ClaimRef == nil {
-			s.repair[id] = volume
+			s.volumesToRepair[id] = volume
 		}
 
 		delete(volumes, id)
 	}
 
-	s.added = volumes
+	s.volumesToAdd = volumes
 
 	return nil
 }
@@ -359,19 +248,19 @@ func (s *updateV2Saga) generate(ctx context.Context) error {
 }
 
 func (s *updateV2Saga) repairClaims(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.repair, s.current.Name)
+	return setClaims(ctx, s.client, s.volumesToRepair, s.current.Name)
 }
 
 func (s *updateV2Saga) releaseRepairedClaims(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.repair, "")
+	return setClaims(ctx, s.client, s.volumesToRepair, "")
 }
 
 func (s *updateV2Saga) claimAdded(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.added, s.current.Name)
+	return setClaims(ctx, s.client, s.volumesToAdd, s.current.Name)
 }
 
 func (s *updateV2Saga) releaseAddedClaims(ctx context.Context) error {
-	return setClaims(ctx, s.client, s.added, "")
+	return setClaims(ctx, s.client, s.volumesToAdd, "")
 }
 
 func (s *updateV2Saga) update(ctx context.Context) error {
@@ -412,4 +301,115 @@ func volumeIDs(volumes []regionv1.ServerVolumeSpec) []string {
 	}
 
 	return ids
+}
+
+func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network, flavorID string, requested *openapi.ServerV2VolumeList, serverID string) (map[string]*regionv1.Volume, error) {
+	volumes := map[string]*regionv1.Volume{}
+
+	if requested == nil || len(*requested) == 0 {
+		return volumes, nil
+	}
+
+	region := &regionv1.Region{}
+	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: network.Labels[constants.RegionLabel]}, region); err != nil {
+		return nil, fmt.Errorf("%w: unable to lookup region", err)
+	}
+
+	for _, id := range *requested {
+		key := id.String()
+
+		if _, ok := volumes[key]; ok {
+			return nil, errors.HTTPUnprocessableContent("volumes must not contain duplicate IDs")
+		}
+
+		volume, err := validateVolume(ctx, c, network, region, flavorID, key, serverID)
+		if err != nil {
+			return nil, err
+		}
+
+		volumes[key] = volume
+	}
+
+	return volumes, nil
+}
+
+func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network, region *regionv1.Region, flavorID, volumeID, serverID string) (*regionv1.Volume, error) {
+	volume, err := volume.New(c.Client.ClientArgs).GetV2Raw(ctx, volumeID)
+	if err != nil {
+		return nil, err
+	}
+
+	if volume.DeletionTimestamp != nil {
+		return nil, errors.HTTPUnprocessableContent("volume is being deleted")
+	}
+
+	for _, label := range []string{constants.RegionLabel, constants.IdentityLabel, coreconstants.OrganizationLabel, coreconstants.ProjectLabel} {
+		if volume.Labels[label] != network.Labels[label] {
+			return nil, errors.HTTPUnprocessableContent("volume must have the same Region, Identity, organization, and project as the Server")
+		}
+	}
+
+	if claim := volume.Spec.ClaimRef; claim != nil && (claim.Kind != regionv1.VolumeClaimKindServer || claim.ID != serverID) {
+		return nil, errors.HTTPUnprocessableContent("volume is already claimed by another server")
+	}
+
+	if !volumeClassSupportsFlavor(region, volume.Spec.VolumeClassID, flavorID) {
+		return nil, errors.HTTPUnprocessableContent("volume class does not support the server flavor")
+	}
+
+	return volume, nil
+}
+
+func volumeClassSupportsFlavor(region *regionv1.Region, volumeClassID, flavorID string) bool {
+	if region.Spec.Openstack == nil || region.Spec.Openstack.BlockStorage == nil || region.Spec.Openstack.BlockStorage.VolumeClasses == nil {
+		return true
+	}
+
+	for _, class := range region.Spec.Openstack.BlockStorage.VolumeClasses.Metadata {
+		if class.ID == volumeClassID {
+			if class.SupportedFlavors == nil || len(class.SupportedFlavors.IDs) == 0 {
+				return true
+			}
+
+			flavor, err := regionids.ParseFlavorID(flavorID)
+
+			return err == nil && slices.Contains(class.SupportedFlavors.IDs, flavor)
+		}
+	}
+
+	return true
+}
+
+func setClaims(ctx context.Context, c *ClientV2, volumes map[string]*regionv1.Volume, serverID string) error {
+	changed := make([]struct{ before, after *regionv1.Volume }, 0, len(volumes))
+
+	for _, volume := range volumes {
+		before := volume.DeepCopy()
+		after := volume.DeepCopy()
+
+		if serverID == "" {
+			after.Spec.ClaimRef = nil
+		} else {
+			after.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: serverID}
+		}
+
+		if err := c.Client.Client.Patch(ctx, after, client.MergeFromWithOptions(before, &client.MergeFromWithOptimisticLock{})); err != nil {
+			for _, change := range slices.Backward(changed) {
+				if rollbackErr := c.Client.Client.Patch(ctx, change.before, client.MergeFromWithOptions(change.after, &client.MergeFromWithOptimisticLock{})); rollbackErr != nil {
+					log.FromContext(ctx).Error(rollbackErr, "failed to roll back volume claim", "volume", change.before.Name)
+				}
+			}
+
+			if kerrors.IsConflict(err) {
+				return errors.HTTPConflict().WithError(err)
+			}
+
+			return fmt.Errorf("%w: unable to update volume claim", err)
+		}
+
+		changed = append(changed, struct{ before, after *regionv1.Volume }{before, after})
+		*volume = *after
+	}
+
+	return nil
 }
