@@ -1384,7 +1384,7 @@ func TestServerUpdateV2RejectsVolumeClaimedByAnotherServer(t *testing.T) {
 	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
 
 	require.True(t, coreerrors.IsUnprocessableContent(err))
-	require.EqualError(t, err, "volume is attached to another server")
+	require.EqualError(t, err, "volume is already claimed by another server")
 }
 
 func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {

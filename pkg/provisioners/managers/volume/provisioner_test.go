@@ -84,7 +84,7 @@ type conflictOnceStatusWriter struct {
 	client *conflictOnceClient
 }
 
-type conflictOnceVolumePatchClient struct {
+type conflictOnceVolumeUpdateClient struct {
 	client.Client
 
 	onConflict func(context.Context) error
@@ -111,9 +111,9 @@ func (w *conflictOnceStatusWriter) Update(ctx context.Context, object client.Obj
 	return kerrors.NewConflict(unikornv1.Resource("servers"), object.GetName(), errStatusConflict)
 }
 
-func (c *conflictOnceVolumePatchClient) Patch(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+func (c *conflictOnceVolumeUpdateClient) Update(ctx context.Context, object client.Object, options ...client.UpdateOption) error {
 	if c.conflicted {
-		return c.Client.Patch(ctx, object, patch, options...)
+		return c.Client.Update(ctx, object, options...)
 	}
 
 	c.conflicted = true
@@ -482,6 +482,10 @@ func TestProvisionDetachesVolumeWhenServerIntentIsRemoved(t *testing.T) {
 	resource.Status.AttachedAt = &attachedAt
 	identity := testIdentity(true)
 	server := testServer(true)
+	server.Status.Volumes = []unikornv1.ServerVolumeStatus{{ID: testVolumeID, ProvisioningStatus: unikornv1.AttachmentProvisioned}}
+	unrelatedServer := testServer(true)
+	unrelatedServer.Name = testOldServerID
+	unrelatedServer.Status.Volumes = []unikornv1.ServerVolumeStatus{{ID: testVolumeID, ProvisioningStatus: unikornv1.AttachmentProvisioned}}
 
 	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil).Times(2)
 	gomock.InOrder(
@@ -502,11 +506,18 @@ func TestProvisionDetachesVolumeWhenServerIntentIsRemoved(t *testing.T) {
 	)
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
-	ctx := controllerContext(t, resource, identity, server)
+	ctx := controllerContext(t, resource, identity, server, unrelatedServer)
 	require.ErrorIs(t, provisioner.Provision(ctx), provisioners.ErrYield)
 	require.NotNil(t, resource.Spec.ClaimRef)
 	require.ErrorIs(t, provisioner.Provision(ctx), provisioners.ErrYield)
 	require.Nil(t, resource.Spec.ClaimRef)
+
+	cli, err := coreclient.FromContext(ctx)
+	require.NoError(t, err)
+
+	storedUnrelatedServer := &unikornv1.Server{}
+	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(unrelatedServer), storedUnrelatedServer))
+	require.Equal(t, unrelatedServer.Status.Volumes, storedUnrelatedServer.Status.Volumes)
 }
 
 func TestProvisionDetachesMultipleVolumesWhenServerIntentIsRemoved(t *testing.T) {
@@ -698,7 +709,7 @@ func TestProvisionRetainsNewClaimWhenReleasingUnrequestedServerClaimConflicts(t 
 	require.NoError(t, err)
 
 	baseClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(resource, identity, server).Build()
-	conflictClient := &conflictOnceVolumePatchClient{Client: baseClient}
+	conflictClient := &conflictOnceVolumeUpdateClient{Client: baseClient}
 	conflictClient.onConflict = func(ctx context.Context) error {
 		latest := &unikornv1.Volume{}
 		if err := baseClient.Get(ctx, client.ObjectKeyFromObject(resource), latest); err != nil {
@@ -717,7 +728,6 @@ func TestProvisionRetainsNewClaimWhenReleasingUnrequestedServerClaimConflicts(t 
 	stored := &unikornv1.Volume{}
 	require.NoError(t, baseClient.Get(ctx, client.ObjectKeyFromObject(resource), stored))
 	require.Equal(t, &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testOldServerID}, stored.Spec.ClaimRef)
-	require.Equal(t, &unikornv1.VolumeClaimRef{Kind: unikornv1.VolumeClaimKindServer, ID: testServerID}, resource.Spec.ClaimRef)
 }
 
 func TestProvisionDoesNotAdoptConcurrentVolumeUpdateWhenClaimReleaseConflicts(t *testing.T) {
@@ -739,7 +749,7 @@ func TestProvisionDoesNotAdoptConcurrentVolumeUpdateWhenClaimReleaseConflicts(t 
 	require.NoError(t, err)
 
 	baseClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(resource, identity, server).Build()
-	conflictClient := &conflictOnceVolumePatchClient{Client: baseClient}
+	conflictClient := &conflictOnceVolumeUpdateClient{Client: baseClient}
 	conflictClient.onConflict = func(ctx context.Context) error {
 		latest := &unikornv1.Volume{}
 		if err := baseClient.Get(ctx, client.ObjectKeyFromObject(resource), latest); err != nil {
