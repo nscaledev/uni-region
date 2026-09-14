@@ -271,6 +271,10 @@ func DeleteVolumeWithClient(ctx context.Context, client VolumeInterface, volume 
 	return deleteVolume(ctx, client, volume)
 }
 
+func DeleteServerWithClient(ctx context.Context, client ServerInterface, server *unikornv1.Server) error {
+	return deleteServer(ctx, client, server)
+}
+
 func ReconcileSubnet(ctx context.Context, p *Provider, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	return p.reconcileSubnet(ctx, client, network, openstackNetwork)
 }
