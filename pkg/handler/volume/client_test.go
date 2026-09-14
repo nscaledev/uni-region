@@ -208,7 +208,7 @@ func TestCreateV2DerivesScopeAndPersistsCapacity(t *testing.T) {
 	providers := mockproviders.NewMockProviders(ctrl)
 	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectVolumeClasses(ctrl, providers, providertypes.VolumeClassList{{ID: testVolumeClassID}})
-	expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: 20 * (1 << 30)}})
+	expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volume", Committed: 20}})
 
 	volumeClient, cli := testClientWithIdentity(t, providers, identity, testNetwork())
 	tags := coreapi.TagList{{Name: "environment", Value: "test"}}
@@ -289,7 +289,7 @@ func TestCreateV2PersistenceFailureDeletesAllocation(t *testing.T) {
 	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectVolumeClasses(ctrl, providers, providertypes.VolumeClassList{{ID: testVolumeClassID}})
 	gomock.InOrder(
-		expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: 20 * (1 << 30)}}),
+		expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volume", Committed: 20}}),
 		expectAllocationDelete(identity),
 	)
 
@@ -384,7 +384,7 @@ func TestCreateV2ValidatesVolumeClass(t *testing.T) {
 
 			if !test.wantError {
 				mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-				expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: int(test.size * (1 << 30))}})
+				expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{{Kind: "volume", Committed: int(test.size)}})
 				identity = mockIdentity
 			}
 

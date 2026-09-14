@@ -6,8 +6,9 @@ Volume creation validates the selected Network and VolumeClass, derives Region,
 Identity, organization, and project scope from that Network, and persists a
 controller-finalized `Volume` CRD owned by the Network with deletion blocking.
 Requested size is stored as a binary quantity while the API remains whole-GiB.
-Before persisting the CRD, creation allocates that binary-byte capacity against
-the Identity `volumes` quota. The allocation ID is stored on the Volume; a
+Before persisting the CRD, creation allocates that capacity in whole GiB
+against the Identity `volume` quota, matching the GiB contract of the
+registered quota kind. The allocation ID is stored on the Volume; a
 failed CRD write compensates by deleting the allocation.
 
 List and get expose project-scoped metadata, immutable Network/class/size, the

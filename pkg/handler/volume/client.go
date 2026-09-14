@@ -275,8 +275,8 @@ type createSaga struct {
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
 	return s.client.CreateAllocation(ctx, s.volume, identityapi.ResourceAllocationList{{
-		Kind:      "volumes",
-		Committed: int(s.volume.Spec.Size.Value()),
+		Kind:      "volume",
+		Committed: int(sizeGiB(s.volume.Spec.Size)),
 	}})
 }
 
