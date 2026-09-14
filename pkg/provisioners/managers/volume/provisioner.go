@@ -114,6 +114,8 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
 	if p.volume.Spec.ClaimRef == nil {
+		p.volume.Status.AttachedAt = nil
+
 		return provider.CreateVolume(ctx, identity, p.volume)
 	}
 
@@ -164,6 +166,8 @@ func (p *Provisioner) teardownClaim(ctx context.Context, provider types.Provider
 	if err := p.releaseClaim(ctx); err != nil {
 		return err
 	}
+
+	p.volume.Status.AttachedAt = nil
 
 	// Reconcile the Volume from scratch before observing its generation.
 	return provisioners.ErrYield
@@ -299,8 +303,6 @@ func (p *Provisioner) detachAttachments(ctx context.Context, provider types.Prov
 			return err
 		}
 	}
-
-	p.volume.Status.AttachedAt = nil
 
 	return nil
 }
