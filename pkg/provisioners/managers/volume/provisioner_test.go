@@ -183,7 +183,7 @@ func controllerContext(t *testing.T, objects ...client.Object) context.Context {
 	scheme, err := coreclient.NewScheme(unikornv1.AddToScheme)
 	require.NoError(t, err)
 
-	cli := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&unikornv1.Server{}).WithObjects(objects...).Build()
+	cli := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&unikornv1.Server{}, &unikornv1.Volume{}).WithObjects(objects...).Build()
 
 	return coreclient.NewContext(t.Context(), cli)
 }
@@ -237,6 +237,32 @@ func TestProvisionCreatesVolume(t *testing.T) {
 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
 	require.NoError(t, provisioner.Provision(controllerContext(t, resource, identity)))
+}
+
+func TestProvisionClearsStaleAttachmentTimeWithoutClaim(t *testing.T) {
+	t.Parallel()
+
+	provider, providerSet := volumeMocks(t)
+	resource := testVolume(false)
+	attachedAt := metav1.Now()
+	resource.Status.AttachedAt = &attachedAt
+	identity := testIdentity(true)
+
+	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+	provider.EXPECT().CreateVolume(gomock.Any(), identityNamed(), resource).Return(nil)
+
+	provisioner := volume.NewForTest(resource, providerSet, nil)
+	ctx := controllerContext(t, resource, identity)
+	require.NoError(t, provisioner.Provision(ctx))
+	require.Nil(t, resource.Status.AttachedAt)
+
+	cli, err := coreclient.FromContext(ctx)
+	require.NoError(t, err)
+	require.NoError(t, cli.Status().Update(ctx, resource))
+
+	stored := &unikornv1.Volume{}
+	require.NoError(t, cli.Get(ctx, client.ObjectKeyFromObject(resource), stored))
+	require.Nil(t, stored.Status.AttachedAt)
 }
 
 func TestProvisionAttachesClaimedVolumeToReadyServer(t *testing.T) {
@@ -724,6 +750,7 @@ func TestProvisionRetainsNewClaimWhenReleasingUnrequestedServerClaimConflicts(t 
 	provisioner := volume.NewForTest(resource, providerSet, nil)
 	ctx := coreclient.NewContext(t.Context(), conflictClient)
 	require.ErrorIs(t, provisioner.Provision(ctx), provisioners.ErrYield)
+	require.NotNil(t, resource.Status.AttachedAt)
 
 	stored := &unikornv1.Volume{}
 	require.NoError(t, baseClient.Get(ctx, client.ObjectKeyFromObject(resource), stored))
