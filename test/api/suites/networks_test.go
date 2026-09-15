@@ -46,10 +46,7 @@ var _ = Describe("Network Management", func() {
 		var deletedNetworkID string
 
 		BeforeEach(func() {
-			if config.FakeRegionID == "" {
-				Skip("FAKE_TEST_REGION_ID not configured")
-			}
-
+			Expect(config.FakeRegionID).NotTo(BeEmpty(), "FAKE_TEST_REGION_ID must be configured for Fake DC tests")
 			fakeRegionID = config.FakeRegionID
 		})
 
@@ -247,9 +244,7 @@ var _ = Describe("Network Management", func() {
 		var networkID string
 
 		BeforeAll(func() {
-			if config.FakeRegionID == "" {
-				Skip("FAKE_TEST_REGION_ID not configured")
-			}
+			Expect(config.FakeRegionID).NotTo(BeEmpty(), "FAKE_TEST_REGION_ID must be configured for Fake DC tests")
 			fakeRegionID = config.FakeRegionID
 
 			if secondaryClient == nil {
