@@ -175,6 +175,60 @@ var _ = Describe("Stale test resource sweep", func() {
 		})
 	})
 
+	Context("When Fake DC network fixtures are stale", func() {
+		Describe("Given a Fake DC region is configured", func() {
+			It("sweeps only networks in the Fake DC region", func() {
+				const (
+					fakeRegionID = "fake-region-1"
+					networkID    = "network-1"
+				)
+
+				var networkDeleted atomic.Bool
+
+				created := time.Now().Add(-StaleTestResourceTTL - time.Hour).UTC()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer GinkgoRecover()
+
+					switch {
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks":
+						Expect(r.URL.Query().Get("regionID")).To(Equal(fakeRegionID))
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{
+								"id":           networkID,
+								"name":         "ginkgo-test-network-12345678",
+								"creationTime": created,
+							},
+						}})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/networks/"+networkID:
+						networkDeleted.Store(true)
+						w.WriteHeader(http.StatusAccepted)
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks/"+networkID:
+						Expect(networkDeleted.Load()).To(BeTrue())
+						w.WriteHeader(http.StatusNotFound)
+					default:
+						Fail("Fake DC sweep must only request network endpoints")
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig: coreconfig.BaseConfig{
+						BaseURL:        server.URL,
+						RequestTimeout: time.Second,
+					},
+					RegionBaseURL: server.URL,
+					OrgID:         "org-1",
+					ProjectID:     "project-1",
+					RegionID:      "normal-region-1",
+					FakeRegionID:  fakeRegionID,
+				})
+
+				SweepStaleFakeDataCenterResources(client, context.Background(), client.config)
+				Expect(networkDeleted.Load()).To(BeTrue())
+			})
+		})
+	})
+
 	Context("When a listed resource is not eligible for sweeping", func() {
 		Describe("Given it is young or does not have a test-owned name", func() {
 			It("does not delete or wait for either resource", func() {
