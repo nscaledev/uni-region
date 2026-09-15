@@ -34,6 +34,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
+	"github.com/gophercloud/gophercloud/v2/pagination"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -240,6 +241,44 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
+}
+
+// serverListPageSize bounds one page of an unfiltered project list.
+//
+// It exists for memory, not for Nova: it bounds gophercloud's decode overhead,
+// though not the retained project itself. Well under Nova's default
+// osapi_max_limit of 1000, so Nova never truncates below it. See the README's
+// note on what paging does and does not bound.
+const serverListPageSize = 250
+
+// ListServers returns every server in the credential's project. Unfiltered on
+// purpose: the project holds only servers this service provisioned, so there is
+// nothing to exclude, and dropping the name filter avoids the regular expression
+// Nova evaluates per row for GetServer. Observation only — see ObserveServers.
+func (c *ComputeClient) ListServers(ctx context.Context) ([]servers.Server, error) {
+	_, span := traceStart(ctx, "GET /compute/v2/servers")
+	defer span.End()
+
+	var result []servers.Server
+
+	// EachPage and not AllPages: decode and discard each page rather than holding
+	// them all. See serverListPageSize.
+	err := servers.List(c.client, servers.ListOpts{Limit: serverListPageSize}).
+		EachPage(ctx, func(_ context.Context, page pagination.Page) (bool, error) {
+			items, err := servers.ExtractServers(page)
+			if err != nil {
+				return false, err
+			}
+
+			result = append(result, items...)
+
+			return true, nil
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server) (*servers.Server, error) {
