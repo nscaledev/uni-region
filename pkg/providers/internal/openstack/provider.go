@@ -18,10 +18,12 @@ limitations under the License.
 package openstack
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -33,6 +35,8 @@ import (
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/roles"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
@@ -375,6 +379,24 @@ func (p *Provider) networkFromServicePrincipal(ctx context.Context, identity *un
 	return client, nil
 }
 
+// blockStorageFromServicePrincipal gets a block storage client scoped to the
+// service principal's project.
+func (p *Provider) blockStorageFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (VolumeInterface, error) {
+	provider, err := p.getProviderFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	client, err := NewBlockStorageClient(ctx, provider, region.Spec.Openstack.BlockStorage)
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
+}
+
 // privilegedNetworkFromServicePrincipal gets a network client scoped to the service principal's
 // project but with "manager" credentials.
 func (p *Provider) privilegedNetworkFromServicePrincipal(ctx context.Context, identity *unikornv1.Identity) (NetworkingInterface, error) {
@@ -428,16 +450,33 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 	}
 
 	region, _ := p.openstack.regionSnapshot()
+
+	return convertFlavors(resources, region), nil
+}
+
+// openstackDefaultArchitecture resolves the Region-configured fallback while
+// retaining the legacy x86_64 behavior for objects that bypass CRD defaulting.
+func openstackDefaultArchitecture(region *unikornv1.Region) types.Architecture {
+	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.DefaultArchitecture == nil {
+		return types.X86_64
+	}
+
+	return types.Architecture(*region.Spec.Openstack.DefaultArchitecture)
+}
+
+func convertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.FlavorList {
 	result := make(types.FlavorList, len(resources))
+	defaultArchitecture := openstackDefaultArchitecture(region)
 
 	for i := range resources {
 		flavor := &resources[i]
 
-		// API memory is in MiB, disk is in GB
+		// API memory is in MiB and disk is in GB. Per-flavor metadata below
+		// takes precedence over the Region-level architecture fallback.
 		f := types.Flavor{
 			ID:           flavor.ID,
 			Name:         flavor.Name,
-			Architecture: types.X86_64,
+			Architecture: defaultArchitecture,
 			CPUs:         flavor.VCPUs,
 			Memory:       resource.NewQuantity(int64(flavor.RAM)<<20, resource.BinarySI),
 			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
@@ -446,7 +485,7 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		// Apply any extra metadata to the flavor.
 		//
 		//nolint:nestif
-		if region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
+		if region != nil && region.Spec.Openstack != nil && region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
 			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
 				return flavor.ID == metadata.ID
 			})
@@ -482,7 +521,98 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 		result[i] = f
 	}
 
-	return result, nil
+	return result
+}
+
+func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
+	blockStorage, err := p.openstack.blockStorage(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resources, err := blockStorage.GetVolumeTypes(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	region, _ := p.openstack.regionSnapshot()
+
+	return convertVolumeClasses(region, resources), nil
+}
+
+func convertVolumeClasses(region *unikornv1.Region, resources []volumetypes.VolumeType) types.VolumeClassList {
+	var config *unikornv1.OpenstackVolumeClassesSpec
+	if region != nil && region.Spec.Openstack != nil {
+		config = openstackVolumeClassesConfig(region.Spec.Openstack.BlockStorage)
+	}
+
+	result := make(types.VolumeClassList, 0, len(resources))
+
+	for i := range resources {
+		resource := &resources[i]
+
+		class := types.VolumeClass{
+			ID:          resource.ID,
+			Name:        resource.Name,
+			Description: resource.Description,
+		}
+
+		if metadata := volumeClassMetadata(config, resource.ID); metadata != nil {
+			if metadata.SupportedFlavors != nil {
+				class.SupportedFlavorIDs = slices.Clone(metadata.SupportedFlavors.IDs)
+			}
+
+			if metadata.MinimumSizeGiB != nil {
+				class.MinimumSizeGiB = ptr.To(*metadata.MinimumSizeGiB)
+			}
+
+			if metadata.MaximumSizeGiB != nil {
+				class.MaximumSizeGiB = ptr.To(*metadata.MaximumSizeGiB)
+			}
+
+			class.Media = types.VolumeClassMedia(metadata.Media)
+			class.Encrypted = metadata.Encrypted
+
+			class.Performance = convertVolumeClassPerformance(metadata.Performance)
+		}
+
+		result = append(result, class)
+	}
+
+	return result
+}
+
+func volumeClassMetadata(config *unikornv1.OpenstackVolumeClassesSpec, id string) *unikornv1.VolumeClassMetadata {
+	if config == nil {
+		return nil
+	}
+
+	i := slices.IndexFunc(config.Metadata, func(metadata unikornv1.VolumeClassMetadata) bool {
+		return id == metadata.ID
+	})
+	if i < 0 {
+		return nil
+	}
+
+	return &config.Metadata[i]
+}
+
+func convertVolumeClassPerformance(in *unikornv1.VolumeClassPerformanceSpec) *types.VolumeClassPerformance {
+	if in == nil {
+		return nil
+	}
+
+	out := &types.VolumeClassPerformance{}
+
+	if in.MaxIOPS != nil {
+		out.MaxIOPS = ptr.To(*in.MaxIOPS)
+	}
+
+	if in.MaxThroughput != nil {
+		out.MaxThroughput = ptr.To(*in.MaxThroughput)
+	}
+
+	return out
 }
 
 // imageOS extracts the image OS from the image properties.
@@ -564,12 +694,12 @@ func imageStatus(image *images.Image) types.ImageStatus {
 	return status
 }
 
-func imageArchitecture(image *images.Image) types.Architecture {
+func imageArchitecture(image *images.Image, defaultArchitecture types.Architecture) types.Architecture {
 	if v, ok := image.Properties[imageArchitectureProperty].(string); ok && v != "" {
 		return types.Architecture(v)
 	}
 
-	return types.X86_64
+	return defaultArchitecture
 }
 
 func imageTags(image *images.Image) map[string]string {
@@ -591,7 +721,7 @@ func imageTags(image *images.Image) map[string]string {
 	return tags
 }
 
-func convertImage(image *images.Image) (*types.Image, error) {
+func convertImage(image *images.Image, defaultArchitecture types.Architecture) (*types.Image, error) {
 	var organizationID *string
 	if temp, _ := image.Properties[organizationIDLabel].(string); temp != "" {
 		organizationID = &temp
@@ -617,7 +747,7 @@ func convertImage(image *images.Image) (*types.Image, error) {
 		OrganizationID: organizationID,
 		Created:        image.CreatedAt,
 		Modified:       image.UpdatedAt,
-		Architecture:   imageArchitecture(image),
+		Architecture:   imageArchitecture(image, defaultArchitecture),
 		SizeGiB:        size,
 		Virtualization: types.ImageVirtualization(virtualization),
 		OS:             imageOS(image),
@@ -723,9 +853,11 @@ func (p *Provider) imageRefresh(ctx context.Context) ([]*types.Image, error) {
 	}
 
 	items := make([]*types.Image, len(resources))
+	region, _ := p.openstack.regionSnapshot()
+	defaultArchitecture := openstackDefaultArchitecture(region)
 
 	for i := range resources {
-		item, err := convertImage(&resources[i])
+		item, err := convertImage(&resources[i], defaultArchitecture)
 		if err != nil {
 			return nil, err
 		}
@@ -876,7 +1008,9 @@ func (p *Provider) CreateImage(ctx context.Context, image *types.Image, uri stri
 	// This seeds the cache from the pre-import Glance response, so callers may observe
 	// an intermediate queued/importing status until the next background refresh
 	// converges on the fully updated image state.
-	syntheticImage, err := convertImage(resource)
+	region, _ := p.openstack.regionSnapshot()
+
+	syntheticImage, err := convertImage(resource, openstackDefaultArchitecture(region))
 	if err != nil {
 		return nil, err
 	}
@@ -1165,7 +1299,7 @@ func (p *Provider) provisionQuotas(ctx context.Context, identity *unikornv1.Open
 		return err
 	}
 
-	blockstorage, err := NewBlockStorageClient(ctx, providerClient)
+	blockstorage, err := NewBlockStorageClient(ctx, providerClient, region.Spec.Openstack.BlockStorage)
 	if err != nil {
 		return err
 	}
@@ -1853,6 +1987,139 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 	return nil
 }
 
+func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
+	namespacedSystemMetadata := volumeSystemMetadata(identity, volume)
+
+	metadata := make(map[string]string, len(volume.Spec.Tags)+len(namespacedSystemMetadata))
+
+	for _, tag := range volume.Spec.Tags {
+		if key, ok := metadataKey(tag.Name); ok {
+			metadata[key] = tag.Value
+		}
+	}
+
+	maps.Copy(metadata, namespacedSystemMetadata)
+
+	return metadata
+}
+
+func volumeSystemMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
+	return map[string]string{
+		"region:volume_id":         volume.Name,
+		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
+		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
+		"region:region_id":         volume.Labels[constants.RegionLabel],
+		"region:network_id":        volume.Spec.NetworkID,
+		"region:identity_id":       identity.Name,
+	}
+}
+
+const (
+	volumeStatusAvailable   = "available"
+	volumeStatusErrorPrefix = "error"
+)
+
+func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	logger := log.FromContext(ctx)
+
+	openstackVolume, err := blockStorage.GetVolume(ctx, volume)
+	if err == nil {
+		logger.V(1).Info("volume already exists")
+
+		if err := projectVolumeState(volume, openstackVolume); err != nil {
+			return err
+		}
+
+		if volume.Status.ProvisionedAt == nil {
+			now := metav1.Now()
+			volume.Status.ProvisionedAt = &now
+		}
+
+		if strings.HasPrefix(openstackVolume.Status, volumeStatusErrorPrefix) {
+			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
+		}
+
+		if openstackVolume.Status != volumeStatusAvailable {
+			return provisioners.ErrYield
+		}
+
+		return nil
+	}
+
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return err
+	}
+
+	if volume.Status.ProvisionedAt != nil {
+		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
+
+		return provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider volume is missing; replace the Region Volume")
+	}
+
+	logger.V(1).Info("creating volume")
+
+	// The next successful lookup stamps ProvisionedAt, so a failed create cannot
+	// permanently park the Volume. A provider delete before that lookup can permit
+	// replacement, but nothing can attach during that short creation window.
+	if _, err = blockStorage.CreateVolume(ctx, volume, volumeMetadata(identity, volume)); err != nil {
+		return err
+	}
+
+	return provisioners.ErrYield
+}
+
+func (p *Provider) CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return reconcileVolume(ctx, blockStorage, identity, volume)
+}
+
+func deleteVolume(ctx context.Context, blockStorage VolumeInterface, volume *unikornv1.Volume) error {
+	logger := log.FromContext(ctx)
+
+	openstackVolume, err := blockStorage.GetVolume(ctx, volume)
+	if err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	logger.V(1).Info("deleting volume")
+
+	if err := blockStorage.DeleteVolume(ctx, openstackVolume.ID); err != nil {
+		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+
+		return nil
+	}
+
+	return provisioners.ErrYield
+}
+
+func (p *Provider) DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	if !provisioned {
+		return nil
+	}
+
+	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return deleteVolume(ctx, blockStorage, volume)
+}
+
 // securityGroupRulePortRange expands a security group port into a start-end range as
 // required by Neutron.
 // TODO: surely we can do this checking in validating admission policies...
@@ -2135,20 +2402,47 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 	return nil
 }
 
+// Nova server display statuses, as compared throughout server health conversion
+// and image reconciliation.
+// https://docs.openstack.org/api-guide/compute/server_concepts.html
+const (
+	novaStatusActive  = "ACTIVE"
+	novaStatusBuild   = "BUILD"
+	novaStatusError   = "ERROR"
+	novaStatusRebuild = "REBUILD"
+	novaStatusUnknown = "UNKNOWN"
+)
+
+// healthMessageIndeterminate is the Healthy-condition message used whenever a
+// server's health cannot be determined. markServerRebuildAccepted (reconciler)
+// and convertServerHealthStatus's REBUILD branch (monitor) MUST write the same
+// value, or the two writers churn the message on every poll.
+const healthMessageIndeterminate = "unable to determine server status"
+
 // convertServerHealthStatus translates from an OpenStack server status into a Kubernetes one.
 // See the following for all possible states (currently).
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
-func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.ConditionReason, string) {
+func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, unikornv1core.HealthConditionReason, string) {
 	if server == nil {
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	}
 
 	switch server.Status {
-	case "ACTIVE":
+	case novaStatusActive:
 		return corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "server is healthy"
-	case "ERROR":
-		return corev1.ConditionFalse, unikornv1core.ConditionReasonErrored, "server is in an error state"
-	case "UNKNOWN":
+	case novaStatusError:
+		// An errored server is degraded on the health axis. The terminal failure
+		// itself is carried on the Active condition (ActiveConditionReasonError),
+		// which is the axis the provider-create-failure guard keys off; health is
+		// only an informational verdict here.
+		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in an error state"
+	case novaStatusRebuild:
+		// A rebuilding server's real state is a lifecycle one, carried on the
+		// Active condition (ActiveConditionReasonRebuilding); it is not serving
+		// during the reimage, so health is reported as indeterminate rather than
+		// asserting a verdict. Message shared with markServerRebuildAccepted.
+		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate
+	case novaStatusUnknown:
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
 	default:
 		return corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "server is in state " + server.Status
@@ -2159,7 +2453,7 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Server) {
 	status, reason, message := convertServerHealthStatus(openstackserver)
 
-	server.StatusConditionWrite(unikornv1core.ConditionHealthy, status, reason, message)
+	server.SetHealthCondition(status, reason, message)
 }
 
 // novaServerAddress is a single entry in a Nova server's `addresses` map. It
@@ -2214,7 +2508,7 @@ func serverMACAddress(server *unikornv1.Server, openstackserver *servers.Server)
 // while an unconditional write of a valid MAC self-heals any drift (the
 // monitor's optimistic status PATCH makes a same-value write a harmless no-op).
 func setServerMACAddress(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server) {
-	if openstackserver == nil || openstackserver.Status != "ACTIVE" {
+	if openstackserver == nil || openstackserver.Status != novaStatusActive {
 		return
 	}
 
@@ -2236,9 +2530,9 @@ func setServerMACAddress(ctx context.Context, server *unikornv1.Server, openstac
 // and baremetal lookups that failed fall back to Building (the honest "we
 // don't know more than Nova does" answer); a successful Ironic lookup
 // further distinguishes Queued (pre-deploy) from Building (deploy underway).
-func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
+func buildPhase(ironicNode *nodes.Node) unikornv1.ActiveConditionReason {
 	if ironicNode == nil {
-		return unikornv1.InstanceLifecyclePhaseBuilding
+		return unikornv1.ActiveConditionReasonBuilding
 	}
 
 	return baremetalBuildPhase(ironicNode)
@@ -2251,11 +2545,12 @@ func buildPhase(ironicNode *nodes.Node) unikornv1.InstanceLifecyclePhase {
 //
 // BUILD-window branch. Breaking it up further would scatter Phase derivation.
 //
-//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter Phase derivation across helpers.
-func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
-	// Default to `Pending` if the phase is not already set. This should only happen to old servers created before we had phases.
-	if server.Status.Phase == "" {
-		server.Status.Phase = unikornv1.InstanceLifecyclePhasePending
+//nolint:cyclop // Fan-out matches OpenStack's PowerState enum surface plus the BUILD branch that consults Ironic via buildPhase; collapsing it would scatter lifecycle derivation across helpers.
+func setServerActive(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server, ironicNode *nodes.Node) {
+	// Default to Pending until the provider has been observed. This should only
+	// happen for a server that has never been reconciled against the provider.
+	if _, err := unikornv1.GetActiveCondition(server); err != nil {
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	}
 
 	if openstackserver == nil {
@@ -2287,31 +2582,50 @@ func setServerPhase(ctx context.Context, server *unikornv1.Server, openstackserv
 		}
 	}
 
+	// Nova ERROR is a terminal lifecycle state that PowerState cannot express
+	// (it is NOSTATE for an errored server, which would otherwise leave the
+	// state untouched). Surface it explicitly so the provider-create-failure
+	// guard can key off the lifecycle axis rather than the health condition.
+	if openstackserver.Status == "ERROR" {
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonError)
+
+		return
+	}
+
 	// Nova BUILD is the window where the live monitor refines the lifecycle
 	// view beyond what PowerState alone can express. PowerState is NOSTATE
 	// throughout BUILD, so we look at server.Status + the optional Ironic
 	// state to pick Queued vs Building.
-	if openstackserver.Status == "BUILD" {
-		server.Status.Phase = buildPhase(ironicNode)
+	if openstackserver.Status == novaStatusBuild {
+		server.SetActiveCondition(buildPhase(ironicNode))
+
+		return
+	}
+
+	// Nova REBUILD is an in-place reimage of an already-provisioned server: it is
+	// not usable until the reimage completes, so it is its own lifecycle state
+	// rather than whatever PowerState reports mid-rebuild.
+	if openstackserver.Status == novaStatusRebuild {
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRebuilding)
 
 		return
 	}
 
 	switch openstackserver.PowerState {
 	case servers.NOSTATE:
-		// No state information available. We will keep the phase as it is.
+		// No state information available. We will keep the state as it is.
 	case servers.RUNNING:
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	case servers.SHUTDOWN:
 		// TODO: Stopping is only ever written by the handler in response to a
 		// user-initiated stop. If a monitor poll lands while OpenStack is
 		// already reporting SHUTOFF/SHUTDOWN (e.g. the user stopped via the
 		// OpenStack dashboard rather than the platform API, or the platform
 		// missed the transient Stopping window), this flips Stopping → Stopped
-		// without ever observing the in-flight state on Phase. Pre-existing
-		// behaviour, follow-up work in a later PR; leaving the mapping as-is
-		// here to keep the INST-921 stack scoped.
-		server.Status.Phase = unikornv1.InstanceLifecyclePhaseStopped
+		// without ever observing the in-flight state. Pre-existing behaviour,
+		// follow-up work in a later PR; leaving the mapping as-is here to keep
+		// the INST-921 stack scoped.
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonStopped)
 	case servers.CRASHED:
 		// REVIEW_ME: What should we do when the server crashes?
 	case servers.PAUSED, servers.SUSPENDED:
@@ -2513,6 +2827,329 @@ func (p *Provider) reconcileLoadBalancerFloatingIP(ctx context.Context, client F
 	return nil
 }
 
+// Nova's rebuild_states tuple is "rebuilding", "rebuild_block_device_mapping"
+// and "rebuild_spawning". A rebuild keeps vm_state ACTIVE and rides task_state,
+// so this family identifies one, not the vm_state. It is matched by prefix, not
+// enumeration: a rebuild substate a newer Nova adds must read as in flight, not
+// as settled over a root disk that is still being rewritten.
+const novaTaskStateRebuildPrefix = "rebuild"
+
+// serverRebuildInFlight reports whether a rebuild specifically is in flight. Not
+// serverTaskActive: an unrelated task on a converged server, such as a user's
+// reboot, must not be reported as a rebuild. The projected REBUILD status is
+// matched as well as the task family — Nova derives that status from the same
+// family, so each match covers rebuild states the other has never heard of.
+func serverRebuildInFlight(openstackServer *servers.Server) bool {
+	if strings.HasPrefix(openstackServer.TaskState, novaTaskStateRebuildPrefix) {
+		return true
+	}
+
+	return openstackServer.Status == novaStatusRebuild
+}
+
+// serverTaskActive reports whether any operation holds the server. Nova refuses a
+// rebuild unless task_state is NULL.
+func serverTaskActive(openstackServer *servers.Server) bool {
+	return openstackServer.TaskState != "" || openstackServer.Status == novaStatusRebuild
+}
+
+func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
+	value, ok := server.Image["id"].(string)
+	if !ok || value == "" {
+		return regionids.ImageID{}, false
+	}
+
+	imageID, err := regionids.ParseImageID(value)
+	if err != nil {
+		return regionids.ImageID{}, false
+	}
+
+	return imageID, true
+}
+
+// setServerObservedStatus is the only writer of status.observed. Both
+// UpdateServerState callers reach it — the monitor's poll and the reconciler's
+// create-retry existence check — and neither arbitrates: both project one fresh
+// read. Only reached after that read succeeded, which is what makes clearing the
+// error safe.
+//
+// The projection is pure: it performs no I/O and owns no enrichment. The caller
+// owns enrichment (e.g. the fault fetch on the false→true error transition) so a
+// hung Nova read can be bounded without stalling the projection, and so the
+// marker decision is decoupled from the fault read's success. It returns true
+// when errored transitioned false→true on this call, signalling the caller to
+// run that enrichment.
+func setServerObservedStatus(server *unikornv1.Server, openstackServer *servers.Server) bool {
+	if server.Status.Observed == nil {
+		server.Status.Observed = &unikornv1.ServerObservedStatus{}
+	}
+
+	observed := server.Status.Observed
+	observed.Generation = server.Generation
+
+	// An unreadable ref preserves the previous image: a reader cannot tell an
+	// erased image from one never observed.
+	if imageID, ok := openstackServerImageID(openstackServer); ok {
+		observed.Image = &imageID
+	}
+
+	// Errored is a neutral presence marker, gated on status rather than on the
+	// fault being populated: Nova leaves a stale fault on a recovered server.
+	// The fault detail itself is provider vocabulary and belongs in the log
+	// stream, not the API; the caller logs it once on the transition into error
+	// so the operator record exists without per-poll noise.
+	errored := openstackServer.Status == novaStatusError
+	enteredError := errored && !observed.Errored
+
+	observed.Errored = errored
+
+	return enteredError
+}
+
+// recordAbsentServerObservation is the not-found analogue of
+// setServerObservedStatus: it stamps the observed subtree for a server whose
+// Nova instance is gone. Generation is taken from metadata.generation as on
+// every successful read; errored is cleared (the absence is not a provider
+// error); the image is preserved as the last-known value. Unlike
+// setServerObservedStatus it takes no observation client and performs no fault
+// fetch — there is no server to read one for.
+func recordAbsentServerObservation(server *unikornv1.Server) {
+	if server.Status.Observed == nil {
+		server.Status.Observed = &unikornv1.ServerObservedStatus{}
+	}
+
+	observed := server.Status.Observed
+	observed.Generation = server.Generation
+	observed.Errored = false
+}
+
+// logServerFault writes the provider's fault detail to the observation log on
+// the transition into error. The list read that noticed the error can carry an
+// empty fault (Nova up to 2025.2 can omit it from a list response), so the
+// detail comes from a dedicated per-ID read here, on the edge, rather than
+// enriching every read of every errored server exactly when Nova is degraded.
+// The fetch is best-effort: the marker is already decided from the listed
+// status, so no failure here may block the status update.
+func logServerFault(ctx context.Context, client ServerObservationInterface, server *unikornv1.Server, openstackServer *servers.Server) {
+	logger := log.FromContext(ctx)
+
+	fault, err := client.GetServerFault(ctx, openstackServer.ID)
+	if err != nil {
+		// A server deleted between the list and this read is a non-event.
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			logger.Info("errored server disappeared before its provider fault could be read",
+				"server", server.Name, "novaServerID", openstackServer.ID)
+
+			return
+		}
+
+		logger.Error(err, "cannot read the errored server for its provider fault",
+			"server", server.Name, "novaServerID", openstackServer.ID)
+
+		return
+	}
+
+	// GetServerFault returns a value-struct pointer, so an errored server
+	// without fault detail yields a zero struct: code 0 and an empty message.
+	// Logging that verbatim is misleading, so report the absence instead.
+	if fault.Code == 0 && fault.Message == "" {
+		logger.Info("the provider reported no fault detail for the errored server",
+			"server", server.Name, "novaServerID", openstackServer.ID)
+
+		return
+	}
+
+	logger.Info("provider reports server in an error state",
+		"server", server.Name,
+		"novaServerID", openstackServer.ID,
+		"faultCode", fault.Code,
+		"faultMessage", fault.Message,
+		"faultCreated", fault.Created)
+}
+
+// markServerRebuildAccepted stamps the post-acceptance in-flight view: Active
+// Rebuilding and health Unknown, byte-identical to what the monitor derives for
+// a Nova REBUILD (setServerActive + convertServerHealthStatus), including the
+// health message (healthMessageIndeterminate), so the reconciler and monitor
+// writes agree rather than churning the condition every poll. Never call before
+// Nova has accepted: pre-acceptance waits are silent yields and the monitor owns
+// observed state.
+func markServerRebuildAccepted(server *unikornv1.Server) {
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonRebuilding)
+	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate)
+}
+
+// novaRebuildImageNotFoundMessage is the fixed explanation Nova's rebuild
+// action returns when the target image no longer exists (nova
+// api/openstack/compute/servers.py, the ImageNotFound catch). The literal has
+// been frozen upstream for over a decade; if it ever drifts, the match below
+// fails toward retry, never toward a wrong park.
+const novaRebuildImageNotFoundMessage = "Cannot find image for rebuild"
+
+// isRebuildImageNotFound reports whether err is Nova's synchronous rebuild
+// rejection for a deleted target image — the one 400 class that provably
+// cannot self-heal, and therefore the only one that may park. Nova 400s are
+// not homogeneous: ImageNotActive (a deactivated Glance image) is also a 400,
+// but an operator reactivating the image bumps no generation and moves no
+// observed field, so parking it would strand the server with no recovery
+// path. Matching is deliberately a narrow substring of the response body:
+// anything unrecognized — another 400 class, a reworded message, a proxy that
+// strips bodies — falls back to surfacing the error for the ordinary requeue
+// (retry-forever, the status quo ante), which a later spec edit or provider
+// change resolves without operator action.
+func isRebuildImageNotFound(err error) bool {
+	var responseErr gophercloud.ErrUnexpectedResponseCode
+
+	if !errors.As(err, &responseErr) || responseErr.Actual != http.StatusBadRequest {
+		return false
+	}
+
+	return bytes.Contains(responseErr.Body, []byte(novaRebuildImageNotFoundMessage))
+}
+
+// submitServerRebuild issues the Nova rebuild. Rejections are synchronous and
+// leave the server untouched, so a 409 yields for a short retry, a 400 parks
+// only on Nova's image-not-found signature (the image is gone and
+// only a spec edit can name another, exactly the R3′ argument), while every
+// other 400 surfaces and retries: the class is not homogeneous — a
+// deactivated image (ImageNotActive) is a 400 an operator can clear by
+// reactivating it, which bumps no generation and moves no observed field, so
+// parking it would strand the server —
+// and anything else surfaces for the ordinary requeue: quota freeing or a provider
+// recovery bumps no generation, so parking a 403 or a 5xx would strand the
+// server. The accepted stamp is fixed, never derived from the response body: a
+// 202 can still describe the pre-destruction server as ACTIVE.
+func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions) (*servers.Server, error) {
+	rebuilt, err := client.RebuildServer(ctx, openstackServer.ID, options)
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+			log.FromContext(ctx).Info("server rebuild refused pending another operation, waiting for a rebuildable state",
+				"server", server.Name, "novaServerID", openstackServer.ID)
+
+			return openstackServer, provisioners.ErrYield
+		}
+
+		log.FromContext(ctx).Info("the provider rejected the server rebuild",
+			"server", server.Name, "novaServerID", openstackServer.ID, "error", err.Error())
+
+		// The message is ours, never Nova's: the raw rejection body is provider
+		// vocabulary and belongs in the log line above, not the API (CWE-209).
+		if isRebuildImageNotFound(err) {
+			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+				"the desired image no longer exists at the provider; select a different image or replace the server")
+		}
+
+		return nil, err
+	}
+
+	markServerRebuildAccepted(server)
+
+	// An accepted rebuild is in flight, so completing here would report the server
+	// provisioned while its root disk is being rewritten.
+	if rebuilt == nil {
+		rebuilt = openstackServer
+	}
+
+	return rebuilt, provisioners.ErrYield
+}
+
+// reconcileServerImage converges the server onto its desired image, deciding only
+// from the fresh openstackServer. Nova commits the image ref and task_state together
+// under a compare-and-swap, above the driver.
+//
+//	R1   Spec.Image == nil              → park; the spec names no image, so the only
+//	                                      remedy is a spec edit.
+//	R2   ref unreadable                 → park; never report success over an image
+//	                                      that cannot be verified.
+//	R3   ref == desired, rebuilding      → yield; our own rebuild is mid-flight.
+//	R3′  ref == desired, ERROR, launched → park; Nova moves the ref at accept, not
+//	                                      on a successful write, so a quiesced
+//	                                      ERROR on the desired ref cannot certify
+//	                                      the image was realized. (It may well be
+//	                                      running — a failed live-migration also
+//	                                      lands here — so the park is cause-neutral
+//	                                      and diagnoses nothing.) The outcome of a
+//	                                      submission belongs to the reconciler's
+//	                                      axis; ambient health of a settled server
+//	                                      remains the monitor's. Never-launched
+//	                                      servers are excluded: an ERROR before
+//	                                      first boot is create-retry's to own.
+//	R3″  ref == desired, otherwise       → done.
+//	R4   ref != desired, never launched  → yield; a server that has never booted
+//	                                      belongs to create-retry, and Nova refuses
+//	                                      a rebuild before first boot regardless.
+//	R4′  ref != desired, task in flight  → yield; something else holds the server.
+//	R4″  ref != desired, quiescent       → submit. The one destructive row.
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	// R1: the spec names no image. Image is in the CRD's required list, so this
+	// is dead code in practice, but completing would report a server provisioned
+	// onto no image. The only remedy is a spec edit, which is the park contract.
+	if server.Spec.Image == nil {
+		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+			"the server specifies no image to converge onto; set an image in the specification")
+	}
+
+	desiredImageID := server.Spec.Image.ID
+
+	currentImageID, refReadable := openstackServerImageID(openstackServer)
+
+	// R2: every server this provider creates is image-booted, so an unreadable ref
+	// is abnormal and must not be reported as success. The park is re-derived per
+	// pass, so a later readable ref un-parks it without any spec change.
+	if !refReadable {
+		log.FromContext(ctx).Info("cannot read the server image from the provider, image convergence cannot be checked",
+			"server", server.Name, "novaServerID", openstackServer.ID)
+
+		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+			"the provider cannot report the server's image, so the desired image cannot be verified; replace the server")
+	}
+
+	if currentImageID == desiredImageID {
+		// R3: accepted but unfinished.
+		if serverRebuildInFlight(openstackServer) {
+			markServerRebuildAccepted(server)
+
+			return openstackServer, provisioners.ErrYield
+		}
+
+		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
+		// write (it moved at accept), so this must not read as provisioned. Park
+		// on the provisioning axis, exactly as create-retry does when its
+		// attempts are exhausted. The remedy is a spec edit — a new image choice
+		// or a replacement server — which is ErrUserActionRequired's contract:
+		// recovery is generation-driven, and there is no retry bookkeeping to
+		// clear here, so the sentinel alone suffices. The park is also
+		// re-derived per pass, so a monitor observed-write after a silent
+		// provider recovery un-parks it without any spec change.
+		if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
+			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+				"the provider reports the server in an error state; select another image or replace the server")
+		}
+
+		// R3″: converged. Any other task is the monitor's axis.
+		return openstackServer, nil
+	}
+
+	// R4: before first boot the image is a create parameter, so this belongs to
+	// create-retry. Nova refuses it anyway (must_have_launched).
+	if openstackServer.LaunchedAt.IsZero() {
+		log.FromContext(ctx).Info("image change deferred until first launch",
+			"server", server.Name, "novaServerID", openstackServer.ID)
+
+		return openstackServer, provisioners.ErrYield
+	}
+
+	// R4′: a foreign operation holds the server; Nova would refuse the rebuild.
+	if serverTaskActive(openstackServer) {
+		return openstackServer, provisioners.ErrYield
+	}
+
+	// R4″: the one destructive row.
+	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
+		ImageID: desiredImageID,
+	})
+}
+
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
@@ -2520,7 +3157,15 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	if err == nil {
 		log.V(1).Info("server already exists")
 
-		return openstackServer, nil
+		return reconcileServerImage(ctx, client, server, openstackServer)
+	}
+
+	// Fail closed on an ambiguous provider read before a creating action — only
+	// a positive not-found may create. GetServer resolves by name via a list, so
+	// a transient list failure or a mis-scoped credential must not fall through
+	// to CreateServer, or a duplicate server would result.
+	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return nil, err
 	}
 
 	networks := []servers.Network{
@@ -2577,8 +3222,8 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 
 	setServerHealthStatus(server, openstackServer)
 	// No Ironic lookup at create time — the live monitor's UpdateServerState
-	// refines Phase from observed Ironic state on each poll.
-	setServerPhase(ctx, server, openstackServer, nil)
+	// refines the lifecycle state from observed Ironic state on each poll.
+	setServerActive(ctx, server, openstackServer, nil)
 
 	return openstackServer, nil
 }
@@ -2595,19 +3240,29 @@ func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOption
 	return serverForCreate
 }
 
-func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) error {
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return err
-	}
-
+// reconcileServerForCreate routes the create/rebuild through the (possibly
+// user-data/SSH-CA augmented) copy from serverForCreate, then copies the full
+// resulting status back onto the caller's server. The copy must be taken
+// here, after port and floating IP reconciliation have written
+// PrivateIP/PublicIP onto the caller's server, so the full copy-back cannot
+// revert those fields or drop the reconcile's own Phase/Healthy writes.
+func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string, preflight serverCreatePreflight) error {
 	serverForCreate := serverForCreate(server, options)
 
-	networking, err := p.networkFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
+	_, err := p.reconcileServer(ctx, client, serverForCreate, port, keyName, preflight)
+
+	if serverForCreate != server {
+		server.Status = *serverForCreate.Status.DeepCopy()
 	}
 
+	return err
+}
+
+// createServer reconciles the server's port and floating IP (both write
+// status onto the caller's server), then creates/rebuilds the provider
+// server via the augmented-copy path. The ordering is load-bearing; see
+// reconcileServerForCreate.
+func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) error {
 	port, err := p.reconcileServerPort(ctx, networking, server)
 	if err != nil {
 		return err
@@ -2617,16 +3272,26 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
+	return p.reconcileServerForCreate(ctx, compute, server, options, port, keyName, preflight)
+}
+
+func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) error {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	networking, err := p.networkFromServicePrincipal(ctx, identity)
+	if err != nil {
+		return err
+	}
+
 	compute, err := p.computeForServerCreate(ctx, identity, server)
 	if err != nil {
 		return err
 	}
 
-	if _, err := p.reconcileServer(ctx, compute, serverForCreate, port, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute)); err != nil {
-		return err
-	}
-
-	return nil
+	return p.createServer(ctx, networking, compute, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
@@ -2798,9 +3463,9 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 }
 
 // lookupIronicNodeForPhase fetches the bound Ironic node for a baremetal
-// server in Nova BUILD so setServerPhase can distinguish Queued (pre-deploy)
+// server in Nova BUILD so setServerActive can distinguish Queued (pre-deploy)
 // from Building (active deploy). All failure modes log and return nil;
-// setServerPhase then falls back to Building, matching the VM default — the
+// setServerActive then falls back to Building, matching the VM default — the
 // monitor must never error on a missing or unreachable Ironic.
 func (p *Provider) lookupIronicNodeForPhase(
 	ctx context.Context,
@@ -2830,16 +3495,42 @@ func (p *Provider) updateServerStateWithClients(
 	ctx context.Context,
 	identity *unikornv1.Identity,
 	server *unikornv1.Server,
-	compute ComputeInterface,
+	serverClient ServerObservationInterface,
 	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
 ) error {
-	openstackServer, err := compute.GetServer(ctx, server)
+	openstackServer, err := serverClient.GetServer(ctx, server)
 	if err != nil {
+		// A server whose Nova instance is gone (deleted out-of-band, e.g. a
+		// parked server whose backing instance was removed) still gets the
+		// observed subtree stamped: errored is cleared (the absence is not a
+		// provider error), generation is stamped as on every successful read,
+		// and the image is preserved as the documented sticky last-known
+		// value. No fault fetch happens — there is no server to read one for
+		// — so this path never touches the observation client. The recording
+		// lets a caller that chooses to persist status on the absent path do
+		// so (the monitor does, firing the observed wake that lets the
+		// reconciler recreate the server), but the error still surfaces
+		// rather than being swallowed: the create-retry provisioner's
+		// "confirmed gone" gate depends on UpdateServerState returning
+		// ErrResourceNotFound (deleteFailedProviderServer,
+		// pkg/provisioners/managers/server/provisioner.go).
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			recordAbsentServerObservation(server)
+		}
+
 		return err
 	}
 
 	setServerHealthStatus(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
+
+	if enteredError := setServerObservedStatus(server, openstackServer); enteredError {
+		// The enrichment is best-effort and bounded so a hung Nova read cannot
+		// stall the whole poll cycle.
+		faultCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		logServerFault(faultCtx, serverClient, server, openstackServer)
+	}
 
 	region, _ := p.openstack.regionSnapshot()
 	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())
@@ -2850,7 +3541,7 @@ func (p *Provider) updateServerStateWithClients(
 		ironicNode = p.lookupIronicNodeForPhase(ctx, identity, server, openstackServer, baremetalForPhase)
 	}
 
-	setServerPhase(ctx, server, openstackServer, ironicNode)
+	setServerActive(ctx, server, openstackServer, ironicNode)
 
 	return nil
 }
@@ -2981,7 +3672,9 @@ func (p *Provider) CreateSnapshot(ctx context.Context, identity *unikornv1.Ident
 		return nil, err
 	}
 
-	imageSnapshot, err := convertImage(updatedImage)
+	region, _ := p.openstack.regionSnapshot()
+
+	imageSnapshot, err := convertImage(updatedImage, openstackDefaultArchitecture(region))
 	if err != nil {
 		return nil, err
 	}

@@ -22,7 +22,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"time"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -118,16 +117,8 @@ func (im *IdentityStateManager) setupProvisionedIdentity(ctx context.Context, id
 		return fmt.Errorf("failed to get identity %s: %w", identityName, err)
 	}
 
-	// Mark as provisioned
-	now := metav1.NewTime(time.Now())
-	identity.Status.Conditions = []unikornv1core.Condition{
-		{
-			Type:               unikornv1core.ConditionAvailable,
-			Status:             corev1.ConditionTrue,
-			Reason:             "Provisioned",
-			LastTransitionTime: now,
-		},
-	}
+	// Mark as provisioned.
+	identity.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 
 	if err := im.client.Status().Update(ctx, identity); err != nil {
 		fmt.Printf("Warning: failed to update identity status: %v\n", err)
@@ -183,15 +174,7 @@ func (im *IdentityStateManager) setupProvisionedNetwork(ctx context.Context, net
 		return fmt.Errorf("failed to get network %s: %w", networkName, err)
 	}
 
-	now := metav1.NewTime(time.Now())
-	network.Status.Conditions = []unikornv1core.Condition{
-		{
-			Type:               unikornv1core.ConditionAvailable,
-			Status:             corev1.ConditionTrue,
-			Reason:             "Provisioned",
-			LastTransitionTime: now,
-		},
-	}
+	network.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 
 	// Add OpenStack-specific status for contract testing
 	// Use values that match consumer contract expectations

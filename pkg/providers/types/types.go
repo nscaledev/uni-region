@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -87,6 +88,51 @@ type GPU struct {
 
 // FlavorList allows us to attach sort functions and the like.
 type FlavorList []Flavor
+
+// VolumeClassMedia describes the physical storage medium backing a volume class.
+type VolumeClassMedia string
+
+const (
+	VolumeClassMediaHDD  VolumeClassMedia = "hdd"
+	VolumeClassMediaSSD  VolumeClassMedia = "ssd"
+	VolumeClassMediaNVMe VolumeClassMedia = "nvme"
+)
+
+// VolumeClass represents provider block-storage inventory exposed by a Region.
+type VolumeClass struct {
+	// ID is the immutable provider identifier.
+	ID string
+	// Name is the provider display name.
+	Name string
+	// Description is the provider display description.
+	Description string
+	// SupportedFlavorIDs optionally restricts this class to the listed Region
+	// flavors. Nil or empty means no compatibility restriction.
+	SupportedFlavorIDs []regionids.FlavorID
+	// MinimumSizeGiB is the operator-configured minimum volume capacity accepted
+	// by the class, in whole GiB.
+	MinimumSizeGiB *int64
+	// MaximumSizeGiB is the operator-configured maximum volume capacity accepted
+	// by the class, in whole GiB.
+	MaximumSizeGiB *int64
+	// Media describes the backing storage medium.
+	Media VolumeClassMedia
+	// Performance describes advertised performance caps.
+	Performance *VolumeClassPerformance
+	// Encrypted indicates whether volumes provisioned from this class are encrypted at rest by the provider.
+	Encrypted bool
+}
+
+// VolumeClassPerformance describes advertised performance caps for a volume class.
+type VolumeClassPerformance struct {
+	// MaxIOPS is the advertised maximum input/output operations per second cap.
+	MaxIOPS *int
+	// MaxThroughput is the advertised maximum throughput cap in mebibytes per second.
+	MaxThroughput *int
+}
+
+// VolumeClassList is a list of provider volume classes.
+type VolumeClassList []VolumeClass
 
 type ImageVirtualization string
 
@@ -238,4 +284,11 @@ type ExternalNetworks []ExternalNetwork
 type ServerCreateOptions struct {
 	// UserData overrides the user data passed to the provider when specified.
 	UserData []byte
+}
+
+// ServerVolumeAttachment is the provider-neutral result of attaching a volume
+// to a server.
+type ServerVolumeAttachment struct {
+	// Device is the guest OS device name reported by the provider, when known.
+	Device *string
 }

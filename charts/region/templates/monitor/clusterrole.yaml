@@ -14,6 +14,7 @@ rules:
   - openstackidentities
   - servers
   - openstackservers
+  - volumes
   verbs:
   - list
   - watch
@@ -28,6 +29,7 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - servers/status
+  - volumes/status
   verbs:
   - patch
 # Patch server metadata (annotations) for Pending phase duration tracking.

@@ -17,7 +17,11 @@ limitations under the License.
 package ids
 
 import (
+	"encoding/json"
+
 	"github.com/google/uuid"
+
+	"sigs.k8s.io/structured-merge-diff/v6/value"
 )
 
 // RegionID is a UUID-backed identifier for regions. It is a distinct
@@ -173,6 +177,26 @@ func (v ImageID) String() string                { return uuid.UUID(v).String() }
 func (v ImageID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *ImageID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
 
+// DeepCopyInto exists because deepcopy-gen cannot synthesise a copy for a pointer
+// to a named array type from another package, and fails the whole generation run
+// when a CRD field is one. ImageID is the only ID type used as a CRD pointer field
+// (Server's status.observed.image), so it alone carries the hooks — the other ID
+// types never appear on CRDs, and adding hooks for symmetry would be dead code.
+// The value is a byte array, so assignment copies it.
+func (v *ImageID) DeepCopyInto(out *ImageID) { *out = *v }
+
+// DeepCopy returns an independent copy of v, or nil if v is nil.
+func (v *ImageID) DeepCopy() *ImageID {
+	if v == nil {
+		return nil
+	}
+
+	out := new(ImageID)
+	v.DeepCopyInto(out)
+
+	return out
+}
+
 // FlavorID is a UUID-backed identifier for flavors. The platform addresses flavors by
 // their provider-assigned UUID; it is a distinct named type so the compiler prevents
 // accidental interchange with any other ID type. UnmarshalText delegates to uuid.UUID,
@@ -188,6 +212,8 @@ type FlavorID uuid.UUID
 func (v FlavorID) String() string                { return uuid.UUID(v).String() }
 func (v FlavorID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *FlavorID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
+func (v FlavorID) DeepCopy() FlavorID            { return v }
+func (v FlavorID) DeepCopyInto(out *FlavorID)    { *out = v }
 
 // unmarshalUUID is the shared implementation for all UnmarshalText methods.
 func unmarshalUUID(dst *uuid.UUID, text []byte) error {
@@ -322,3 +348,61 @@ func ParseFlavorID(s string) (FlavorID, error) {
 
 	return FlavorID(id), nil
 }
+
+// These identifiers are backed by uuid.UUID, which is a [16]byte array.
+// structured-merge-diff walks Go structs by reflection and has no case for arrays,
+// so it panics with "unsupported type" unless a type converts itself. It consults
+// json.Marshaler and ToUnstructured, not encoding.TextMarshaler, so MarshalText
+// alone is not enough. Server-side apply needs this, and so does the
+// controller-runtime fake client, which runs objects through the same walker.
+//
+// The encoded form is identical to what MarshalText already produced, so this
+// changes no serialised output.
+var _ = []value.UnstructuredConverter{
+	RegionID{},
+	IdentityID{},
+	NetworkID{},
+	SecurityGroupID{},
+	LoadBalancerID{},
+	VolumeID{},
+	ServerID{},
+	SSHCertificateAuthorityID{},
+	FileStorageID{},
+	ImageID{},
+	FlavorID{},
+}
+
+func (v RegionID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v RegionID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v IdentityID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v IdentityID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v NetworkID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v NetworkID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v SecurityGroupID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v SecurityGroupID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v LoadBalancerID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v LoadBalancerID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v VolumeID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v VolumeID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v ServerID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v ServerID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v SSHCertificateAuthorityID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(uuid.UUID(v).String())
+}
+func (v SSHCertificateAuthorityID) ToUnstructured() any { return uuid.UUID(v).String() }
+
+func (v FileStorageID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v FileStorageID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v ImageID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v ImageID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v FlavorID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
+func (v FlavorID) ToUnstructured() any          { return uuid.UUID(v).String() }

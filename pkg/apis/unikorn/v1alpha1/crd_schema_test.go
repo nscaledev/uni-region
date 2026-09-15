@@ -30,6 +30,7 @@ import (
 	apixv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	structuralschema "k8s.io/apiextensions-apiserver/pkg/apiserver/schema"
 	celvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/cel"
+	listtypevalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/schema/listtype"
 	apixvalidation "k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	kruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -40,8 +41,73 @@ import (
 
 const (
 	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
+	regionCRDFile      = "region.unikorn-cloud.org_regions.yaml"
+	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
 	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
 )
+
+func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ...string) *apixv1.JSONSchemaProps {
+	t.Helper()
+
+	current := schema
+
+	for _, name := range path {
+		property, ok := current.Properties[name]
+		require.Truef(t, ok, "schema property %q is missing", name)
+
+		current = &property
+	}
+
+	return current
+}
+
+// TestServerObservedSchema pins the monitor's exclusive write region into the
+// published schema. The subtree is the contract that keeps the two status writers
+// off each other's fields, so its shape belongs in the CRD, not just in Go.
+func TestServerObservedSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := crdSchema(t, serverCRDFile)
+
+	generation := requireSchemaProperty(t, schema, "status", "observed", "generation")
+	require.Equal(t, "integer", generation.Type)
+
+	image := requireSchemaProperty(t, schema, "status", "observed", "image")
+	require.Equal(t, "string", image.Type)
+	require.Equal(t, "uuid", image.Format)
+
+	// The error member is a neutral presence marker only: no provider fault
+	// code, message or timestamp may ship in the schema — that detail is
+	// provider vocabulary and lives in the observation log.
+	errored := requireSchemaProperty(t, schema, "status", "observed", "errored")
+	require.Equal(t, "boolean", errored.Type)
+
+	observed := requireSchemaProperty(t, schema, "status", "observed")
+	require.NotContains(t, observed.Properties, "error", "the provider fault struct must not return to the schema")
+	require.Equal(t, []string{"generation"}, observed.Required, "the freshness stamp is what makes an observation readable; it must not be optional")
+}
+
+func TestVolumeClaimSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := crdSchema(t, volumeCRDFile)
+
+	claim := requireSchemaProperty(t, schema, "spec", "claimRef")
+	require.Contains(t, claim.Properties, "kind")
+	require.Contains(t, claim.Properties, "id")
+	require.Len(t, claim.Properties["kind"].Enum, 1)
+	require.JSONEq(t, `"Server"`, string(claim.Properties["kind"].Enum[0].Raw))
+	require.NotNil(t, claim.Properties["id"].MinLength)
+	require.Equal(t, int64(1), *claim.Properties["id"].MinLength)
+
+	status := requireSchemaProperty(t, schema, "status")
+	require.NotContains(t, status.Properties, "attachment")
+
+	attachedAt := requireSchemaProperty(t, status, "attachedAt")
+	require.Equal(t, "string", attachedAt.Type)
+	require.Equal(t, "date-time", attachedAt.Format)
+	require.NotContains(t, status.Required, "attachedAt")
+}
 
 type crdValidator struct {
 	schema     *apixinternal.JSONSchemaProps
@@ -61,6 +127,11 @@ func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bo
 	require.NoError(t, err)
 
 	if validator.Validate(obj).HasErrors() {
+		return false
+	}
+
+	listErrors := listtypevalidation.ValidateListSetsAndMaps(field.NewPath("root"), v.structural, obj)
+	if len(listErrors) != 0 {
 		return false
 	}
 

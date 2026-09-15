@@ -44,12 +44,14 @@ const (
 
 // Defines values for InstanceLifecyclePhase.
 const (
-	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
-	InstanceLifecyclePhasePending  InstanceLifecyclePhase = "Pending"
-	InstanceLifecyclePhaseQueued   InstanceLifecyclePhase = "Queued"
-	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
-	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
-	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
+	InstanceLifecyclePhaseBuilding   InstanceLifecyclePhase = "Building"
+	InstanceLifecyclePhaseError      InstanceLifecyclePhase = "Error"
+	InstanceLifecyclePhasePending    InstanceLifecyclePhase = "Pending"
+	InstanceLifecyclePhaseQueued     InstanceLifecyclePhase = "Queued"
+	InstanceLifecyclePhaseRebuilding InstanceLifecyclePhase = "Rebuilding"
+	InstanceLifecyclePhaseRunning    InstanceLifecyclePhase = "Running"
+	InstanceLifecyclePhaseStopped    InstanceLifecyclePhase = "Stopped"
+	InstanceLifecyclePhaseStopping   InstanceLifecyclePhase = "Stopping"
 )
 
 // Defines values for LoadBalancerListenerProtocolV2.
@@ -117,6 +119,13 @@ const (
 	StorageSnapshotScheduleIntervalV2Weekly  StorageSnapshotScheduleIntervalV2 = "weekly"
 )
 
+// Defines values for VolumeClassV2Media.
+const (
+	VolumeClassV2MediaHdd  VolumeClassV2Media = "hdd"
+	VolumeClassV2MediaNvme VolumeClassV2Media = "nvme"
+	VolumeClassV2MediaSsd  VolumeClassV2Media = "ssd"
+)
+
 // Defines values for ImageScopeQueryParameter.
 const (
 	ImageScopeQueryParameterAvailable ImageScopeQueryParameter = "available"
@@ -129,8 +138,21 @@ const (
 	GetApiV2RegionsRegionIDImagesParamsScopeOwned     GetApiV2RegionsRegionIDImagesParamsScope = "owned"
 )
 
-// NFSV2Spec NFS specific
+// NFSV2Spec NFS settings supplied during create or update.
 type NFSV2Spec struct {
+	// AtimeUpdateIntervalSeconds Omission or explicit null resolves to 0.
+	//
+	// Set to 0 to disable read-driven atime updates. A positive value updates atime during a read
+	// only when the existing atime is older than this number of seconds. Maximum: 86,399,999,999,999
+	// seconds.
+	AtimeUpdateIntervalSeconds *int64 `json:"atimeUpdateIntervalSeconds,omitempty"`
+
+	// PosixAcl Whether extended POSIX ACL support is enabled. Omission or explicit null resolves to false.
+	//
+	// Enabling POSIX ACLs may reduce metadata performance. Extended POSIX ACLs must be managed over
+	// NFSv3. Disabling this option does not remove existing ACLs; they may remain enforced.
+	PosixAcl *bool `json:"posixAcl,omitempty"`
+
 	// RootSquash root squash
 	RootSquash bool `json:"rootSquash"`
 }
@@ -432,7 +454,10 @@ type InfrastructureRef = string
 // should treat Running (not provisioned) as the "ready to use" state.
 // Queued and Building are observed during create — Queued for
 // baremetal servers waiting on hardware, Building for servers the
-// provider is actively bringing up.
+// provider is actively bringing up. Rebuilding means an already
+// provisioned server is being reimaged in place and is not usable until
+// it completes. Error means the provider reported the server in a
+// terminal error state.
 type InstanceLifecyclePhase string
 
 // Ipv4Address An IPv4 address.
@@ -466,7 +491,7 @@ type LoadBalancerListenerV2 struct {
 	// IdleTimeoutSeconds The idle timeout in seconds. Defaults to 60 for TCP listeners and is unsupported for UDP listeners.
 	IdleTimeoutSeconds *int `json:"idleTimeoutSeconds,omitempty"`
 
-	// Name A load balancer listener name. Must start with a lower-case letter and otherwise be a valid DNS label.
+	// Name The listener name.
 	Name LoadBalancerListenerNameV2 `json:"name"`
 
 	// Pool A load balancer listener pool.
@@ -518,7 +543,7 @@ type LoadBalancerV2CreateSpec struct {
 	// PublicIP Whether to allocate a public IP.
 	PublicIP *bool `json:"publicIP,omitempty"`
 
-	// VipAddress An IPv4 address.
+	// VipAddress The requested virtual IP address. When provided, it must fall within the selected network CIDR.
 	VipAddress *Ipv4Address `json:"vipAddress,omitempty"`
 }
 
@@ -548,13 +573,13 @@ type LoadBalancerV2Status struct {
 	// NetworkId The network the load balancer belongs to.
 	NetworkId string `json:"networkId"`
 
-	// PublicIP An IPv4 address.
+	// PublicIP The provisioned public IP address.
 	PublicIP *Ipv4Address `json:"publicIP,omitempty"`
 
 	// RegionId The region the load balancer belongs to.
 	RegionId string `json:"regionId"`
 
-	// VipAddress An IPv4 address.
+	// VipAddress The provisioned virtual IP address.
 	VipAddress *Ipv4Address `json:"vipAddress,omitempty"`
 }
 
@@ -660,7 +685,9 @@ type NetworkV2Create struct {
 
 // NetworkV2CreateSpec defines model for networkV2CreateSpec.
 type NetworkV2CreateSpec struct {
-	// DnsNameservers A list of IPv4 addresses.
+	// DnsNameservers DNS nameservers to use.  If empty this will use the platform's
+	// internal DNS server and allow hosts to resolve each other.  If it is
+	// populated then no internal host resolution will be possible.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
 	// OrganizationId The organization to provision the resource in.
@@ -679,13 +706,9 @@ type NetworkV2CreateSpec struct {
 	// RegionId A region ID.
 	RegionId RegionId `json:"regionId"`
 
-	// Reservations Network reservations carve a prefix from the start of the network CIDR
-	// for infrastructure use such as file storage and internal platform
-	// services as directed by the infrastructure provider.
-	// For example, on a /24 network a reservation prefix length of 25
-	// reserves 192.168.0.0/25, leaving 192.168.0.128-192.168.0.254 for DHCP.
-	// Reservations are fixed when the network is created and are immutable
-	// afterwards.
+	// Reservations Optional reservations to apply when the network is created.  If
+	// omitted, the platform default of a /25 reservation with a /28
+	// provider carve-out is applied.
 	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
 	// Routes A list of network routes.
@@ -706,7 +729,9 @@ type NetworkV2Read struct {
 
 // NetworkV2Spec A network's specification.
 type NetworkV2Spec struct {
-	// DnsNameservers A list of IPv4 addresses.
+	// DnsNameservers DNS nameservers to use.  If empty this will use the platform's
+	// internal DNS server and allow hosts to resolve each other.  If it is
+	// populated then no internal host resolution will be possible.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
 	// Routes A list of network routes.
@@ -1026,6 +1051,30 @@ type ServerNetworkAllowedAddressPairList = []ServerNetworkAllowedAddressPair
 // ServerNetworkList A list of networks.
 type ServerNetworkList = []ServerNetwork
 
+// ServerProviderCreateGate A gate that must be satisfied before provider create starts.
+type ServerProviderCreateGate struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+}
+
+// ServerProviderCreateGateAction Request to satisfy a configured provider-create gate.
+type ServerProviderCreateGateAction struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+
+	// Message Human-readable details for operators.
+	Message string `json:"message"`
+
+	// Reason Machine-readable reason for satisfying the gate.
+	Reason string `json:"reason"`
+}
+
+// ServerProviderCreateGateType A provider-create gate condition type.
+type ServerProviderCreateGateType = string
+
+// ServerProviderCreateGates Provider-create gates requested at server creation time.
+type ServerProviderCreateGates = []ServerProviderCreateGate
+
 // ServerPublicIPAllocation The server's public IP allocation.
 type ServerPublicIPAllocation struct {
 	// Enabled Whether to allocate a public IP.
@@ -1044,6 +1093,9 @@ type ServerRead struct {
 	Status ServerStatus `json:"status"`
 }
 
+// ServerRemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+type ServerRemainingProviderCreateGates = []ServerProviderCreateGateType
+
 // ServerSecurityGroup A security group.
 type ServerSecurityGroup struct {
 	// Id The security group ID.
@@ -1058,7 +1110,8 @@ type ServerSpec struct {
 	// FlavorId A flavor ID.
 	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId An image ID.
+	// ImageId The server image. On update this field is ignored: the image is
+	// immutable through the v1 API and the stored value is preserved.
 	ImageId ImageId `json:"imageId"`
 
 	// Networks A list of networks.
@@ -1081,7 +1134,10 @@ type ServerStatus struct {
 	// should treat Running (not provisioned) as the "ready to use" state.
 	// Queued and Building are observed during create — Queued for
 	// baremetal servers waiting on hardware, Building for servers the
-	// provider is actively bringing up.
+	// provider is actively bringing up. Rebuilding means an already
+	// provisioned server is being reimaged in place and is not usable until
+	// it completes. Error means the provider reported the server in a
+	// terminal error state.
 	Phase *InstanceLifecyclePhase `json:"phase,omitempty"`
 
 	// PrivateIP The private IP address of the server.
@@ -1102,10 +1158,11 @@ type ServerV2Create struct {
 
 // ServerV2CreateSpec defines model for serverV2CreateSpec.
 type ServerV2CreateSpec struct {
-	// FlavorId A flavor ID.
+	// FlavorId The server flavor. This field is immutable after creation.
 	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId An image ID.
+	// ImageId The desired server image. Changing this field rebuilds the server,
+	// recreating the root disk and destroying its contents.
 	ImageId ImageId `json:"imageId"`
 
 	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
@@ -1117,15 +1174,20 @@ type ServerV2CreateSpec struct {
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
 
-	// SshCertificateAuthorityId The SSH certificate authority ID.
+	// ProviderCreateGates Provider-create gates requested at server creation time.
+	ProviderCreateGates *ServerProviderCreateGates `json:"providerCreateGates,omitempty"`
+
+	// SshCertificateAuthorityId The SSH certificate authority used to bootstrap login trust when the server is created.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
 
-	// SshInjection The create-time SSH access material Region should arrange for a server.
+	// SshInjection The create-time SSH access material Region should arrange for the server. If omitted, Region uses ca when sshCertificateAuthorityId is set, otherwise identityKeypair.
 	SshInjection *SshInjection `json:"sshInjection,omitempty"`
 
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
-	// a MIME multipart archive, etc.
+	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
+	// it clears the stored value. A changed value is not applied to the running guest —
+	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 }
 
@@ -1161,10 +1223,11 @@ type ServerV2SecurityGroupIDList = []SecurityGroupId
 
 // ServerV2Spec A server's specification.
 type ServerV2Spec struct {
-	// FlavorId A flavor ID.
+	// FlavorId The server flavor. This field is immutable after creation.
 	FlavorId FlavorId `json:"flavorId"`
 
-	// ImageId An image ID.
+	// ImageId The desired server image. Changing this field rebuilds the server,
+	// recreating the root disk and destroying its contents.
 	ImageId ImageId `json:"imageId"`
 
 	// Networking A server's network configuration.
@@ -1172,7 +1235,9 @@ type ServerV2Spec struct {
 
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
-	// a MIME multipart archive, etc.
+	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
+	// it clears the stored value. A changed value is not applied to the running guest —
+	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 }
 
@@ -1184,7 +1249,7 @@ type ServerV2Status struct {
 	// MacAddress The MAC address of the server.
 	MacAddress *string `json:"macAddress,omitempty"`
 
-	// NetworkId A network ID.
+	// NetworkId The network the server belongs to.
 	NetworkId NetworkId `json:"networkId"`
 
 	// PowerState The lifecycle phase of an instance. Once provisioning_status reaches
@@ -1192,7 +1257,10 @@ type ServerV2Status struct {
 	// should treat Running (not provisioned) as the "ready to use" state.
 	// Queued and Building are observed during create — Queued for
 	// baremetal servers waiting on hardware, Building for servers the
-	// provider is actively bringing up.
+	// provider is actively bringing up. Rebuilding means an already
+	// provisioned server is being reimaged in place and is not usable until
+	// it completes. Error means the provider reported the server in a
+	// terminal error state.
 	PowerState *InstanceLifecyclePhase `json:"powerState,omitempty"`
 
 	// PrivateIP The private IP address of the server.
@@ -1201,14 +1269,20 @@ type ServerV2Status struct {
 	// PublicIP The public IP address of the server.
 	PublicIP *string `json:"publicIP,omitempty"`
 
-	// RegionId A region ID.
+	// RegionId The region the server belongs to.
 	RegionId RegionId `json:"regionId"`
 
-	// SshCertificateAuthorityId The SSH certificate authority ID.
+	// RemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+	RemainingProviderCreateGates *ServerRemainingProviderCreateGates `json:"remainingProviderCreateGates,omitempty"`
+
+	// SshCertificateAuthorityId The SSH certificate authority configured when the server was created.
 	SshCertificateAuthorityId *SshCertificateAuthorityID `json:"sshCertificateAuthorityId,omitempty"`
 
-	// SshInjection The create-time SSH access material Region should arrange for a server.
+	// SshInjection The resolved create-time SSH access material Region arranged for the server.
 	SshInjection *SshInjection `json:"sshInjection,omitempty"`
+
+	// Volumes Observed attachment state for the Server's desired Volumes.
+	Volumes *ServerV2VolumeStatusList `json:"volumes,omitempty"`
 }
 
 // ServerV2Update A server update request.
@@ -1219,6 +1293,24 @@ type ServerV2Update struct {
 	// Spec A server's specification.
 	Spec ServerV2Spec `json:"spec"`
 }
+
+// ServerV2VolumeStatus Observed attachment state for a desired Volume.
+type ServerV2VolumeStatus struct {
+	// Device The provider-assigned guest device name, when available.
+	Device *string `json:"device,omitempty"`
+
+	// Id The attached Volume ID.
+	Id VolumeId `json:"id"`
+
+	// Message Optional safe human-readable description of the attachment state.
+	Message *string `json:"message,omitempty"`
+
+	// ProvisioningStatus The provisioning state of a resource.
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
+}
+
+// ServerV2VolumeStatusList Observed attachment state for the Server's desired Volumes.
+type ServerV2VolumeStatusList = []ServerV2VolumeStatus
 
 // ServerWrite A server request.
 type ServerWrite struct {
@@ -1304,7 +1396,10 @@ type SshKey struct {
 	PrivateKey string `json:"privateKey"`
 }
 
-// StorageAttachmentListV2Status Describes the network attachments for storage
+// StorageAttachmentListV2Status Describes the network attachments for storage. This is the union of desired and
+// observed attachments, so it may contain networks that are absent from
+// spec.attachments.networkIds but are still attached pending removal. It is not
+// index-aligned with spec.attachments.networkIds.
 type StorageAttachmentListV2Status = []StorageAttachmentV2Status
 
 // StorageAttachmentV2Spec Describes the network attachment for storage
@@ -1414,7 +1509,7 @@ type StorageSnapshotScheduleV2Spec struct {
 
 // StorageTypeV2Spec A storage's type
 type StorageTypeV2Spec struct {
-	// NFS NFS specific
+	// NFS NFS settings supplied during create or update.
 	NFS *NFSV2Spec `json:"NFS,omitempty"`
 }
 
@@ -1430,7 +1525,7 @@ type StorageUsageV2Status struct {
 	UsedBytes *int64 `json:"usedBytes,omitempty"`
 }
 
-// StorageV2Create A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
+// StorageV2Create A storage create request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
 type StorageV2Create struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
@@ -1499,7 +1594,10 @@ type StorageV2Spec struct {
 
 // StorageV2Status Read only status about storage
 type StorageV2Status struct {
-	// Attachments Describes the network attachments for storage
+	// Attachments Describes the network attachments for storage. This is the union of desired and
+	// observed attachments, so it may contain networks that are absent from
+	// spec.attachments.networkIds but are still attached pending removal. It is not
+	// index-aligned with spec.attachments.networkIds.
 	Attachments *StorageAttachmentListV2Status `json:"attachments,omitempty"`
 
 	// RegionId The region an identity is provisioned in.
@@ -1515,7 +1613,7 @@ type StorageV2Status struct {
 	Usage *StorageUsageV2Status `json:"usage,omitempty"`
 }
 
-// StorageV2Update A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
+// StorageV2Update A storage update request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0 rather than preserving prior state. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2Update struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
@@ -1523,6 +1621,113 @@ type StorageV2Update struct {
 	// Spec A storage's specification.
 	Spec StorageV2Spec `json:"spec"`
 }
+
+// VolumeClassListV2Read A list of provider-neutral block-storage volume classes.
+type VolumeClassListV2Read = []VolumeClassV2Read
+
+// VolumeClassV2Media The physical storage medium backing a volume class.
+type VolumeClassV2Media string
+
+// VolumeClassV2Performance Advertised performance caps; these are not guaranteed reservations.
+type VolumeClassV2Performance struct {
+	// MaxIOPS Advertised maximum input/output operations per second.
+	MaxIOPS *int `json:"maxIOPS,omitempty"`
+
+	// MaxThroughputMiBps Advertised maximum throughput in mebibytes per second.
+	MaxThroughputMiBps *int `json:"maxThroughputMiBps,omitempty"`
+}
+
+// VolumeClassV2Read A provider-neutral block-storage volume class available in a Region.
+type VolumeClassV2Read struct {
+	// Metadata This metadata is for resources that just exist, and don't require
+	// any provisioning and health status, but benefit from a standardized
+	// metadata format.
+	Metadata externalRef0.StaticResourceMetadata `json:"metadata"`
+
+	// Spec Provider-neutral capabilities advertised by a block-storage volume class.
+	Spec VolumeClassV2Spec `json:"spec"`
+}
+
+// VolumeClassV2Spec Provider-neutral capabilities advertised by a block-storage volume class.
+type VolumeClassV2Spec struct {
+	// Encrypted Whether volumes created from this class are encrypted at rest by the provider.
+	Encrypted bool `json:"encrypted"`
+
+	// MaximumSizeGiB Operator-configured maximum volume capacity accepted by this class, in whole GiB.
+	MaximumSizeGiB *int64 `json:"maximumSizeGiB,omitempty"`
+
+	// Media The physical storage medium backing a volume class.
+	Media *VolumeClassV2Media `json:"media,omitempty"`
+
+	// MinimumSizeGiB Operator-configured minimum volume capacity accepted by this class, in whole GiB.
+	MinimumSizeGiB *int64 `json:"minimumSizeGiB,omitempty"`
+
+	// Performance Advertised performance caps; these are not guaranteed reservations.
+	Performance *VolumeClassV2Performance `json:"performance,omitempty"`
+
+	// RegionId The Region that owns this volume class inventory entry.
+	RegionId RegionId `json:"regionId"`
+
+	// SupportedFlavorIds Optional allowlist of Region flavors compatible with this volume class. Omitted or empty means no compatibility restriction.
+	SupportedFlavorIds *[]FlavorId `json:"supportedFlavorIds,omitempty"`
+}
+
+// VolumeId A volume ID.
+type VolumeId = regionids.VolumeID
+
+// VolumeV2Create A volume creation request.
+type VolumeV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec A volume's immutable desired Network anchor and capacity.
+	Spec VolumeV2Spec `json:"spec"`
+}
+
+// VolumeV2Read A block storage volume.
+type VolumeV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec A volume's immutable desired Network anchor and capacity.
+	Spec VolumeV2Spec `json:"spec"`
+
+	// Status Provider-observed volume state.
+	Status VolumeV2Status `json:"status"`
+}
+
+// VolumeV2Spec A volume's immutable desired Network anchor and capacity.
+type VolumeV2Spec struct {
+	// NetworkId The Network that determines the volume's Region and project association.
+	NetworkId NetworkId `json:"networkId"`
+
+	// SizeGiB The requested volume capacity in whole GiB.
+	SizeGiB int64 `json:"sizeGiB"`
+
+	// VolumeClassId The provider-neutral VolumeClass used to provision the volume.
+	VolumeClassId string `json:"volumeClassId"`
+}
+
+// VolumeV2Status Provider-observed volume state.
+type VolumeV2Status struct {
+	// AttachedAt Timestamp when the current volume attachment was first confirmed. Omitted when no current attachment is recorded.
+	AttachedAt *time.Time `json:"attachedAt,omitempty"`
+
+	// RegionId The Region in which the volume is provisioned.
+	RegionId RegionId `json:"regionId"`
+
+	// SizeGiB The provider-observed volume capacity in whole GiB.
+	SizeGiB *int64 `json:"sizeGiB,omitempty"`
+}
+
+// VolumeV2Update A volume metadata update request. Network, VolumeClass, and capacity are immutable.
+type VolumeV2Update struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+}
+
+// VolumesV2Read A list of volumes.
+type VolumesV2Read = []VolumeV2Read
 
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
@@ -1580,6 +1785,9 @@ type ServerIDParameter = ServerId
 
 // SshCertificateAuthorityIDParameter An SSH certificate authority ID.
 type SshCertificateAuthorityIDParameter = SshCertificateAuthorityId
+
+// VolumeIDParameter A volume ID.
+type VolumeIDParameter = VolumeId
 
 // ConsoleOutputResponse Console output
 type ConsoleOutputResponse = ConsoleOutput
@@ -1671,6 +1879,15 @@ type StorageListV2Response = StorageV2List
 // StorageV2Response A storage read only group.
 type StorageV2Response = StorageV2Read
 
+// VolumeClassListV2Response A list of provider-neutral block-storage volume classes.
+type VolumeClassListV2Response = VolumeClassListV2Read
+
+// VolumeV2Response A block storage volume.
+type VolumeV2Response = VolumeV2Read
+
+// VolumesV2Response A list of volumes.
+type VolumesV2Response = VolumesV2Read
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -1701,6 +1918,9 @@ type SecurityGroupV2CreateRequest = SecurityGroupV2Create
 // SecurityGroupV2UpdateRequest A security group request.
 type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 
+// ServerProviderCreateGateRequest Request to satisfy a configured provider-create gate.
+type ServerProviderCreateGateRequest = ServerProviderCreateGateAction
+
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
 
@@ -1716,11 +1936,17 @@ type SnapshotServerRequest = SnapshotCreate
 // SshCertificateAuthorityV2CreateRequest An SSH certificate authority creation request.
 type SshCertificateAuthorityV2CreateRequest = SshCertificateAuthorityV2Create
 
-// StorageV2CreateRequest A storage create request. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
+// StorageV2CreateRequest A storage create request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0. When spec.defaultSnapshotProtectionEnabled is omitted, Default Snapshot Protection is enabled. Explicit null defaultSnapshotProtectionEnabled is invalid. When spec.snapshotPolicies is omitted or empty, the API stores no user-managed Snapshot Policies. Non-empty policy lists are stored exactly as supplied.
 type StorageV2CreateRequest = StorageV2Create
 
-// StorageV2UpdateRequest A storage update request. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
+// StorageV2UpdateRequest A storage update request. Omitted or null NFS POSIX ACL and atime settings resolve to false and 0 rather than preserving prior state. Omitted spec.defaultSnapshotProtectionEnabled preserves the current Default Snapshot Protection setting, and explicit null is invalid. Omitted spec.snapshotPolicies preserves existing desired user-managed Snapshot Policies, an empty list clears them, and a non-empty list replaces the full list.
 type StorageV2UpdateRequest = StorageV2Update
+
+// VolumeV2CreateRequest A volume creation request.
+type VolumeV2CreateRequest = VolumeV2Create
+
+// VolumeV2UpdateRequest A volume metadata update request. Network, VolumeClass, and capacity are immutable.
+type VolumeV2UpdateRequest = VolumeV2Update
 
 // GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams defines parameters for GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutput.
 type GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDConsoleoutputParams struct {
@@ -1871,6 +2097,31 @@ type GetApiV2SshcertificateauthoritiesParams struct {
 	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
 }
 
+// GetApiV2VolumeclassesParams defines parameters for GetApiV2Volumeclasses.
+type GetApiV2VolumeclassesParams struct {
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// GetApiV2VolumesParams defines parameters for GetApiV2Volumes.
+type GetApiV2VolumesParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+
+	// OrganizationID Allows resources to be filtered by organization.
+	OrganizationID *OrganizationIDQueryParameter `form:"organizationID,omitempty" json:"organizationID,omitempty"`
+
+	// ProjectID Allows resources to be filtered by project.
+	ProjectID *ProjectIDQueryParameter `form:"projectID,omitempty" json:"projectID,omitempty"`
+
+	// RegionID Allows resources to be filtered by region.
+	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+
+	// NetworkID Allows resources to be filtered by network.
+	NetworkID *NetworkIDQueryParameter `form:"networkID,omitempty" json:"networkID,omitempty"`
+}
+
 // PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody defines body for PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities for application/json ContentType.
 type PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesJSONRequestBody = IdentityWrite
 
@@ -1922,8 +2173,17 @@ type PostApiV2ServersJSONRequestBody = ServerV2Create
 // PutApiV2ServersServerIDJSONRequestBody defines body for PutApiV2ServersServerID for application/json ContentType.
 type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
 
+// PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody defines body for PostApiV2ServersServerIDProviderCreateGates for application/json ContentType.
+type PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody = ServerProviderCreateGateAction
+
 // PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
 type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate
 
 // PostApiV2SshcertificateauthoritiesJSONRequestBody defines body for PostApiV2Sshcertificateauthorities for application/json ContentType.
 type PostApiV2SshcertificateauthoritiesJSONRequestBody = SshCertificateAuthorityV2Create
+
+// PostApiV2VolumesJSONRequestBody defines body for PostApiV2Volumes for application/json ContentType.
+type PostApiV2VolumesJSONRequestBody = VolumeV2Create
+
+// PutApiV2VolumesVolumeIDJSONRequestBody defines body for PutApiV2VolumesVolumeID for application/json ContentType.
+type PutApiV2VolumesVolumeIDJSONRequestBody = VolumeV2Update

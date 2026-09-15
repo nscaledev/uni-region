@@ -20,6 +20,7 @@ package openstack
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -51,6 +53,17 @@ type ComputeClient struct {
 	flavorCache *cache.TimeoutCache[[]flavors.Flavor]
 }
 
+// computeMicroversion is the Nova API microversion every compute call is made
+// at. Need at least 2.15 for soft-anti-affinity policy, and at least 2.64 for
+// the new server group interface. Must stay below 2.93: from there Nova sets
+// reimage_boot_volume on every rebuild and the Ironic driver refuses the flag
+// outright, so every baremetal rebuild fails — an upstream defect, unfixed as
+// of 2025.1 and measured there
+// (https://bugs.launchpad.net/nova/+bug/2127017). See the README's rebuild
+// caveats. Pinned by TestComputeMicroversionPin; do not bump without reading
+// both.
+const computeMicroversion = "2.90"
+
 // NewComputeClient provides a simple one-liner to start computing.
 func NewComputeClient(ctx context.Context, provider CredentialProvider, options *unikornv1.RegionOpenstackComputeSpec) (*ComputeClient, error) {
 	providerClient, err := provider.Client(ctx)
@@ -63,9 +76,7 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 		return nil, err
 	}
 
-	// Need at least 2.15 for soft-anti-affinity policy.
-	// Need at least 2.64 for new server group interface.
-	client.Microversion = "2.90"
+	client.Microversion = computeMicroversion
 
 	c := &ComputeClient{
 		options:     options,
@@ -265,7 +276,76 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 		return nil, errors.ErrResourceNotFound
 	}
 
+	// The fault may be empty on a listed ERROR server (Nova up to 2025.2 can
+	// omit it from a list response); the consumer that wants it fetches it via
+	// GetServerFault on the transition into error, so every other read — and
+	// there are two per errored server per cycle, exactly when Nova is degraded —
+	// does not pay a second call.
 	return &result[index], nil
+}
+
+// GetServerFault reads a server by ID for its fault detail, which a list
+// response can omit (Nova up to 2025.2). A missing server maps to
+// ErrResourceNotFound so the caller can tell a deleted server from a failed
+// read.
+func (c *ComputeClient) GetServerFault(ctx context.Context, id string) (*servers.Fault, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
+
+	_, span := traceStart(ctx, "GET /compute/v2/servers/{id}", spanAttributes)
+	defer span.End()
+
+	detailed, err := servers.Get(ctx, c.client, id).Extract()
+	if err != nil {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return nil, errors.ErrResourceNotFound
+		}
+
+		return nil, err
+	}
+
+	return &detailed.Fault, nil
+}
+
+func (c *ComputeClient) GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", serverID),
+		attribute.String("block_storage.volume.id", volumeID),
+	)
+
+	_, span := traceStart(ctx, "GET /compute/v2/servers/{serverID}/os-volume_attachments/{volumeID}", spanAttributes)
+	defer span.End()
+
+	return volumeattach.Get(ctx, c.client, serverID, volumeID).Extract()
+}
+
+func (c *ComputeClient) CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", serverID),
+		attribute.String("block_storage.volume.id", volumeID),
+	)
+
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{serverID}/os-volume_attachments", spanAttributes)
+	defer span.End()
+
+	opts := volumeattach.CreateOpts{
+		VolumeID: volumeID,
+	}
+
+	return volumeattach.Create(ctx, c.client, serverID, opts).Extract()
+}
+
+func (c *ComputeClient) DeleteVolumeAttachment(ctx context.Context, serverID, volumeID string) error {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", serverID),
+		attribute.String("block_storage.volume.id", volumeID),
+	)
+
+	_, span := traceStart(ctx, "DELETE /compute/v2/servers/{serverID}/os-volume_attachments/{volumeID}", spanAttributes)
+	defer span.End()
+
+	return volumeattach.Delete(ctx, c.client, serverID, volumeID).ExtractErr()
 }
 
 func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
@@ -332,6 +412,26 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 	}
 
 	return servers.Reboot(ctx, c.client, id, opts).ExtractErr()
+}
+
+func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options ServerRebuildOptions) (*servers.Server, error) {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+		attribute.String("compute.server.action", "rebuild"),
+		attribute.String("compute.image.id", options.ImageID.String()),
+	)
+
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
+	defer span.End()
+
+	// key_name and user_data are deliberately omitted: Nova preserves the stored
+	// keypair and create-time user data on an omitted field, keeping rebuilt guests
+	// create-equivalent. Updated user data therefore applies on replacement, not
+	// rebuild (Nova accepts user_data on rebuild from microversion 2.57, but
+	// gophercloud's servers.RebuildOpts has no field for it as of v2.10.0).
+	return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{
+		ImageRef: options.ImageID.String(),
+	}).Extract()
 }
 
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {

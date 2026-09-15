@@ -23,10 +23,13 @@ import (
 	"context"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
@@ -40,6 +43,7 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 )
 
 type ExternalNetworkInterface interface {
@@ -165,10 +169,15 @@ type ComputeQuotaInterface interface {
 	UpdateQuotas(ctx context.Context, projectID string) error
 }
 
+type ServerRebuildOptions struct {
+	ImageID regionids.ImageID
+}
+
 type ServerInterface interface {
 	GetServer(ctx context.Context, server *unikornv1.Server) (*servers.Server, error)
 	CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error)
 	DeleteServer(ctx context.Context, id string) error
+	RebuildServer(ctx context.Context, id string, options ServerRebuildOptions) (*servers.Server, error)
 	RebootServer(ctx context.Context, id string, hard bool) error
 	StartServer(ctx context.Context, id string) error
 	StopServer(ctx context.Context, id string) error
@@ -177,16 +186,41 @@ type ServerInterface interface {
 	CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error)
 }
 
+// ServerObservationInterface is the read surface of the server state monitor:
+// the listing read every poll makes, plus the per-ID fault fetch the observer
+// pays only on the transition into error.
+type ServerObservationInterface interface {
+	ServerInterface
+	GetServerFault(ctx context.Context, id string) (*servers.Fault, error)
+}
+
+type VolumeAttachmentInterface interface {
+	GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error)
+	CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error)
+	DeleteVolumeAttachment(ctx context.Context, serverID, volumeID string) error
+}
+
 type ComputeInterface interface {
 	KeypairInterface
 	FlavorInterface
 	ServerGroupInterface
 	ComputeQuotaInterface
-	ServerInterface
+	ServerObservationInterface
+	VolumeAttachmentInterface
 }
 
 type PlacementInterface interface {
 	ResourceProviderAvailable(ctx context.Context, query PlacementResourceProviderQuery) (bool, error)
+}
+
+type VolumeTypeInterface interface {
+	GetVolumeTypes(ctx context.Context) ([]volumetypes.VolumeType, error)
+}
+
+type VolumeInterface interface {
+	GetVolume(ctx context.Context, volume *unikornv1.Volume) (*volumes.Volume, error)
+	CreateVolume(ctx context.Context, volume *unikornv1.Volume, metadata map[string]string) (*volumes.Volume, error)
+	DeleteVolume(ctx context.Context, id string) error
 }
 
 // BaremetalInterface lets the live monitor look up the Ironic node bound to a

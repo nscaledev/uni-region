@@ -59,6 +59,38 @@ Annotations such as `x-hidden` control whether an endpoint appears in
 public-facing generated documentation. They do **not** mean the endpoint is
 outside the canonical API contract.
 
+`GET /api/v2/volumeclasses` is a published inventory endpoint. It follows the
+flat list shape used by file-storage classes: callers can supply the repeatable
+`regionID` query parameter. Each result carries its required Region binding and
+encryption flag, with provider-neutral media and advertised-performance metadata
+when the Region publishes them. Optional minimum and maximum size bounds are
+returned in whole GiB only when configured by the Region operator. A non-empty
+`supportedFlavorIds` value is a typed Region Flavor compatibility allowlist;
+omitted or empty means unrestricted. The public contract deliberately contains
+no Cinder, storage-pool, or other provider-specific fields.
+
+`/api/v2/volumes` is the published lifecycle contract for project-scoped block
+storage. Creation is anchored to a Network and requires a provider-neutral
+VolumeClass ID plus a positive whole-GiB size. Network, class, and size are
+immutable through this API; updates contain resource metadata and tags only.
+Reads expose the requested inputs alongside the Region the volume was
+provisioned in, provider-observed size, the optional timestamp when the current
+attachment was first confirmed, and the standard provisioning and health
+metadata. A Server v2 read also exposes its current desired Volume-keyed
+attachment projection: attachment progress, optional provider-assigned device,
+and a safe message. This is derived status only; it never authorizes provider
+cleanup. The Region handler implements this lifecycle surface.
+
+The File Storage NFS write contract exposes optional, nullable `posixAcl` and
+`atimeUpdateIntervalSeconds` settings. On create and update, omission or explicit
+null resolves to `false` and `0`; PUT never resolves them from prior resource
+state. Read contracts return a complete, non-null NFS representation. Enabling POSIX ACLs may reduce
+metadata performance. Extended POSIX ACLs must be managed over NFSv3. Disabling
+this option does not remove existing ACLs; they may remain enforced. For
+`atimeUpdateIntervalSeconds`, `0` disables read-driven atime updates. A positive
+value updates atime during a read only when the existing atime is older than that
+number of seconds.
+
 Keeping the schema unified matters because it allows:
 
 - one generated client/server contract
@@ -112,8 +144,87 @@ Commit the updated spec files, `config.yaml`, regenerated `schema.go`, and the
 `go.mod`/`go.sum` changes together in one commit so the dependency and its
 schema reference stay in sync.
 
+## Overriding A Referenced Schema's Description
+
+Shared schemas are deliberately generic, so a field that `$ref`s one often wants
+a domain-specific description in its place — `ipv4Address` says "An IPv4
+address", but `loadBalancerV2Status.vipAddress` wants "The provisioned virtual IP
+address". The obvious way to write that does **not** work:
+
+```yaml
+# WRONG: silently discarded, and fails `make validate`
+vipAddress:
+  description: The provisioned virtual IP address.
+  $ref: '#/components/schemas/ipv4Address'
+```
+
+This specification is `openapi: 3.0.3`, and in OpenAPI 3.0 a `$ref` must be the
+only key in its object. Sibling keys are not part of the data model, so
+conformant tooling drops them — `oapi-codegen` emits the *referenced* schema's
+generic description and the override never reaches generated code or published
+documentation. Worse, it fails quietly: the prose looks present in the spec and
+is simply never rendered anywhere.
+
+Since kin-openapi `v0.144.0` this is also a hard failure rather than a silent
+one, which is the behaviour to rely on:
+
+```
+failed to validate spec invalid components:
+  schema "loadBalancerListenerV2": extra sibling fields: [description]
+```
+
+Note that the validator reports only the first offending schema it encounters,
+and map ordering is not stable between runs, so the schema named in the error
+will move around. Fix every occurrence, not just the one reported.
+
+Wrap the reference in a single-member `allOf` instead:
+
+```yaml
+# RIGHT: description is a sibling of allOf, not of $ref
+vipAddress:
+  description: The provisioned virtual IP address.
+  allOf:
+  - $ref: '#/components/schemas/ipv4Address'
+```
+
+This is the standard OpenAPI 3.0 idiom for annotating a reference. It changes
+only the generated doc comment — the generated Go types are identical, because
+`allOf` with a single member resolves to the referenced type.
+
+To find every occurrence in the spec:
+
+```sh
+python3 -c '
+import yaml
+def walk(n, path):
+    if isinstance(n, dict):
+        if "$ref" in n and len(n) > 1:
+            print(".".join(path), sorted(k for k in n if k != "$ref"))
+        for k, v in n.items(): walk(v, path + [str(k)])
+    elif isinstance(n, list):
+        for i, v in enumerate(n): walk(v, path + [str(i)])
+walk(yaml.safe_load(open("pkg/openapi/server.spec.yaml")), [])'
+```
+
+OpenAPI 3.1 removes this restriction and permits `$ref` siblings directly, which
+would make the `allOf` wrapper unnecessary. Moving is blocked on the toolchain
+rather than on the spec: `oapi-codegen` and the `make validate` checker both go
+through kin-openapi, which supports 3.0 only —
+[getkin/kin-openapi#230](https://github.com/getkin/kin-openapi/issues/230) tracks
+3.1 support. When that lands, the migration is to bump `openapi:` to `3.1.0`,
+unwrap every single-member `allOf` back to a bare `$ref` with its sibling
+`description`, and regenerate.
+
+Renderer support for `allOf` varies. If the published API documentation ever
+shows a generic description where an override is expected, this section is the
+first place to look.
+
 ## Invariants And Guard Rails
 
+- a `description` may never be a sibling of a `$ref`; wrap the reference in a
+  single-member `allOf` — see
+  [Overriding A Referenced Schema's Description](#overriding-a-referenced-schemas-description)
+  above
 - `server.spec.yaml` is the source of truth; generated code is derivative
 - the service runtime depends on the embedded schema, not only on generated Go
   interfaces
@@ -155,12 +266,24 @@ fully encoded here:
 - some `v2` resources are clearly documented for publication, while others such
   as many server operations remain hidden; readers should not assume version
   number alone determines visibility
+- the published VolumeClass route is backed by provider-neutral Region
+  discovery; repeated Region filters act as selectors over the visible Region
+  set, so missing or inaccessible Regions are omitted and the response can be
+  empty or partial;
+  capacity bounds and supported Flavor allowlists are independently optional
+  and omitted from responses when the Region operator has not configured them;
+  its metadata uses core's `staticResourceMetadata`, matching Flavor inventory;
+  because the provider model supplies no creation time, the generated response
+  retains the same zero-value timestamp behaviour as Flavor
 - the main value of `v2` is not just shorter paths. It is the shift toward a
   relationship-driven API shape where surrounding tenancy and placement context
   can often be inferred from the addressed resource graph
 - preserving read/modify/write ergonomics in `v2` does not mean every field is
   always mutable. Some create-time choices are intentionally immutable later and
   are reflected back through read-only/status fields instead
+- the Volume lifecycle routes are published before their handlers; generated
+  unimplemented methods return `501 Not Implemented` until the handler slice is
+  added
 - because generated code dominates the package by line count, it is easy to
   under-document the package even though it is architecturally central
 - if higher-level documentation drifts from the schema, this package is where

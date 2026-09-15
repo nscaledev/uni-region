@@ -43,9 +43,12 @@ packages are the concrete provider implementations.
 - `types.CommonProvider` is the minimum substrate contract:
   - return the effective `Region`
   - return allocatable `Flavor` inventory
+  - return Region-scoped `VolumeClass` inventory, including optional
+    operator-authored capacity bounds and supported Flavor allowlists
 - `types.Provider` extends that common base with the broader image, identity,
-  network, security-group, load-balancer, server, console, and snapshot
-  lifecycle surfaces.
+  network, security-group, load-balancer, volume, server, console, and snapshot
+  lifecycle surfaces. The server surface includes attaching and detaching an
+  existing Region `Volume`; attachment intent remains owned by the `Server`.
 - The provider abstraction is intentionally mixed:
   - CRD-backed lifecycle operations still speak in repo-native
     `pkg/apis/unikorn/v1alpha1` resource types
@@ -58,6 +61,31 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
+- `types.Volume` is the focused create/delete/state-update capability embedded in the full
+  `types.Provider` contract and consumed through `LookupCloud` by the Volume
+  controller. Discovery-only providers remain on `types.CommonProvider` and do
+  not implement workload lifecycle:
+  - lifecycle intent is the native Region `Volume` CRD
+  - provider implementations rediscover their backing object internally before
+    create, delete, or state update; `UpdateVolumeState` mutates the CRD status
+    without exposing provider SDK types
+  - create success means the rediscovered backing volume is usable, not merely
+    that an asynchronous provider request was accepted. Providers return
+    `provisioners.ErrYield` while creation is still converging and a safe typed
+    terminal provisioning error when the backing object has entered an
+    unrecoverable error state
+  - delete success means rediscovery confirms the backing volume is absent, not
+    merely that an asynchronous provider request was accepted. Accepted delete
+    requests return `provisioners.ErrYield` so allocation cleanup and finalizer
+    removal wait for provider convergence
+  - `UpdateVolumeState` projects observed size and health directly onto the
+    native Region `Volume` status for the Volume monitor
+  - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
+    client/request failures remain Go errors, while successfully observed
+    provider `error` and unrecognized/empty `unknown` lifecycle values remain
+    successful observations
+  - VolumeClass inventory remains on `CommonProvider`, and server
+    attach/detach is a separate capability
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or
@@ -71,10 +99,35 @@ packages are the concrete provider implementations.
     consumers are gone: at delete time it is either realized-and-complete or
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
+- `DetachVolume` follows the same absent-means-converged teardown rule: a
+  missing provider server, volume, or attachment is success. `AttachVolume`
+  instead requires both backing resources and reports semantic not-found when
+  either is absent. Concrete provider conflicts are normalized to the shared
+  conflict sentinel; provider failures that are neither not-found nor conflict
+  remain available to callers for diagnosis.
 - Providers must tolerate changing backing credentials and region state rather
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part
   of the provider contract, not incidental operational concerns.
+- Substrate health is a per-region concern, never a process-wide one. `New`
+  initializes every region's provider at startup, but a region that fails to
+  initialize is logged and skipped rather than failing the call:
+  - provider construction authenticates against a remote cloud, so failing the
+    call would let one region's outage decide whether the process runs at all,
+    taking every healthy region down with it and blocking deploys until somebody
+    else's substrate was repaired
+  - a startup check is also the wrong moment to establish substrate health,
+    because it is a runtime property: credentials and certificates can expire
+    while the process is up, where construction-time validation neither prevents
+    nor detects the failure
+  - a skipped region is in the same state as one created after startup: absent
+    from the cache, and retried on demand at the next lookup, so it recovers
+    without a restart
+  - the failure is not remembered, so a region whose substrate is permanently
+    misconfigured is re-initialized on every lookup. That is the accepted cost
+    of self-healing without a restart
+  - callers that want startup to gate on more than this own that policy
+    themselves; see `Options.WarmImageCache`
 - The provider layer is allowed to carry compensating local mechanisms where the
   underlying substrate is insufficient on its own:
   - OpenStack image caching exists because raw image API behaviour is too slow
@@ -93,6 +146,8 @@ packages are the concrete provider implementations.
   - it implements the full `types.Provider` contract
   - it prefers deterministic lookup against OpenStack over broad mirrored CRD
     state
+  - it resolves existing Cinder volumes and realizes server-owned attachment
+    intent through Nova volume-attachment create/delete operations
   - it still carries a shrinking amount of persisted provider state via
     `OpenstackIdentity`
 - [./internal/kubernetes](./internal/kubernetes/README.md) currently implements
@@ -100,11 +155,17 @@ packages are the concrete provider implementations.
   - it exposes a Kubernetes-backed region as a cloud-like substrate
   - it exports curated node-class-backed flavor inventory for higher layers that
     can consume the normal region shape
+  - it returns empty block-storage `VolumeClass` inventory because the
+    Kubernetes-backed substrate does not currently expose a Region block-storage
+    class surface
 - [./internal/simulated](./internal/simulated/README.md) implements the full
   interface in contract-shaped but deliberately incomplete form:
   - it exists to push broad integration coverage left
   - it is useful for deterministic load, race, and bottleneck testing at higher
     layers without requiring a real cloud deployment
+  - volume create and server volume attach/detach are currently explicit
+    unsupported behavior; volume delete is an idempotent no-op because the
+    simulated provider cannot create backing volume state
 
 ## Caveats
 

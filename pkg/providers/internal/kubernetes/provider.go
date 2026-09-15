@@ -194,3 +194,8 @@ func (p *Provider) Flavors(ctx context.Context) (types.FlavorList, error) {
 
 	return flavors, nil
 }
+
+// VolumeClasses returns block-storage inventory for this region.
+func (p *Provider) VolumeClasses(_ context.Context) (types.VolumeClassList, error) {
+	return types.VolumeClassList{}, nil
+}

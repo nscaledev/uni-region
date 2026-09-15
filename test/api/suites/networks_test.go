@@ -129,7 +129,10 @@ var _ = Describe("Network Management", func() {
 				got, err := regionClient.GetNetwork(ctx, networkID)
 				Expect(err).NotTo(HaveOccurred())
 
-				updatedName := networkName + "-upd"
+				// A fresh unique name stays within the 63-character resource-name
+				// limit; appending to networkName overflows it when the local run
+				// prefix is long.
+				updatedName := api.UniqueName("network-upd")
 				updateReq := regionopenapi.NetworkV2Update{
 					Metadata: coreapi.ResourceWriteMetadata{
 						Name:        updatedName,
@@ -168,7 +171,7 @@ var _ = Describe("Network Management", func() {
 						Skip("No network ID available - create step may have been skipped or failed")
 					}
 
-					Expect(regionClient.DeleteNetwork(ctx, networkID)).To(Succeed())
+					api.MustDeleteNetwork(regionClient, ctx, networkID)
 
 					GinkgoWriter.Printf("Deleted network: %s\n", networkID)
 					deletedNetworkID = networkID
@@ -198,9 +201,7 @@ var _ = Describe("Network Management", func() {
 		AfterAll(func() {
 			if networkID != "" {
 				GinkgoWriter.Printf("Cleaning up network: %s\n", networkID)
-				if err := regionClient.DeleteNetwork(ctx, networkID); err != nil && !errors.Is(err, coreclient.ErrResourceNotFound) {
-					GinkgoWriter.Printf("Warning: cleanup delete network %s: %v\n", networkID, err)
-				}
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			}
 		})
 	})
@@ -245,7 +246,7 @@ var _ = Describe("Network Management", func() {
 			networkID = created.Metadata.Id
 			DeferCleanup(func() {
 				GinkgoWriter.Printf("Cleaning up cross-org isolation network fixture: %s\n", networkID)
-				_ = regionClient.DeleteNetwork(ctx, networkID)
+				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			})
 			GinkgoWriter.Printf("Created network fixture for cross-org isolation test: %s\n", networkID)
 		})

@@ -69,6 +69,15 @@ jobs:
     - name: Run API integration tests
       run: make test-api-ci
 
+    - name: Capture Region diagnostics
+      if: failure()
+      env:
+        REGION_NAMESPACE: unikorn-region-${{ steps.rand.outputs.suffix }}
+      run: |
+        mkdir -p test-artifacts
+        kubectl -n "$REGION_NAMESPACE" get all -o yaml > test-artifacts/region-resources.yaml || true
+        kubectl -n "$REGION_NAMESPACE" logs -l 'app' --all-containers --prefix --tail=-1 > test-artifacts/region-logs.txt || true
+
     - name: Upload test artifacts
       if: failure()
       uses: actions/upload-artifact@v4
@@ -77,3 +86,4 @@ jobs:
         path: |
           junit.xml
           test-results.json
+          test-artifacts/

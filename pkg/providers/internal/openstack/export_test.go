@@ -23,8 +23,10 @@ import (
 	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
@@ -48,8 +50,20 @@ func NewImageQuery(listFunc func() (*cache.ListSnapshot[types.Image], error)) ty
 	return &imageQuery{listFunc: listFunc}
 }
 
+func ConvertImage(image *images.Image) (*types.Image, error) {
+	return convertImage(image, types.X86_64)
+}
+
+func ConvertImageForRegion(image *images.Image, region *unikornv1.Region) (*types.Image, error) {
+	return convertImage(image, openstackDefaultArchitecture(region))
+}
+
+func ConvertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.FlavorList {
+	return convertFlavors(resources, region)
+}
+
 //nolint:gochecknoglobals
-var ConvertImage = convertImage
+var ConvertVolumeClasses = convertVolumeClasses
 
 //nolint:gochecknoglobals
 var GatewayIP = gatewayIP
@@ -105,6 +119,10 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+	return reconcileServerImage(ctx, client, server, openstackServer)
+}
+
 //nolint:gochecknoglobals
 var PlacementAPIMicroversion = placementAPIMicroversion
 
@@ -144,6 +162,17 @@ func NewTestComputeClient(endpoint string) *ComputeClient {
 			Endpoint:       endpoint,
 		},
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
+	}
+}
+
+func NewTestBlockStorageClient(endpoint string, options *unikornv1.RegionOpenstackBlockStorageSpec) *BlockStorageClient {
+	return &BlockStorageClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		options:         options,
+		volumeTypeCache: cache.New[[]volumetypes.VolumeType](time.Hour),
 	}
 }
 
@@ -230,6 +259,18 @@ func ReconcileNetwork(ctx context.Context, p *Provider, client NetworkInterface,
 	return p.reconcileNetwork(ctx, client, network)
 }
 
+func ReconcileVolume(ctx context.Context, client VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
+	return reconcileVolume(ctx, client, identity, volume)
+}
+
+func UpdateVolumeStateWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
+	return updateVolumeState(ctx, client, volume)
+}
+
+func DeleteVolumeWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
+	return deleteVolume(ctx, client, volume)
+}
+
 func ReconcileSubnet(ctx context.Context, p *Provider, client SubnetInterface, network *unikornv1.Network, openstackNetwork *NetworkExt) (*subnets.Subnet, error) {
 	return p.reconcileSubnet(ctx, client, network, openstackNetwork)
 }
@@ -272,6 +313,29 @@ func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, s
 
 func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
 	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
+}
+
+// ReconcileServerForCreate exercises the CreateServer copy-back semantics:
+// the augmented copy is snapshotted, reconciled, and its status copied back
+// onto the caller's server whenever the two differ.
+func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string) error {
+	return p.reconcileServerForCreate(ctx, client, server, options, port, keyName, nil)
+}
+
+// CreateServerWithClients exercises the client-independent core of
+// CreateServer — port and floating IP reconciliation (which write status onto
+// the caller's server) followed by the augmented-copy reconcile and status
+// copy-back — pinning the production interleaving of those steps.
+func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) error {
+	return p.createServer(ctx, networking, compute, server, options, keyName, nil)
+}
+
+func AttachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
+	return attachVolume(ctx, compute, blockStorage, server, volume)
+}
+
+func DetachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) error {
+	return detachVolume(ctx, compute, blockStorage, server, volume)
 }
 
 func ResolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {

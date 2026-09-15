@@ -27,6 +27,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/options"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	serverhealth "github.com/unikorn-cloud/region/pkg/monitor/health/server"
+	volumehealth "github.com/unikorn-cloud/region/pkg/monitor/health/volume"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -83,6 +84,7 @@ func Run(ctx context.Context, c client.Client, o *Options) error {
 
 	checkers := []Checker{
 		serverhealth.New(c, o.CoreOptions.Namespace, providerCache, serverMetrics),
+		volumehealth.New(c, o.CoreOptions.Namespace, providerCache),
 	}
 
 	for {

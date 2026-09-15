@@ -18,9 +18,11 @@ limitations under the License.
 package server
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
+	goerrors "errors"
 	"fmt"
 	"net"
 	"reflect"
@@ -31,19 +33,22 @@ import (
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
+	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	principal "github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
+	identityutil "github.com/unikorn-cloud/identity/pkg/util"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
-	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
@@ -53,13 +58,17 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/userdata"
 
+	kcorev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+const providerCreateGatesEndpoint = "region:servers:v2/provider-create-gates"
 
 type ClientV2 struct {
 	*Client
@@ -78,6 +87,82 @@ func (c *ClientV2) getProvider(regionID string) (types.Provider, error) {
 	}
 
 	return provider, nil
+}
+
+func (c *ClientV2) validateUpdatedImage(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if current.Spec.Image != nil && current.Spec.Image.ID == request.Spec.ImageId {
+		return nil
+	}
+
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	organizationID, _, err := current.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	// The flavor is immutable (enforced by validateServerUpdate before this
+	// runs), so the request's flavor is the server's flavor and the update-path
+	// flavor-miss policy applies.
+	return validateServerImageForUpdate(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+}
+
+// validateCreateImage enforces the image contract on the create path: the
+// image must exist and be visible to the organization, be Ready, and be
+// architecture/disk/virtualization compatible with the requested flavor. It
+// mirrors validateUpdatedImage so create and update enforce a single contract
+// for imageId.
+func (c *ClientV2) validateCreateImage(ctx context.Context, network *regionv1.Network, request *openapi.ServerV2Create) error {
+	provider, err := c.getProvider(network.Labels[constants.RegionLabel])
+	if err != nil {
+		return err
+	}
+
+	organizationID, _, err := network.OrganizationAndProjectID()
+	if err != nil {
+		return err
+	}
+
+	return validateServerImageForCreate(ctx, provider, organizationID, request.Spec.ImageId, request.Spec.FlavorId)
+}
+
+// userDataChanged reports whether an update request would change the persisted
+// user-data. An omitted field (nil) matches only an absent stored value;
+// byte-identical payloads are unchanged.
+func userDataChanged(current []byte, request *[]byte) bool {
+	if request == nil {
+		return len(current) != 0
+	}
+
+	return !bytes.Equal(current, *request)
+}
+
+// validateUpdatedUserData applies the same boundary validation as create, but
+// only when the update would change the persisted user-data — unchanged
+// payloads are never re-validated, so legacy servers whose stored payloads
+// predate validation keep working when a client PUTs the same bytes back. The
+// CA-awareness flag derives from the server's current SSH certificate
+// authority because updates preserve the CA chosen at create time.
+func validateUpdatedUserData(current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if !userDataChanged(current.Spec.UserData, request.Spec.UserData) {
+		return nil
+	}
+
+	return userdata.Validate(request.Spec.UserData, current.Spec.SSHCertificateAuthorityID != nil)
+}
+
+// validateUpdateV2Request runs the update-path validations that need the
+// parent network or the current resource: the image contract shared with
+// create, and re-validation of changed user-data.
+func (c *ClientV2) validateUpdateV2Request(ctx context.Context, network *regionv1.Network, current *regionv1.Server, request *openapi.ServerV2Update) error {
+	if err := c.validateUpdatedImage(ctx, network, current, request); err != nil {
+		return err
+	}
+
+	return validateUpdatedUserData(current, request)
 }
 
 func convertSecurityGroupsV2(in []regionv1.ServerSecurityGroupSpec) *openapi.ServerV2SecurityGroupIDList {
@@ -130,29 +215,6 @@ func convertNetworkingV2(in *regionv1.Server) *openapi.ServerV2Networking {
 	return &out
 }
 
-func convertPowerStateV2(in regionv1.InstanceLifecyclePhase) *openapi.InstanceLifecyclePhase {
-	if in == "" {
-		return nil
-	}
-
-	switch in {
-	case regionv1.InstanceLifecyclePhasePending:
-		return ptr.To(openapi.InstanceLifecyclePhasePending)
-	case regionv1.InstanceLifecyclePhaseQueued:
-		return ptr.To(openapi.InstanceLifecyclePhaseQueued)
-	case regionv1.InstanceLifecyclePhaseBuilding:
-		return ptr.To(openapi.InstanceLifecyclePhaseBuilding)
-	case regionv1.InstanceLifecyclePhaseRunning:
-		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
-	case regionv1.InstanceLifecyclePhaseStopping:
-		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
-	case regionv1.InstanceLifecyclePhaseStopped:
-		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
-	}
-
-	return nil
-}
-
 func resolveSSHInjection(in *openapi.SshInjection, sshCertificateAuthorityID *string) regionv1.ServerSSHInjection {
 	if in != nil {
 		return regionv1.ServerSSHInjection(*in)
@@ -171,6 +233,57 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
+func convertRemainingProviderCreateGates(in *regionv1.Server) *openapi.ServerRemainingProviderCreateGates {
+	remaining := in.RemainingProviderCreateGates()
+	out := make(openapi.ServerRemainingProviderCreateGates, len(remaining))
+
+	copy(out, remaining)
+
+	return &out
+}
+
+func appendVolumeStatuses(in *regionv1.Server, out *openapi.ServerV2VolumeStatusList) error {
+	if len(in.Status.Volumes) == 0 {
+		return nil
+	}
+
+	for _, status := range in.Status.Volumes {
+		volumeID, err := regionids.ParseVolumeID(status.ID)
+		if err != nil {
+			return err
+		}
+
+		item := openapi.ServerV2VolumeStatus{
+			Id:                 volumeID,
+			ProvisioningStatus: convertVolumeProvisioningStatus(status.ProvisioningStatus),
+			Device:             status.Device,
+		}
+
+		if status.Message != "" {
+			item.Message = ptr.To(status.Message)
+		}
+
+		*out = append(*out, item)
+	}
+
+	return nil
+}
+
+func convertVolumeProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
+	switch in {
+	case regionv1.AttachmentProvisioning:
+		return coreopenapi.ResourceProvisioningStatusProvisioning
+	case regionv1.AttachmentProvisioned:
+		return coreopenapi.ResourceProvisioningStatusProvisioned
+	case regionv1.AttachmentErrored:
+		return coreopenapi.ResourceProvisioningStatusError
+	case regionv1.AttachmentDeprovisioning:
+		return coreopenapi.ResourceProvisioningStatusDeprovisioning
+	default:
+		return coreopenapi.ResourceProvisioningStatusPending
+	}
+}
+
 func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 	imageID, err := in.ImageID()
 	if err != nil {
@@ -182,8 +295,15 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 		return nil, err
 	}
 
+	var volumes openapi.ServerV2VolumeStatusList
+	if err := appendVolumeStatuses(in, &volumes); err != nil {
+		return nil, err
+	}
+
+	metadata := serverReadMetadata(in)
+
 	out := &openapi.ServerV2Read{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
+		Metadata: metadata,
 		Spec: openapi.ServerV2Spec{
 			FlavorId:   in.Spec.FlavorID,
 			ImageId:    imageID,
@@ -191,16 +311,21 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			UserData:   convertUserData(in.Spec.UserData),
 		},
 		Status: openapi.ServerV2Status{
-			RegionId:                  regionID,
-			NetworkId:                 in.Spec.Networks[0].ID,
-			SshCertificateAuthorityId: in.Spec.SSHCertificateAuthorityID,
-			SshInjection:              sshInjectionStatus(in),
-			InfrastructureRef:         in.Spec.InfrastructureRef,
-			PowerState:                convertPowerStateV2(in.Status.Phase),
-			PrivateIP:                 in.Status.PrivateIP,
-			PublicIP:                  in.Status.PublicIP,
-			MacAddress:                in.Status.MACAddress,
+			RegionId:                     regionID,
+			NetworkId:                    in.Spec.Networks[0].ID,
+			SshCertificateAuthorityId:    in.Spec.SSHCertificateAuthorityID,
+			SshInjection:                 sshInjectionStatus(in),
+			InfrastructureRef:            in.Spec.InfrastructureRef,
+			PowerState:                   serverPowerState(in),
+			PrivateIP:                    in.Status.PrivateIP,
+			PublicIP:                     in.Status.PublicIP,
+			MacAddress:                   in.Status.MACAddress,
+			RemainingProviderCreateGates: convertRemainingProviderCreateGates(in),
 		},
+	}
+
+	if len(volumes) > 0 {
+		out.Status.Volumes = &volumes
 	}
 
 	return out, nil
@@ -312,6 +437,22 @@ func generateUserData(in *[]byte) []byte {
 	return *in
 }
 
+func generateProviderCreateGates(in *openapi.ServerProviderCreateGates) []regionv1.ServerProviderCreateGate {
+	if in == nil || len(*in) == 0 {
+		return nil
+	}
+
+	out := make([]regionv1.ServerProviderCreateGate, len(*in))
+
+	for i, gate := range *in {
+		out[i] = regionv1.ServerProviderCreateGate{
+			ConditionType: gate.ConditionType,
+		}
+	}
+
+	return out
+}
+
 func (c *ClientV2) validateSSHCertificateAuthorityReference(ctx context.Context, scope identityids.ProjectScopeReader, sshCertificateAuthorityID *string) error {
 	if sshCertificateAuthorityID == nil {
 		return nil
@@ -394,7 +535,12 @@ func (c *ClientV2) validateSecurityGroupReferences(ctx context.Context, networkI
 	return nil
 }
 
-func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regionID, flavorID string, infrastructureRef *string) error {
+// validateInfrastructureRefForFlavor rejects a request that omits an
+// infrastructureRef when the flavor demands one. It only runs on the create
+// path, so a flavor the region no longer offers gets the create-path miss
+// policy: the same 422 as validateServerImageForCreate, rather than silently
+// passing the pinned-only gate.
+func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regionID string, flavorID regionids.FlavorID, infrastructureRef *string) error {
 	if infrastructureRef != nil {
 		return nil
 	}
@@ -404,20 +550,23 @@ func (c *ClientV2) validateInfrastructureRefForFlavor(ctx context.Context, regio
 		return err
 	}
 
-	flavors, err := provider.Flavors(ctx)
+	flavor, err := flavorByID(ctx, provider, flavorID)
 	if err != nil {
+		if goerrors.Is(err, coreerrors.ErrResourceNotFound) {
+			return errors.HTTPUnprocessableContent("flavor is no longer offered by the region").WithError(err)
+		}
+
 		return err
 	}
 
-	i := slices.IndexFunc(flavors, func(f types.Flavor) bool { return f.ID == flavorID })
-	if i >= 0 && flavors[i].PinnedOnly {
+	if flavor.PinnedOnly {
 		return errors.HTTPUnprocessableContent("flavor requires infrastructureRef to be set")
 	}
 
 	return nil
 }
 
-func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string, sshInjection regionv1.ServerSSHInjection) (*regionv1.Server, error) {
+func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, in *openapi.ServerV2Update, network *regionv1.Network, sshCertificateAuthorityID *string, infrastructureRef *string, sshInjection regionv1.ServerSSHInjection, providerCreateGates []regionv1.ServerProviderCreateGate) (*regionv1.Server, error) {
 	networkID, err := network.NetworkID()
 	if err != nil {
 		return nil, err
@@ -448,6 +597,7 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.Or
 			SSHCertificateAuthorityID: sshCertificateAuthorityID,
 			SSHInjection:              ptr.To(sshInjection),
 			InfrastructureRef:         infrastructureRef,
+			ProviderCreateGates:       providerCreateGates,
 			UserData:                  generateUserData(in.Spec.UserData),
 		},
 	}
@@ -533,7 +683,8 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 // create: SSH injection mode compatibility, that any user-data is well-formed
 // cloud-init, that any referenced SSH certificate authority shares the server's
 // organization and project, that any referenced security group belongs to the
-// server's network, and the infrastructure reference requirements of the
+// server's network, that the requested image is Ready and compatible with the
+// requested flavor, and the infrastructure reference requirements of the
 // requested flavor.
 func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi.ServerV2Create, network *regionv1.Network) error {
 	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
@@ -557,49 +708,21 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 		return err
 	}
 
-	return c.validateInfrastructureRefForFlavor(ctx, network.Labels[constants.RegionLabel], request.Spec.FlavorId.String(), request.Spec.InfrastructureRef)
+	if err := c.validateCreateImage(ctx, network, request); err != nil {
+		return err
+	}
+
+	return c.validateInfrastructureRefForFlavor(ctx, network.Labels[constants.RegionLabel], request.Spec.FlavorId, request.Spec.InfrastructureRef)
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
-	if err != nil {
+	s := &createV2Saga{client: c, request: request}
+
+	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
 
-	organizationID, projectID, err := network.OrganizationAndProjectID()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	if err := c.validateCreateV2Request(ctx, request, network); err != nil {
-		return nil, err
-	}
-
-	commonRequest, err := convertCreateToUpdateRequest(request)
-	if err != nil {
-		return nil, err
-	}
-
-	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
-
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef, sshInjection)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.Client.Client.Create(ctx, resource); err != nil {
-		if kerrors.IsAlreadyExists(err) {
-			return nil, errors.HTTPConflict()
-		}
-
-		return nil, fmt.Errorf("%w: unable to create server", err)
-	}
-
-	return convertV2(resource)
+	return convertV2(s.server)
 }
 
 func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
@@ -644,60 +767,30 @@ func (c *ClientV2) GetV2(ctx context.Context, serverID regionids.ServerID) (*ope
 	return convertV2(result)
 }
 
-func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
-	current, err := c.GetV2Raw(ctx, serverID.String())
-	if err != nil {
-		return nil, err
-	}
-
-	organizationID, projectID, err := current.OrganizationAndProjectID()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, "region:servers", identityapi.Update, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
+func validateServerUpdate(current *regionv1.Server, request *openapi.ServerV2Update) error {
 	if current.DeletionTimestamp != nil {
-		return nil, errors.OAuth2InvalidRequest("server is being deleted")
+		return errors.OAuth2InvalidRequest("server is being deleted")
 	}
 
 	if request.Metadata.Name != current.Labels[coreconstants.NameLabel] {
-		return nil, errors.HTTPUnprocessableContent("server names are immutable")
+		return errors.HTTPUnprocessableContent("server names are immutable")
 	}
 
-	// Security groups are mutable, so re-validate that every referenced group still
-	// belongs to the server's network. The SSH certificate authority and
-	// infrastructure reference are immutable, so they keep the scope validated at
-	// create time.
-	if err := c.validateSecurityGroupReferences(ctx, current.Labels[constants.NetworkLabel], request.Spec.Networking); err != nil {
+	if request.Spec.FlavorId != current.Spec.FlavorID {
+		return errors.HTTPUnprocessableContent("server flavor is immutable")
+	}
+
+	return nil
+}
+
+func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
+	s := &updateV2Saga{client: c, serverID: serverID, request: request}
+
+	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
 
-	// Get the network, required for generation.
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID.String())
-	if err != nil {
-		return nil, err
-	}
-
-	// User data is only consumed during initial server bootstrap. Updates preserve it for
-	// completeness and future rebuild support, but they do not re-run cloud-init validation.
-	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection())
-	if err != nil {
-		return nil, err
-	}
-
-	updated := current.DeepCopy()
-	updated.Labels = required.Labels
-	updated.Annotations = required.Annotations
-	updated.Spec = required.Spec
-
-	if err := c.Client.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
-		return nil, fmt.Errorf("%w: unable to update server", err)
-	}
-
-	return convertV2(updated)
+	return convertV2(s.updated)
 }
 
 func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) error {
@@ -717,6 +810,99 @@ func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) er
 
 		return fmt.Errorf("%w: unable to delete server", err)
 	}
+
+	return nil
+}
+
+func providerCreateGateActor(ctx context.Context) (string, error) {
+	if certPEM, err := authorization.ClientCertFromContext(ctx); err == nil {
+		certificate, err := identityutil.GetClientCertificate(certPEM)
+		if err != nil {
+			return "", err
+		}
+
+		if certificate.Subject.CommonName != "" {
+			return certificate.Subject.CommonName, nil
+		}
+	}
+
+	info, err := authorization.FromContext(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if info.Userinfo != nil && info.Userinfo.Sub != "" {
+		return info.Userinfo.Sub, nil
+	}
+
+	if info.ClientID != "" {
+		return info.ClientID, nil
+	}
+
+	return "", fmt.Errorf("%w: provider-create gate actor is not defined", coreerrors.ErrInvalidContext)
+}
+
+func providerCreateGateActionChanged(current *regionv1.Server, conditionType, actor, reason, message string) bool {
+	status, ok := current.ProviderCreateGateStatusRead(conditionType)
+	if !ok {
+		return true
+	}
+
+	return status.Status != kcorev1.ConditionTrue ||
+		status.Actor != actor ||
+		status.Reason != reason ||
+		status.Message != message
+}
+
+func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
+	if request.ConditionType == "" {
+		return errors.OAuth2InvalidRequest("conditionType must be specified")
+	}
+
+	if request.Reason == "" {
+		return errors.OAuth2InvalidRequest("reason must be specified")
+	}
+
+	if request.Message == "" {
+		return errors.OAuth2InvalidRequest("message must be specified")
+	}
+
+	current, err := c.GetV2Raw(ctx, serverID.String())
+	if err != nil {
+		return err
+	}
+
+	if err := rbac.AllowProjectScopeReader(ctx, providerCreateGatesEndpoint, identityapi.Update, current); err != nil {
+		return err
+	}
+
+	conditionType := request.ConditionType
+	if !current.ProviderCreateGateConfigured(conditionType) {
+		return errors.HTTPUnprocessableContent("conditionType is not configured for this server")
+	}
+
+	actor, err := providerCreateGateActor(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
+	}
+
+	changed := providerCreateGateActionChanged(current, conditionType, actor, request.Reason, request.Message)
+
+	if changed {
+		updated := current.DeepCopy()
+		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message)
+
+		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("%w: unable to satisfy provider-create gate", err)
+		}
+	}
+
+	log.FromContext(ctx).Info("server provider-create gate satisfied",
+		"server", serverID.String(),
+		"conditionType", conditionType,
+		"actor", actor,
+		"reason", request.Reason,
+		"changed", changed)
 
 	return nil
 }

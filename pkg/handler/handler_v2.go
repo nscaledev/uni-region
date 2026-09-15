@@ -26,8 +26,76 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/loadbalancer"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/storage"
+	"github.com/unikorn-cloud/region/pkg/handler/volume"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
+
+func (h *Handler) volumeClient() *volume.Client {
+	return volume.New(h.ClientArgs)
+}
+
+func (h *Handler) GetApiV2Volumes(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2VolumesParams) {
+	result, err := h.volumeClient().ListV2(r.Context(), params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PostApiV2Volumes(w http.ResponseWriter, r *http.Request) {
+	request := &openapi.VolumeV2Create{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.volumeClient().CreateV2(r.Context(), request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
+}
+
+func (h *Handler) GetApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID openapi.VolumeIDParameter) {
+	result, err := h.volumeClient().GetV2(r.Context(), volumeID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) PutApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID openapi.VolumeIDParameter) {
+	request := &openapi.VolumeV2Update{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.volumeClient().UpdateV2(r.Context(), volumeID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) DeleteApiV2VolumesVolumeID(w http.ResponseWriter, r *http.Request, volumeID openapi.VolumeIDParameter) {
+	if err := h.volumeClient().DeleteV2(r.Context(), volumeID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
 
 func (h *Handler) GetApiV2Networks(w http.ResponseWriter, r *http.Request, params openapi.GetApiV2NetworksParams) {
 	result, err := h.networkClient().ListV2(r.Context(), params)

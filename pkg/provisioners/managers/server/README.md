@@ -7,6 +7,8 @@ Distinctive behaviour:
 - maintains explicit reference edges from a server to consumed networks,
   security groups, and optional SSH certificate authority
 - blocks on identity readiness before provider create/delete
+- blocks provider create while any configured `providerCreateGates` remain
+  unsatisfied
 - preflight checks may still yield inside the provider, after other
   validation succeeds; those checks are transient and are not recorded
   as lifecycle transitions
@@ -17,9 +19,32 @@ Distinctive behaviour:
   reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
 
+Create recovery and image rebuild recovery deliberately use different state:
+
+| Initial create failure | Image rebuild failure |
+|---|---|
+| Server never launched | Server previously launched |
+| Delete/recreate, bounded by the existing flag | Nothing to recover |
+| `ProviderCreateFailures` | No persisted state |
+| Exhaustion is operator-terminal | The failure surfaces on the monitor's lifecycle axis |
+| Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | No wake needed: `ErrYield` requeues on a timer |
+
+The image reconcile lives in the OpenStack provider's existing-server path and
+leaves the create retry counter and predicate code untouched. It decides only from
+the fresh provider read; see the provider README for the row-by-row pass order.
+
+Settlement for the create path is watch-predicate-driven (`pkg/managers/server`)
+over a helper exported from this package: `providerCreateFailureUpdate` over
+`ProviderCreateFailure` wakes the reconciler to run the bounded delete-and-retry.
+That helper is genuinely shared — the provisioner makes the delete-and-retry
+decision through the same function the watch predicate fires on, so the trigger and
+the action cannot drift.
+
 This is the clearest controller-side expression of the lifecycle DAG model:
 
 - network/security-group/SSH-CA edges are explicit and blocking
+- provider-create gates are pre-provider-create coordination points; they delay
+  provider create but are not deletion blockers
 - provider-side server lifecycle is delegated
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material

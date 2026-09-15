@@ -289,6 +289,13 @@
               "endpoint": {
                 "type": "string"
               },
+              "defaultArchitecture": {
+                "type": "string",
+                "enum": [
+                  "x86_64",
+                  "aarch64"
+                ]
+              },
               "serviceAccountSecret": {
                 "type": "object",
                 "required": [
@@ -510,6 +517,28 @@
                           "properties": {
                             "id": {
                               "type": "string"
+                            },
+                            "supportedFlavors": {
+                              "type": "object",
+                              "properties": {
+                                "ids": {
+                                  "type": "array",
+                                  "uniqueItems": true,
+                                  "items": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                                  }
+                                }
+                              }
+                            },
+                            "minimumSizeGiB": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "maximumSizeGiB": {
+                              "type": "integer",
+                              "minimum": 1
                             },
                             "media": {
                               "type": "string",

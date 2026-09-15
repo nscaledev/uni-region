@@ -28,8 +28,10 @@ accounting meet.
   storage-range information
 - attachment parallelism is capped to the usable network storage range; smaller
   non-empty storage ranges are accepted and used in full
-- attachment status rows follow desired attachments, then project observed
-  attachment provisioning state and API-safe mount options when available
+- attachment status rows are the union of desired and observed attachments keyed
+  on network ID, so networks removed from the desired spec remain visible while
+  they are still attached; each row projects observed attachment provisioning
+  state and API-safe mount options when available
 - user-managed inline snapshot policies are optional and stored on the file
   storage resource as named schedules with `retention.keep`
 - default snapshot protection is controlled separately from user-managed
@@ -46,8 +48,10 @@ accounting meet.
   controller change)
 - parent File Storage reads expose the resolved default snapshot protection
   setting but not the materialized `system-default` policy that implements it
-- attachment status reporting is currently based partly on desired state rather
-  than fully observed actual state
+- parent File Storage create, update, and read requests expose provider-neutral
+  POSIX ACL and atime update interval settings under the existing NFS block
+- attachment mount sources prefer the observed attachment IP range and fall back
+  to the desired range until the controller reports an observed IP range
 
 ## Invariants And Guard Rails
 
@@ -59,6 +63,9 @@ accounting meet.
 - Quota allocation changes are part of the storage lifecycle contract, not an
   optional side effect.
 - Attachments must reference visible, provisioned networks in the same project.
+- Public attachment status is ordered deterministically: desired attachments
+  first in spec order, then observed-only attachments sorted by network ID. It is
+  omitted entirely only when both the desired and observed lists are empty.
 - Attached networks must expose a valid non-empty IPv4 storage range.
 - Snapshot policy `name` is the stable identity key for user-managed policies.
   Create requests with omitted or empty `snapshotPolicies` store no
@@ -95,14 +102,32 @@ accounting meet.
   hidden `system-default` baseline, which never counts against the caller maximum.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
+- Update uses optimistic locking. If a controller or another request modifies the
+  File Storage after it is read, PUT returns `409 Conflict` and compensates any
+  completed quota allocation change. Callers must re-read the resource before
+  retrying.
+- `posixAcl` and `atimeUpdateIntervalSeconds` are optional and nullable on create
+  and update. The handler resolves omission or explicit null to `false` and `0`
+  before persistence.
+- The stored NFS policy uses defaulted values. PUT never merges omitted NFS
+  policy fields from stored state, and every GET or list result returns the
+  complete effective policy.
+- Enabling POSIX ACLs may reduce metadata performance. Extended POSIX
+  ACLs must be managed over NFSv3. Disabling this option does not remove existing
+  ACLs; they may remain enforced.
+- For `atimeUpdateIntervalSeconds`: Set to 0 to disable read-driven atime
+  updates. A positive value updates atime during a read only when the existing
+  atime is older than this number of seconds.
 
 ## Caveats
 
 - This package still depends on transitional provider-specific network status
   (`Status.Openstack.StorageRange`) because a cleaner generic source of that
   information does not yet exist.
-- Attachment status is intentionally conservative and not fully actual-state
-  derived yet.
+- Attachment status is an eventually-consistent projection. Spec and status are
+  reconciled asynchronously by an out-of-service controller, so a row can report
+  `provisioned` for a network already removed from the desired spec until that
+  controller observes the detachment and prunes the row.
 - The package relies heavily on saga compensation because there is no transaction
   boundary for storage-plus-allocation changes.
 - Snapshot policy status is a public projection of stored per-policy conditions.

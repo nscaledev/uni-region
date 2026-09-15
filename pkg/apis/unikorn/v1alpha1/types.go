@@ -23,6 +23,7 @@ import (
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -133,6 +134,10 @@ type RegionOpenstackSpec struct {
 	// ServiceAccountSecretName points to the secret containing credentials
 	// required to perform the tasks the provider needs to perform.
 	ServiceAccountSecret *NamespacedObject `json:"serviceAccountSecret"`
+	// DefaultArchitecture is the fallback architecture for flavors and images
+	// that do not define one explicitly.
+	// +kubebuilder:default=x86_64
+	DefaultArchitecture *Architecture `json:"defaultArchitecture,omitempty"`
 	// Identity is configuration for the identity service.
 	Identity *RegionOpenstackIdentitySpec `json:"identity,omitempty"`
 	// Compute is configuration for the compute service.
@@ -296,14 +301,16 @@ type RegionOpenstackNetworkSpec struct {
 
 type RegionOpenstackBlockStorageSpec struct {
 	// VolumeClasses defines which provider volume classes are eligible for Region
-	// inventory export and what user-facing metadata is attached to them. If not
-	// defined, then all provider volume classes are eligible.
+	// inventory export and what user-facing metadata is attached to them. Provider
+	// volume classes are excluded unless their IDs are explicitly selected. If this
+	// configuration is not defined, no provider volume classes are eligible.
 	VolumeClasses *OpenstackVolumeClassesSpec `json:"volumeClasses,omitempty"`
 }
 
 type OpenstackVolumeClassesSpec struct {
-	// Selector allows provider volume classes to be manually selected for inclusion.
-	// The selected set is a boolean intersection of all defined filters in the selector.
+	// Selector explicitly selects provider volume classes for inclusion. If the
+	// selector is not defined, or its IDs are nil or empty, no provider volume
+	// classes are selected.
 	Selector *VolumeClassSelector `json:"selector,omitempty"`
 	// Metadata allows provider volume classes to be explicitly augmented with
 	// user-facing metadata. OpenStack stores these internally as Cinder volume types,
@@ -316,9 +323,18 @@ type OpenstackVolumeClassesSpec struct {
 }
 
 type VolumeClassSelector struct {
-	// IDs is an explicit list of allowed provider volume class IDs. If not
-	// specified, then all provider volume classes are considered.
+	// IDs is an explicit allowlist of provider volume class IDs. If nil or empty,
+	// no provider volume classes are selected.
 	IDs []string `json:"ids,omitempty"`
+}
+
+type VolumeClassFlavorSelector struct {
+	// IDs is an explicit allowlist of Region flavors. If nil or empty, all
+	// flavors are considered compatible.
+	// +kubebuilder:validation:items:Type=string
+	// +kubebuilder:validation:items:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+	// +listType=set
+	IDs []regionids.FlavorID `json:"ids,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=hdd;ssd;nvme
@@ -330,10 +346,23 @@ const (
 	VolumeClassMediaNVMe VolumeClassMedia = "nvme"
 )
 
+// +kubebuilder:validation:XValidation:rule="!has(self.minimumSizeGiB) || !has(self.maximumSizeGiB) || self.maximumSizeGiB >= self.minimumSizeGiB",message="maximumSizeGiB must be greater than or equal to minimumSizeGiB"
 type VolumeClassMetadata struct {
 	// ID is the immutable provider identifier for the volume class. For OpenStack,
 	// this is the Cinder volume type ID.
 	ID string `json:"id"`
+	// SupportedFlavors optionally restricts this volume class to selected Region
+	// flavors. An undefined selector or nil or empty IDs means no compatibility
+	// restriction.
+	SupportedFlavors *VolumeClassFlavorSelector `json:"supportedFlavors,omitempty"`
+	// MinimumSizeGiB is the minimum volume capacity accepted by the class, in
+	// whole GiB.
+	// +kubebuilder:validation:Minimum=1
+	MinimumSizeGiB *int64 `json:"minimumSizeGiB,omitempty"`
+	// MaximumSizeGiB is the maximum volume capacity accepted by the class, in
+	// whole GiB.
+	// +kubebuilder:validation:Minimum=1
+	MaximumSizeGiB *int64 `json:"maximumSizeGiB,omitempty"`
 	// Media describes the backing storage medium.
 	Media VolumeClassMedia `json:"media,omitempty"`
 	// Performance describes advertised performance characteristics.
@@ -398,7 +427,7 @@ type VLANSegment struct {
 // RegionStatus defines the status of the region.
 type RegionStatus struct {
 	// Current service state of a region.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // IdentityList is a typed list of identities.
@@ -442,7 +471,7 @@ type IdentitySpec struct {
 
 type IdentityStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // OpenstackIdentityList is a typed list of identities.
@@ -592,7 +621,7 @@ type NetworkStatusOpenstack struct {
 
 type NetworkStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// TODO: delete me.
 	Openstack *NetworkStatusOpenstack `json:"openstack,omitempty"`
 }
@@ -707,7 +736,7 @@ type SecurityGroupSpec struct {
 
 type SecurityGroupStatus struct {
 	// Current service state of a security group.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=any;icmp;tcp;udp;vrrp
@@ -800,7 +829,7 @@ type LoadBalancerSpec struct {
 
 type LoadBalancerStatus struct {
 	// Current service state of a load balancer.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// VIPAddress is the provisioned virtual IP address.
 	VIPAddress *unikornv1core.IPv4Address `json:"vipAddress,omitempty"`
 	// PublicIP is the provisioned public IP address.
@@ -848,8 +877,9 @@ type VolumeSpec struct {
 	VolumeClassID string `json:"volumeClassID"`
 	// Size is the requested volume capacity.
 	Size resource.Quantity `json:"size"`
-	// ClaimRef binds this volume to the resource that owns its
-	// attachment. Unset means the volume is available for claiming.
+	// ClaimRef is an internal handler-owned reservation that exclusively binds
+	// this volume attachment to a Server. Unset means the volume is available for
+	// claiming.
 	ClaimRef *VolumeClaimRef `json:"claimRef,omitempty"`
 }
 
@@ -857,6 +887,7 @@ type VolumeClaimRef struct {
 	// Kind is the kind of resource claiming the volume attachment.
 	Kind VolumeClaimKind `json:"kind"`
 	// ID is the Region resource ID of the resource claiming the volume attachment.
+	// +kubebuilder:validation:MinLength=1
 	ID string `json:"id"`
 }
 
@@ -871,8 +902,15 @@ const (
 type VolumeStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// ProvisionedAt records the first successful discovery of backing storage.
+	// It is never cleared, because a missing provider volume must not be recreated
+	// under the same Region Volume ID.
+	ProvisionedAt *metav1.Time `json:"provisionedAt,omitempty"`
+	// AttachedAt is when the current attachment was first confirmed.
+	// Unset means no current attachment is recorded.
+	AttachedAt *metav1.Time `json:"attachedAt,omitempty"`
 	// Current service state of a volume.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
 	// (May differ from spec.size while provisioning.)
 	Size *resource.Quantity `json:"size,omitempty"`
@@ -1033,6 +1071,7 @@ type Server struct {
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.infrastructureRef) == !has(self.infrastructureRef) && (!has(self.infrastructureRef) || self.infrastructureRef == oldSelf.infrastructureRef)",message="infrastructureRef is immutable"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.providerCreateGates) == !has(self.providerCreateGates) && (!has(self.providerCreateGates) || self.providerCreateGates == oldSelf.providerCreateGates)",message="providerCreateGates is immutable"
 type ServerSpec struct {
 	// Pause, if true, will inhibit reconciliation.
 	Pause bool `json:"pause,omitempty"`
@@ -1051,6 +1090,15 @@ type ServerSpec struct {
 	PublicIPAllocation *ServerPublicIPAllocationSpec `json:"publicIPAllocation,omitempty"`
 	// Networks is the server network configuration.
 	Networks []ServerNetworkSpec `json:"networks,omitempty"`
+	// Volumes are existing Region volumes the server should attach.
+	// Inline server-created volume templates are intentionally not part of this
+	// first storage model.
+	// +listType=map
+	// +listMapKey=id
+	// +patchStrategy=merge
+	// +patchMergeKey=id
+	// +optional
+	Volumes []ServerVolumeSpec `json:"volumes,omitempty"`
 	// SSHCertificateAuthorityID is an optional project scoped OpenSSH user CA trust anchor.
 	SSHCertificateAuthorityID *string `json:"sshCertificateAuthorityID,omitempty"`
 	// SSHInjection identifies the create-time SSH access material requested for the server.
@@ -1061,6 +1109,17 @@ type ServerSpec struct {
 	// the provider bypasses its scheduler and provisions directly onto the
 	// identified host.
 	InfrastructureRef *string `json:"infrastructureRef,omitempty"`
+	// ProviderCreateGates are externally satisfied gates that must be True before
+	// the server controller calls the provider create path.
+	// +listType=map
+	// +listMapKey=conditionType
+	ProviderCreateGates []ServerProviderCreateGate `json:"providerCreateGates,omitempty"`
+}
+
+type ServerProviderCreateGate struct {
+	// ConditionType is the status condition type that satisfies this gate.
+	// +kubebuilder:validation:MinLength=1
+	ConditionType string `json:"conditionType"`
 }
 
 type ServerSecurityGroupSpec struct {
@@ -1082,6 +1141,11 @@ type ServerNetworkAddressPair struct {
 	MACAddress string `json:"macAddress,omitempty"`
 }
 
+type ServerVolumeSpec struct {
+	// ID is the existing Volume resource ID to attach to the server.
+	ID string `json:"id"`
+}
+
 type ServerImage struct {
 	// ID is the image ID. If specified, it has priority over the selector.
 	ID regionids.ImageID `json:"id"`
@@ -1092,33 +1156,56 @@ type ServerPublicIPAllocationSpec struct {
 	Enabled bool `json:"enabled,omitempty"`
 }
 
-// +kubebuilder:validation:Enum=Pending;Queued;Building;Running;Stopping;Stopped
-type InstanceLifecyclePhase string
+// ActiveConditionReason is the domain-owned, type-safe reason vocabulary for the
+// generic core ConditionActive (the lifecycle/power axis of a server). It is the
+// sole source of truth for a server's lifecycle state: there is no phase field,
+// the state rides the condition, per the platform specification that resource
+// state is expressed exclusively via status.conditions. The condition's Status is
+// a pure projection of the reason (True only when Running) and its message is a
+// user-facing description of the reason, so both are derived rather than supplied
+// independently (see Server.SetActiveCondition).
+type ActiveConditionReason string
 
 const (
-	// InstanceLifecyclePhasePending is the initial phase before the provider has
+	// ActiveConditionReasonPending is the initial state before the provider has
 	// been observed reporting on the server.
-	InstanceLifecyclePhasePending InstanceLifecyclePhase = "Pending"
-	// InstanceLifecyclePhaseQueued means the provider has accepted the create
-	// request but the underlying hardware has not yet started work. Used for
-	// baremetal servers Nova has admitted while Ironic has not yet entered a
-	// deploy state. From the user's perspective: "you're in line, this is expected".
-	InstanceLifecyclePhaseQueued InstanceLifecyclePhase = "Queued"
-	// InstanceLifecyclePhaseBuilding means the provider is actively provisioning
+	ActiveConditionReasonPending ActiveConditionReason = "Pending"
+	// ActiveConditionReasonQueued means the provider has accepted the create
+	// request but the underlying hardware has not yet started work: baremetal
+	// servers Nova has admitted while Ironic has not yet entered a deploy state.
+	// From the user's perspective: "you're in line, this is expected".
+	ActiveConditionReasonQueued ActiveConditionReason = "Queued"
+	// ActiveConditionReasonBuilding means the provider is actively provisioning
 	// the server: Nova reports BUILD with no Ironic pre-deploy gating (for VMs
-	// always, for baremetal once Ironic has entered a deploy state). Distinct
-	// from Queued so users know forward progress is happening.
-	InstanceLifecyclePhaseBuilding InstanceLifecyclePhase = "Building"
-	InstanceLifecyclePhaseRunning  InstanceLifecyclePhase = "Running"
-	InstanceLifecyclePhaseStopping InstanceLifecyclePhase = "Stopping"
-	InstanceLifecyclePhaseStopped  InstanceLifecyclePhase = "Stopped"
+	// always, for baremetal once Ironic has entered a deploy state). Distinct from
+	// Queued so users know forward progress is happening.
+	ActiveConditionReasonBuilding ActiveConditionReason = "Building"
+	// ActiveConditionReasonRebuilding means the provider is reimaging an already
+	// provisioned server (Nova REBUILD): it is not usable until the reimage
+	// completes. Distinct from Building (a first provision) so a rebuild is
+	// legible on the Active axis.
+	ActiveConditionReasonRebuilding ActiveConditionReason = "Rebuilding"
+	// ActiveConditionReasonRunning means the server is running and usable; this is
+	// the only reason for which the Active condition Status is True.
+	ActiveConditionReasonRunning ActiveConditionReason = "Running"
+	// ActiveConditionReasonStopping means the server is being stopped.
+	ActiveConditionReasonStopping ActiveConditionReason = "Stopping"
+	// ActiveConditionReasonStopped means the server is stopped.
+	ActiveConditionReasonStopped ActiveConditionReason = "Stopped"
+	// ActiveConditionReasonError means the provider reported the server in a
+	// terminal error state (e.g. Nova ERROR). It is a lifecycle state, not a
+	// health verdict: it is the axis the provider-create-failure guard keys off to
+	// decide whether to tear down and retry a server that never booted.
+	ActiveConditionReasonError ActiveConditionReason = "Error"
 )
 
 type ServerStatus struct {
 	// Current service state of a cluster manager.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
-	// Phase is the current lifecycle phase of the server.
-	Phase InstanceLifecyclePhase `json:"phase,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// ProviderCreateGates reports externally satisfied provider-create gates.
+	// +listType=map
+	// +listMapKey=conditionType
+	ProviderCreateGates []ServerProviderCreateGateStatus `json:"providerCreateGates,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
@@ -1156,6 +1243,71 @@ type ServerStatus struct {
 	// ProviderCreateRetrying is true while the controller is deleting a failed
 	// provider server before making another create attempt.
 	ProviderCreateRetrying bool `json:"providerCreateRetrying,omitempty"`
+	// Volumes reflects the observed attachment state for each desired volume.
+	// +listType=map
+	// +listMapKey=id
+	// +patchStrategy=merge
+	// +patchMergeKey=id
+	// +optional
+	Volumes []ServerVolumeStatus `json:"volumes,omitempty"`
+	// Observed carries the provider facts recorded from a provider read, normally
+	// the monitor's poll — see ServerObservedStatus for the ownership rule.
+	// +optional
+	Observed *ServerObservedStatus `json:"observed,omitempty"`
+}
+
+// ServerObservedStatus is recorded from a single fresh provider read, by one
+// projection with no arbitration between its callers. An observation never
+// authorizes an action against the provider; it may only refuse one.
+type ServerObservedStatus struct {
+	// Generation is metadata.generation as read when this snapshot was taken, so a
+	// reader can tell whether the observation postdates a spec edit. Stamped on
+	// every poll, so a present subtree with no image means the image was unreadable.
+	Generation int64 `json:"generation"`
+	// Image is the image the provider reports the server running, as of the last poll
+	// that could read it. An unreadable ref preserves the previous value.
+	// +optional
+	Image *regionids.ImageID `json:"image,omitempty"`
+	// Errored records that the provider reports the server in an error state, with
+	// no detail and no attribution to any action this service took. Unlike Image it
+	// clears when the provider stops reporting the error. It exists so a change in
+	// the provider's view is diffable (the reconciler wakes on it); it is not a
+	// diagnostic surface. The provider's own failure detail is written to the
+	// observing component's log at the moment of observation, in provider
+	// vocabulary, where operator detail belongs.
+	// +optional
+	Errored bool `json:"errored,omitempty"`
+}
+
+type ServerVolumeStatus struct {
+	// ID is the Volume resource ID this attachment row describes.
+	ID string `json:"id"`
+	// ProvisioningStatus indicates whether the volume attachment is ready,
+	// failed, or being provisioned/deprovisioned.
+	ProvisioningStatus AttachmentProvisioningStatus `json:"provisioningStatus"`
+	// Device is the guest OS device name where the provider presents the
+	// attached volume, when available.
+	Device *string `json:"device,omitempty"`
+	// Message is a human-readable description of the current attachment state.
+	Message string `json:"message"`
+}
+
+type ServerProviderCreateGateStatus struct {
+	// ConditionType matches a configured ServerSpec.ProviderCreateGates entry.
+	// +kubebuilder:validation:MinLength=1
+	ConditionType string `json:"conditionType"`
+	// Status is True when the gate is satisfied.
+	// +kubebuilder:validation:Enum=True;False;Unknown
+	Status corev1.ConditionStatus `json:"status"`
+	// LastTransitionTime records when the gate status last changed.
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	// Actor is the authenticated service identity that last wrote this gate
+	// status.
+	Actor string `json:"actor,omitempty"`
+	// Reason is a machine-readable reason for the status.
+	Reason string `json:"reason,omitempty"`
+	// Message is human-readable detail.
+	Message string `json:"message,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.
@@ -1251,6 +1403,12 @@ type FileStorageSnapshotPolicy struct {
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=19
 	Name string `json:"name"`
+	// ProtectedPath is the relative path within the file storage data hierarchy protected by this policy.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
+	// +optional
+	ProtectedPath string `json:"protectedPath,omitempty"`
 	// Schedule defines when snapshots run in UTC.
 	Schedule FileStorageSnapshotPolicySchedule `json:"schedule"`
 	// Retention defines how many snapshots are retained.
@@ -1317,7 +1475,7 @@ type FileStorageStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// Current service state of a file storage.
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the file storage.
 	// (May differ from spec.size while provisioning/resizing.)
 	Size *resource.Quantity `json:"size,omitempty"`
@@ -1348,7 +1506,7 @@ type FileStorageSnapshotPolicyStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	// +optional
-	Conditions []unikornv1core.Condition `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // AttachmentProvisioningStatus describes the state of a single attachment.
@@ -1398,6 +1556,18 @@ type AttachmentIPRange struct {
 // NFS has the configuration for NFS type.
 type NFS struct {
 	RootSquash bool `json:"rootSquash,omitempty"`
+
+	// POSIXACL controls extended POSIX ACL support.
+	// +kubebuilder:default=false
+	// +kubebuilder:validation:Required
+	POSIXACL *bool `json:"posixAcl,omitempty"`
+
+	// AtimeUpdateIntervalSeconds controls how stale atime must be before a read updates it. Zero disables read-driven updates.
+	// +kubebuilder:default=0
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86399999999999
+	// +kubebuilder:validation:Required
+	AtimeUpdateIntervalSeconds *int64 `json:"atimeUpdateIntervalSeconds,omitempty"`
 }
 
 // FileStorageClassList is a list of the FileStorageClass type.

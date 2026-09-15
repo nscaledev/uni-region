@@ -213,7 +213,7 @@ func (c *APIClient) DoInternalRegionRequest(ctx context.Context, method, path st
 	}
 
 	if expectedStatus != 0 && resp.StatusCode != expectedStatus {
-		return resp, respBody, fmt.Errorf("internal API status %d, expected %d: %w", resp.StatusCode, expectedStatus, coreclient.ErrUnexpectedStatus)
+		return resp, respBody, fmt.Errorf("internal API status %d, expected %d, body %q: %w", resp.StatusCode, expectedStatus, respBody, coreclient.ErrUnexpectedStatus)
 	}
 
 	return resp, respBody, nil
@@ -567,16 +567,24 @@ func (c *APIClient) UpdateFileStorage(ctx context.Context, filestorageID string,
 }
 
 // DeleteFileStorage deletes a file storage resource.
+// Returns ErrResourceNotFound if the file storage does not exist.
 func (c *APIClient) DeleteFileStorage(ctx context.Context, filestorageID string) error {
 	path := c.endpoints.DeleteFileStorage(filestorageID)
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, http.StatusAccepted)
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
 	if err != nil {
 		return fmt.Errorf("deleting filestorage: %w", err)
 	}
 
-	return nil
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("filestorage '%s': %w", filestorageID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting filestorage: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // ListFileStorageClasses lists all available file storage classes for a region.
@@ -1004,6 +1012,97 @@ func (c *APIClient) GetServerSSHKey(ctx context.Context, serverID string) (*regi
 	}
 
 	return &key, nil
+}
+
+// SatisfyServerProviderCreateGate records a configured provider-create gate as satisfied.
+func (c *APIClient) SatisfyServerProviderCreateGate(ctx context.Context, serverID string, request regionopenapi.ServerProviderCreateGateAction) error {
+	path := c.endpoints.SatisfyServerProviderCreateGate(serverID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("marshaling provider-create gate request: %w", err)
+	}
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, _, err = c.DoInternalRegionRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusNoContent)
+	if err != nil {
+		return fmt.Errorf("satisfying provider-create gate: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateServer updates a server. Changing the image ID triggers an in-place rebuild.
+func (c *APIClient) UpdateServer(ctx context.Context, serverID string, request regionopenapi.ServerV2Update) (*regionopenapi.ServerV2Read, error) {
+	path := c.endpoints.UpdateServer(serverID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling server update request: %w", err)
+	}
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("updating server: %w", err)
+	}
+
+	var server regionopenapi.ServerV2Read
+	if err := json.Unmarshal(respBody, &server); err != nil {
+		return nil, fmt.Errorf("unmarshaling server: %w", err)
+	}
+
+	return &server, nil
+}
+
+// UpdateServerExpectError attempts a server update that is expected to be rejected
+// with the given status, returning the decoded standard error body.
+func (c *APIClient) UpdateServerExpectError(ctx context.Context, serverID string, request regionopenapi.ServerV2Update, expectedStatus int) (*coreapi.Error, error) {
+	path := c.endpoints.UpdateServer(serverID)
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling server update request: %w", err)
+	}
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("updating server: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(respBody, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
+// StopServer requests that a server be powered off.
+func (c *APIClient) StopServer(ctx context.Context, serverID string) error {
+	path := c.endpoints.StopServer(serverID)
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, _, err := c.DoInternalRegionRequest(ctx, http.MethodPost, path, nil, http.StatusAccepted)
+	if err != nil {
+		return fmt.Errorf("stopping server: %w", err)
+	}
+
+	return nil
+}
+
+// StartServer requests that a server be powered on.
+func (c *APIClient) StartServer(ctx context.Context, serverID string) error {
+	path := c.endpoints.StartServer(serverID)
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, _, err := c.DoInternalRegionRequest(ctx, http.MethodPost, path, nil, http.StatusAccepted)
+	if err != nil {
+		return fmt.Errorf("starting server: %w", err)
+	}
+
+	return nil
 }
 
 // DeleteServer deletes a server.

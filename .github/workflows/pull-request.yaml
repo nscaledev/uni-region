@@ -48,10 +48,8 @@ jobs:
       run: make lint
     - name: Build Images
       run: make charts/region/crds images
-    - name: Build Generated Code
-      run: make generate
     - name: Generated Code Checked In
-      run: '[[ -z $(git status --porcelain) ]]'
+      run: make validate-generated
     - name: Unit Test
       run: make test-unit
     - name: Archive code coverage results

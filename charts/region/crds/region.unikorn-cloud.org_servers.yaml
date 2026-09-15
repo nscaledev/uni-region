@@ -3,7 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.17.3
+    controller-gen.kubebuilder.io/version: v0.20.0
   name: servers.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
@@ -115,6 +115,24 @@ spec:
                 - simulated
                 maxLength: 63
                 type: string
+              providerCreateGates:
+                description: |-
+                  ProviderCreateGates are externally satisfied gates that must be True before
+                  the server controller calls the provider create path.
+                items:
+                  properties:
+                    conditionType:
+                      description: ConditionType is the status condition type that
+                        satisfies this gate.
+                      minLength: 1
+                      type: string
+                  required:
+                  - conditionType
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - conditionType
+                x-kubernetes-list-type: map
               publicIPAllocation:
                 description: PublicIPAllocation is the server public IP allocation
                   configuration.
@@ -170,6 +188,24 @@ spec:
                   to use upon launch.
                 format: byte
                 type: string
+              volumes:
+                description: |-
+                  Volumes are existing Region volumes the server should attach.
+                  Inline server-created volume templates are intentionally not part of this
+                  first storage model.
+                items:
+                  properties:
+                    id:
+                      description: ID is the existing Volume resource ID to attach
+                        to the server.
+                      type: string
+                  required:
+                  - id
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
             required:
             - flavorID
             - image
@@ -178,49 +214,60 @@ spec:
             - message: infrastructureRef is immutable
               rule: '!has(oldSelf.infrastructureRef) == !has(self.infrastructureRef)
                 && (!has(self.infrastructureRef) || self.infrastructureRef == oldSelf.infrastructureRef)'
+            - message: providerCreateGates is immutable
+              rule: '!has(oldSelf.providerCreateGates) == !has(self.providerCreateGates)
+                && (!has(self.providerCreateGates) || self.providerCreateGates ==
+                oldSelf.providerCreateGates)'
           status:
             properties:
               conditions:
                 description: Current service state of a cluster manager.
                 items:
-                  description: |-
-                    Condition is a generic condition type for use across all resource types.
-                    It's generic so that the underlying controller-manager functionality can
-                    be shared across all resources.
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
                   properties:
                     lastTransitionTime:
-                      description: Last time the condition transitioned from one status
-                        to another.
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: Human-readable message indicating details about
-                        last transition.
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
                       type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
                     reason:
-                      description: Unique, one-word, CamelCase reason for the condition's
-                        last transition.
-                      enum:
-                      - Provisioning
-                      - Provisioned
-                      - Cancelled
-                      - Errored
-                      - Deprovisioning
-                      - Deprovisioned
-                      - Unknown
-                      - Healthy
-                      - Degraded
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
                       type: string
                     status:
-                      description: |-
-                        Status is the status of the condition.
-                        Can be True, False, Unknown.
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
                       type: string
                     type:
-                      description: Type is the type of the condition.
-                      enum:
-                      - Available
-                      - Healthy
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                       type: string
                   required:
                   - lastTransitionTime
@@ -249,16 +296,37 @@ spec:
                   retry reset leaves it intact and a transient port-read miss cannot unset
                   it, while an authoritative ACTIVE read self-heals any drift.
                 type: string
-              phase:
-                description: Phase is the current lifecycle phase of the server.
-                enum:
-                - Pending
-                - Queued
-                - Building
-                - Running
-                - Stopping
-                - Stopped
-                type: string
+              observed:
+                description: |-
+                  Observed carries the provider facts recorded from a provider read, normally
+                  the monitor's poll — see ServerObservedStatus for the ownership rule.
+                properties:
+                  errored:
+                    description: |-
+                      Errored records that the provider reports the server in an error state, with
+                      no detail and no attribution to any action this service took. Unlike Image it
+                      clears when the provider stops reporting the error. It exists so a change in
+                      the provider's view is diffable (the reconciler wakes on it); it is not a
+                      diagnostic surface. The provider's own failure detail is written to the
+                      observing component's log at the moment of observation, in provider
+                      vocabulary, where operator detail belongs.
+                    type: boolean
+                  generation:
+                    description: |-
+                      Generation is metadata.generation as read when this snapshot was taken, so a
+                      reader can tell whether the observation postdates a spec edit. Stamped on
+                      every poll, so a present subtree with no image means the image was unreadable.
+                    format: int64
+                    type: integer
+                  image:
+                    description: |-
+                      Image is the image the provider reports the server running, as of the last poll
+                      that could read it. An unreadable ref preserves the previous value.
+                    format: uuid
+                    type: string
+                required:
+                - generation
+                type: object
               privateIP:
                 description: PrivateIP is the private IP address of the server.
                 type: string
@@ -268,6 +336,48 @@ spec:
                   later landed in a provider error state before the server launched.
                 format: int32
                 type: integer
+              providerCreateGates:
+                description: ProviderCreateGates reports externally satisfied provider-create
+                  gates.
+                items:
+                  properties:
+                    actor:
+                      description: |-
+                        Actor is the authenticated service identity that last wrote this gate
+                        status.
+                      type: string
+                    conditionType:
+                      description: ConditionType matches a configured ServerSpec.ProviderCreateGates
+                        entry.
+                      minLength: 1
+                      type: string
+                    lastTransitionTime:
+                      description: LastTransitionTime records when the gate status
+                        last changed.
+                      format: date-time
+                      type: string
+                    message:
+                      description: Message is human-readable detail.
+                      type: string
+                    reason:
+                      description: Reason is a machine-readable reason for the status.
+                      type: string
+                    status:
+                      description: Status is True when the gate is satisfied.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                  required:
+                  - conditionType
+                  - lastTransitionTime
+                  - status
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - conditionType
+                x-kubernetes-list-type: map
               providerCreateRetrying:
                 description: |-
                   ProviderCreateRetrying is true while the controller is deleting a failed
@@ -295,6 +405,43 @@ spec:
                   Nil until the server has been observed in the provider at least once.
                 format: date-time
                 type: string
+              volumes:
+                description: Volumes reflects the observed attachment state for each
+                  desired volume.
+                items:
+                  properties:
+                    device:
+                      description: |-
+                        Device is the guest OS device name where the provider presents the
+                        attached volume, when available.
+                      type: string
+                    id:
+                      description: ID is the Volume resource ID this attachment row
+                        describes.
+                      type: string
+                    message:
+                      description: Message is a human-readable description of the
+                        current attachment state.
+                      type: string
+                    provisioningStatus:
+                      description: |-
+                        ProvisioningStatus indicates whether the volume attachment is ready,
+                        failed, or being provisioned/deprovisioned.
+                      enum:
+                      - Provisioning
+                      - Provisioned
+                      - Errored
+                      - Deprovisioning
+                      type: string
+                  required:
+                  - id
+                  - message
+                  - provisioningStatus
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - id
+                x-kubernetes-list-type: map
             type: object
         required:
         - spec

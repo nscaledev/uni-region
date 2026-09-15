@@ -20,22 +20,37 @@ package openstack
 
 import (
 	"context"
+	"slices"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/availabilityzones"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/quotasets"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/unikorn-cloud/core/pkg/util/cache"
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 
 	"k8s.io/utils/ptr"
 )
 
+func volumeName(volume *unikornv1.Volume) string {
+	return "volume-" + volume.Name
+}
+
 // BlockStorageClient wraps the generic client because gophercloud is unsafe.
 type BlockStorageClient struct {
-	client *gophercloud.ServiceClient
+	client          *gophercloud.ServiceClient
+	options         *unikornv1.RegionOpenstackBlockStorageSpec
+	volumeTypeCache *cache.TimeoutCache[[]volumetypes.VolumeType]
 }
 
 // NewBlockStorageClient provides a simple one-liner to start computing.
-func NewBlockStorageClient(ctx context.Context, provider CredentialProvider) (*BlockStorageClient, error) {
+func NewBlockStorageClient(ctx context.Context, provider CredentialProvider, options *unikornv1.RegionOpenstackBlockStorageSpec) (*BlockStorageClient, error) {
 	providerClient, err := provider.Client(ctx)
 	if err != nil {
 		return nil, err
@@ -47,7 +62,9 @@ func NewBlockStorageClient(ctx context.Context, provider CredentialProvider) (*B
 	}
 
 	c := &BlockStorageClient{
-		client: client,
+		client:          client,
+		options:         options,
+		volumeTypeCache: cache.New[[]volumetypes.VolumeType](time.Hour),
 	}
 
 	return c, nil
@@ -81,6 +98,92 @@ func (c *BlockStorageClient) AvailabilityZones(ctx context.Context) ([]availabil
 	return filtered, nil
 }
 
+func (c *BlockStorageClient) GetVolume(ctx context.Context, volume *unikornv1.Volume) (*volumes.Volume, error) {
+	_, span := traceStart(ctx, "GET /block-storage/v3/volumes/detail")
+	defer span.End()
+
+	name := volumeName(volume)
+
+	pages, err := volumes.List(c.client, &volumes.ListOpts{
+		Name: name,
+	}).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := volumes.ExtractVolumes(pages)
+	if err != nil {
+		return nil, err
+	}
+
+	return findExactResource(result, name, "volume", func(resource *volumes.Volume) string {
+		return resource.Name
+	})
+}
+
+func (c *BlockStorageClient) CreateVolume(ctx context.Context, volume *unikornv1.Volume, metadata map[string]string) (*volumes.Volume, error) {
+	_, span := traceStart(ctx, "POST /block-storage/v3/volumes")
+	defer span.End()
+
+	opts := &volumes.CreateOpts{
+		Name:        volumeName(volume),
+		Description: "unikorn managed block storage volume",
+		Size:        int(volume.Spec.Size.Value() / (1 << 30)),
+		VolumeType:  volume.Spec.VolumeClassID,
+		Metadata:    metadata,
+	}
+
+	return volumes.Create(ctx, c.client, opts, nil).Extract()
+}
+
+func (c *BlockStorageClient) DeleteVolume(ctx context.Context, id string) error {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("block_storage.volume.id", id),
+	)
+
+	_, span := traceStart(ctx, "DELETE /block-storage/v3/volumes/{id}", spanAttributes)
+	defer span.End()
+
+	return volumes.Delete(ctx, c.client, id, nil).ExtractErr()
+}
+
+func (c *BlockStorageClient) GetVolumeTypes(ctx context.Context) ([]volumetypes.VolumeType, error) {
+	if result, ok := c.volumeTypeCache.Get(); ok {
+		return result, nil
+	}
+
+	_, span := traceStart(ctx, "GET /block-storage/v3/types")
+	defer span.End()
+
+	pages, err := volumetypes.List(c.client, nil).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := volumetypes.ExtractVolumeTypes(pages)
+	if err != nil {
+		return nil, err
+	}
+
+	result = slices.DeleteFunc(result, func(volumeType volumetypes.VolumeType) bool {
+		// We are admin, so see all the things, throw out private volume types.
+		if !volumeTypeIsPublic(volumeType) {
+			return true
+		}
+
+		config := openstackVolumeClassesConfig(c.options)
+		if config == nil || config.Selector == nil {
+			return true
+		}
+
+		return !slices.Contains(config.Selector.IDs, volumeType.ID)
+	})
+
+	c.volumeTypeCache.Set(result)
+
+	return result, nil
+}
+
 func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string) error {
 	_, span := traceStart(ctx, "PUT /block-storage/v3/os-quota-sets")
 	defer span.End()
@@ -98,4 +201,16 @@ func (c *BlockStorageClient) UpdateQuotas(ctx context.Context, projectID string)
 	}
 
 	return quotasets.Update(ctx, c.client, projectID, opts).Err
+}
+
+func volumeTypeIsPublic(volumeType volumetypes.VolumeType) bool {
+	return volumeType.IsPublic || volumeType.PublicAccess
+}
+
+func openstackVolumeClassesConfig(blockStorage *unikornv1.RegionOpenstackBlockStorageSpec) *unikornv1.OpenstackVolumeClassesSpec {
+	if blockStorage == nil {
+		return nil
+	}
+
+	return blockStorage.VolumeClasses
 }

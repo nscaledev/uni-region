@@ -142,8 +142,11 @@ func convertSnapshotPolicyStatuses(spec []regionv1.FileStorageSnapshotPolicy, st
 }
 
 func convertSnapshotPolicyStatus(in regionv1.FileStorageSnapshotPolicyStatus) (coreopenapi.ResourceProvisioningStatus, *string) {
-	condition := snapshotPolicyAvailableCondition(in)
-	if condition == nil {
+	// Read the Available condition through the typed accessor so the reason is a
+	// ProvisioningConditionReason rather than a bare string; an absent condition
+	// is reported as pending.
+	condition, err := unikorncorev1.GetAvailableCondition(&in)
+	if err != nil {
 		return coreopenapi.ResourceProvisioningStatusPending, nil
 	}
 
@@ -164,17 +167,11 @@ func convertSnapshotPolicyStatus(in regionv1.FileStorageSnapshotPolicyStatus) (c
 		return coreopenapi.ResourceProvisioningStatusDeprovisioning, message
 	}
 
-	return coreopenapi.ResourceProvisioningStatusUnknown, message
-}
-
-func snapshotPolicyAvailableCondition(in regionv1.FileStorageSnapshotPolicyStatus) *unikorncorev1.Condition {
-	for i := range in.Conditions {
-		if in.Conditions[i].Type == unikorncorev1.ConditionAvailable {
-			return &in.Conditions[i]
-		}
-	}
-
-	return nil
+	// A present condition with a reason we don't recognise maps optimistically to
+	// provisioning (the resource exists and is presumed in flight), mirroring the
+	// core status projector; the absent-condition case above is reported as pending.
+	// (The Unknown status was dropped from the core enum.)
+	return coreopenapi.ResourceProvisioningStatusProvisioning, message
 }
 
 // validateSnapshotPolicyList enforces the snapshot policy rules the generated

@@ -133,43 +133,84 @@ func convertUsageStatus(in *regionv1.FileStorage) *openapi.StorageUsageV2Status 
 	return out
 }
 
-// Status attachment rows follow desired attachments, then use observed status
-// to enrich matching rows with controller-projected state.
+// Status attachment rows are the union of desired and observed attachments,
+// keyed on network ID. Desired attachments come first in spec order, then
+// observed-only attachments (networks still attached but no longer desired,
+// e.g. pending or failed removal) sorted by network ID. Spec and status are
+// reconciled asynchronously, so neither list alone describes actual state.
 func convertStatusAttachmentList(in *regionv1.FileStorage) *openapi.StorageAttachmentListV2Status {
-	if len(in.Spec.Attachments) == 0 {
+	if len(in.Spec.Attachments) == 0 && len(in.Status.Attachments) == 0 {
 		return nil
 	}
 
+	// observedAttachments is the observed state (status), indexed by network ID
+	// so each desired attachment can look up what the controller last saw.
 	observedAttachments := make(map[string]regionv1.FileStorageAttachmentStatus, len(in.Status.Attachments))
 	for _, status := range in.Status.Attachments {
 		observedAttachments[status.NetworkID] = status
 	}
 
-	out := make(openapi.StorageAttachmentListV2Status, len(in.Spec.Attachments))
+	out := make(openapi.StorageAttachmentListV2Status, 0, len(in.Spec.Attachments)+len(in.Status.Attachments))
 
-	for i, att := range in.Spec.Attachments {
-		var mountSource *string
+	// desired is the set of network IDs the caller currently wants attached
+	// (spec), used below to work out which observed attachments it no longer
+	// covers.
+	desired := make(map[string]struct{}, len(in.Spec.Attachments))
 
-		// Only build MountSource if all required fields are non-nil.
-		if att.IPRange != nil && in.Status.MountPath != nil {
-			mountSource = ptr.To(fmt.Sprintf("%s:%s", att.IPRange.Start, *in.Status.MountPath))
+	for _, att := range in.Spec.Attachments {
+		desired[att.NetworkID] = struct{}{}
+
+		out = append(out, newAttachmentStatus(in, att.NetworkID, att.IPRange, observedAttachments))
+	}
+
+	// undesired is the network IDs observed but no longer desired: attachments
+	// the caller has removed from spec that the controller has not finished
+	// detaching. Collected into their own slice so they can be sorted without
+	// reordering the cached resource, and appended after the desired rows.
+	undesired := make([]string, 0, len(in.Status.Attachments))
+
+	for _, status := range in.Status.Attachments {
+		if _, ok := desired[status.NetworkID]; !ok {
+			undesired = append(undesired, status.NetworkID)
 		}
+	}
 
-		attachmentStatus := openapi.StorageAttachmentV2Status{
-			NetworkId:          att.NetworkID,
-			MountSource:        mountSource,
-			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
-		}
+	slices.Sort(undesired)
 
-		if observed, ok := observedAttachments[att.NetworkID]; ok {
-			attachmentStatus.ProvisioningStatus = convertAttachmentProvisioningStatus(observed.ProvisioningStatus)
-			attachmentStatus.MountOptions = mountOptionsFromAttachmentStatus(observed)
-		}
-
-		out[i] = attachmentStatus
+	for _, networkID := range undesired {
+		out = append(out, newAttachmentStatus(in, networkID, nil, observedAttachments))
 	}
 
 	return &out
+}
+
+// newAttachmentStatus projects a single attachment row. The mount source
+// prefers the observed IP range and falls back to the desired range when the
+// controller has not reported an IP range yet. Attachments with no observed
+// status are reported as pending.
+func newAttachmentStatus(in *regionv1.FileStorage, networkID string, desiredIPRange *regionv1.AttachmentIPRange, observedAttachments map[string]regionv1.FileStorageAttachmentStatus) openapi.StorageAttachmentV2Status {
+	out := openapi.StorageAttachmentV2Status{
+		NetworkId:          networkID,
+		ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
+	}
+
+	ipRange := desiredIPRange
+
+	if observed, ok := observedAttachments[networkID]; ok {
+		out.ProvisioningStatus = convertAttachmentProvisioningStatus(observed.ProvisioningStatus)
+		out.MountOptions = mountOptionsFromAttachmentStatus(observed)
+
+		if observed.IPRange != nil {
+			ipRange = observed.IPRange
+		}
+	}
+
+	// Only build MountSource if all required fields are non-nil.
+	if ipRange != nil && in.Status.MountPath != nil {
+		out.MountSource = ptr.To(fmt.Sprintf("%s:%s", ipRange.Start, *in.Status.MountPath))
+	}
+
+	return out
 }
 
 func convertAttachmentProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
@@ -183,7 +224,9 @@ func convertAttachmentProvisioningStatus(in regionv1.AttachmentProvisioningStatu
 	case regionv1.AttachmentDeprovisioning:
 		return coreopenapi.ResourceProvisioningStatusDeprovisioning
 	default:
-		return coreopenapi.ResourceProvisioningStatusUnknown
+		// An unset/unobserved attachment status is reported as pending (the
+		// Unknown status was dropped from the core enum).
+		return coreopenapi.ResourceProvisioningStatusPending
 	}
 }
 
@@ -213,12 +256,16 @@ func remotePortsFromIPRange(in *regionv1.AttachmentIPRange) string {
 func checkRegionNFS(in *regionv1.NFS) *openapi.NFSV2Spec {
 	if in == nil {
 		return &openapi.NFSV2Spec{
-			RootSquash: true,
+			RootSquash:                 true,
+			PosixAcl:                   ptr.To(false),
+			AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 		}
 	}
 
 	return &openapi.NFSV2Spec{
-		RootSquash: in.RootSquash,
+		RootSquash:                 in.RootSquash,
+		PosixAcl:                   ptr.To(ptr.Deref(in.POSIXACL, false)),
+		AtimeUpdateIntervalSeconds: ptr.To(ptr.Deref(in.AtimeUpdateIntervalSeconds, 0)),
 	}
 }
 
@@ -337,6 +384,12 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 
 	defaultSnapshotProtectionEnabled := request.Spec.DefaultSnapshotProtectionEnabled
 	policies := generateSnapshotPolicies(request.Spec.SnapshotPolicies)
+	nfs := request.Spec.StorageType.NFS
+	regionNFS := &regionv1.NFS{
+		RootSquash:                 nfs.RootSquash,
+		POSIXACL:                   nfs.PosixAcl,
+		AtimeUpdateIntervalSeconds: nfs.AtimeUpdateIntervalSeconds,
+	}
 
 	out := &regionv1.FileStorage{
 		ObjectMeta: conversion.NewObjectMetadata(&request.Metadata, c.Namespace).
@@ -348,10 +401,8 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 			Attachments:                      attachments,
 			DefaultSnapshotProtectionEnabled: defaultSnapshotProtectionEnabled,
 			SnapshotPolicies:                 materializeDefaultSnapshotProtection(policies, defaultSnapshotProtectionEnabled),
-			NFS: &regionv1.NFS{
-				RootSquash: checkRootSquash(request.Spec.StorageType.NFS),
-			},
-			StorageClassID: storageClass.Metadata.Id,
+			NFS:                              regionNFS,
+			StorageClassID:                   storageClass.Metadata.Id,
 		},
 	}
 
@@ -369,14 +420,28 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 	return out, nil
 }
 
-// checkRootSquash sets the Rootsquash bool, defaults to true
-// this is only called on 'generates'.
-func checkRootSquash(nfs *openapi.NFSV2Spec) bool {
-	if nfs != nil {
-		return nfs.RootSquash
+func resolveNFS(nfs *openapi.NFSV2Spec) *openapi.NFSV2Spec {
+	out := &openapi.NFSV2Spec{
+		RootSquash:                 true,
+		PosixAcl:                   ptr.To(false),
+		AtimeUpdateIntervalSeconds: ptr.To(int64(0)),
 	}
 
-	return true
+	if nfs == nil {
+		return out
+	}
+
+	out.RootSquash = nfs.RootSquash
+
+	if nfs.PosixAcl != nil {
+		out.PosixAcl = nfs.PosixAcl
+	}
+
+	if nfs.AtimeUpdateIntervalSeconds != nil {
+		out.AtimeUpdateIntervalSeconds = nfs.AtimeUpdateIntervalSeconds
+	}
+
+	return out
 }
 
 func generateAttachmentList(ctx context.Context, networkClient *network.Client, in *storageV2GenerateRequest, parallelism int) ([]regionv1.Attachment, error) {
@@ -487,6 +552,9 @@ func narrowStorageRange(in *regionv1.AttachmentIPRange, parallelism int) *region
 }
 
 func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRequest {
+	storageType := in.Spec.StorageType
+	storageType.NFS = resolveNFS(storageType.NFS)
+
 	return &storageV2GenerateRequest{
 		Metadata: in.Metadata,
 		Spec: storageV2GenerateSpec{
@@ -495,12 +563,15 @@ func generateRequestFromCreate(in *openapi.StorageV2Create) *storageV2GenerateRe
 			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, true),
 			SizeGiB:                          in.Spec.SizeGiB,
 			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
-			StorageType:                      in.Spec.StorageType,
+			StorageType:                      storageType,
 		},
 	}
 }
 
 func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtection bool) *storageV2GenerateRequest {
+	storageType := in.Spec.StorageType
+	storageType.NFS = resolveNFS(storageType.NFS)
+
 	return &storageV2GenerateRequest{
 		Metadata: in.Metadata,
 		Spec: storageV2GenerateSpec{
@@ -509,7 +580,7 @@ func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtec
 			DefaultSnapshotProtectionEnabled: ptr.Deref(in.Spec.DefaultSnapshotProtectionEnabled, currentDefaultProtection),
 			SizeGiB:                          in.Spec.SizeGiB,
 			SnapshotPolicies:                 in.Spec.SnapshotPolicies,
-			StorageType:                      in.Spec.StorageType,
+			StorageType:                      storageType,
 		},
 	}
 }

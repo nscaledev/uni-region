@@ -40,7 +40,8 @@ alone. The region service mints UUIDs for its own CRD-backed resources (`Region`
 
 - the generated OpenAPI surface (path parameters and request/response body fields);
 - **CRD spec fields** that hold region-owned UUIDs — currently the `Server` CRD's
-  `FlavorID`, `Image.ID`, `SecurityGroups[].ID` and `Networks[].ID`. Because the
+  `FlavorID`, `Image.ID`, `SecurityGroups[].ID`, `Networks[].ID`, and
+  `VolumeClassFlavorSelector.IDs`. Because the
   types are `uuid.UUID`-backed (`[16]byte`), each declaration carries
   `+kubebuilder:validation:Type=string` (and `Format=uuid`) so controller-gen
   emits a string schema rather than a byte array; the existing `TextMarshaler`

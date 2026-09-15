@@ -29,6 +29,8 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
+	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
+	"github.com/unikorn-cloud/core/pkg/provisioninglog"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
@@ -127,8 +129,8 @@ func newFakeClient(t *testing.T, objects ...runtime.Object) client.Client {
 	return builder.Build()
 }
 
-func serverFixture(phase unikornv1.InstanceLifecyclePhase, conditions ...unikornv1core.Condition) *unikornv1.Server {
-	return &unikornv1.Server{
+func serverFixture(phase unikornv1.ActiveConditionReason, conditions ...metav1.Condition) *unikornv1.Server {
+	server := &unikornv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: namespace,
@@ -142,10 +144,13 @@ func serverFixture(phase unikornv1.InstanceLifecyclePhase, conditions ...unikorn
 			FlavorID: idstest.MustParseFlavorID(flavorID),
 		},
 		Status: unikornv1.ServerStatus{
-			Phase:      phase,
 			Conditions: conditions,
 		},
 	}
+
+	server.SetActiveCondition(phase)
+
+	return server
 }
 
 func regionFixture() *unikornv1.Region {
@@ -169,11 +174,11 @@ func identityFixture() *unikornv1.Identity {
 	}
 }
 
-func healthCondition() unikornv1core.Condition {
-	return unikornv1core.Condition{
-		Type:               unikornv1core.ConditionHealthy,
-		Status:             corev1.ConditionTrue,
-		Reason:             unikornv1core.ConditionReasonHealthy,
+func healthCondition() metav1.Condition {
+	return metav1.Condition{
+		Type:               string(unikornv1core.ConditionHealthy),
+		Status:             metav1.ConditionTrue,
+		Reason:             string(unikornv1core.ConditionReasonHealthy),
 		LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Minute)),
 	}
 }
@@ -181,7 +186,10 @@ func healthCondition() unikornv1core.Condition {
 // runCheckFull builds a Checker, injects a capturing logger, and runs Check.
 // It returns the fake Kubernetes client (for inspecting object state), the
 // log sink (for asserting on emitted entries), and any error from Check.
-func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server)) (client.Client, *captureSink, error) {
+// updateFn both mutates the server and supplies UpdateServerState's return
+// value, so a test can model a provider that records state before surfacing
+// an error (the real not-found contract).
+func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server) error) (client.Client, *captureSink, error) {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
@@ -190,8 +198,7 @@ func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			updateFn(s)
-			return nil
+			return updateFn(s)
 		})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
@@ -217,7 +224,10 @@ func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.
 func runCheck(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server)) (*captureSink, error) {
 	t.Helper()
 
-	_, sink, err := runCheckFull(t, srv, updateFn)
+	_, sink, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		updateFn(s)
+		return nil
+	})
 
 	return sink, err
 }
@@ -227,22 +237,28 @@ func runCheck(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Serv
 func TestCheckServerLogsOnPhaseChange(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	})
 
 	require.NoError(t, err)
 
-	entries := sink.entriesWithMsg("instance phase transition")
+	entries := sink.entriesWithMsg("lifecycle")
 	require.Len(t, entries, 1)
-	require.Equal(t, serverID, entries[0]["instance_id"])
-	require.Equal(t, orgID, entries[0]["org_id"])
-	require.Equal(t, regionID, entries[0]["region_id"])
-	require.Equal(t, string(unikornv1.InstanceLifecyclePhasePending), entries[0]["from_phase"])
-	require.Equal(t, string(unikornv1.InstanceLifecyclePhaseRunning), entries[0]["to_phase"])
-	require.NotZero(t, entries[0]["time_since_creation_ms"])
+
+	resource, ok := entries[0]["resource"].(*provisioninglog.Resource)
+	require.True(t, ok)
+	require.Equal(t, serverID, resource.ID)
+
+	scope, ok := entries[0]["scope"].(map[string]string)
+	require.True(t, ok)
+	require.Equal(t, orgID, scope["organization"])
+
+	transition, ok := entries[0]["lifecycle"].(*provisioninglog.Transition)
+	require.True(t, ok)
+	require.Equal(t, string(unikornv1.ActiveConditionReasonRunning), transition.Reason)
 }
 
 // TestCheckServerNoLogWhenPhaseUnchanged verifies that no phase transition log is emitted
@@ -250,14 +266,14 @@ func TestCheckServerLogsOnPhaseChange(t *testing.T) {
 func TestCheckServerNoLogWhenPhaseUnchanged(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning)
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.entriesWithMsg("instance phase transition"))
+	require.Empty(t, sink.entriesWithMsg("lifecycle"))
 }
 
 // TestCheckServerLogsOnStateChange verifies that a state transition log is emitted when
@@ -265,23 +281,23 @@ func TestCheckServerNoLogWhenPhaseUnchanged(t *testing.T) {
 func TestCheckServerLogsOnStateChange(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning,
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning,
 		healthCondition(),
 	)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
+		s.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
 	})
 
 	require.NoError(t, err)
 
-	entries := sink.entriesWithMsg("instance state transition")
+	entries := sink.entriesWithMsg("instance health transition")
 	require.Len(t, entries, 1)
 	require.Equal(t, serverID, entries[0]["instance_id"])
 	require.Equal(t, orgID, entries[0]["org_id"])
 	require.Equal(t, regionID, entries[0]["region_id"])
-	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["from_state"])
-	require.Equal(t, string(unikornv1core.ConditionReasonDegraded), entries[0]["to_state"])
+	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["from_health"])
+	require.Equal(t, string(unikornv1core.ConditionReasonDegraded), entries[0]["to_health"])
 	require.NotZero(t, entries[0]["duration_ms"])
 }
 
@@ -290,57 +306,57 @@ func TestCheckServerLogsOnStateChange(t *testing.T) {
 func TestCheckServerNoLogWhenStateUnchanged(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning,
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning,
 		healthCondition(),
 	)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+		s.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.entriesWithMsg("instance state transition"))
+	require.Empty(t, sink.entriesWithMsg("instance health transition"))
 }
 
 // TestCheckServerNoLogWhenStatusUnchangedReasonDiffers documents that logStateTransition
 // compares ConditionHealthy.Status, not Reason. If Status stays True while Reason changes
-// (e.g. Healthy → Reconciling, both True), no log is emitted. This is intentional: Reason
+// (e.g. Healthy → Unknown, both True), no log is emitted. This is intentional: Reason
 // changes within the same Status are not considered state transitions.
 func TestCheckServerNoLogWhenStatusUnchangedReasonDiffers(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning,
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning,
 		healthCondition(),
 	)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
 		// Status stays True; only Reason changes.
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioning, "")
+		s.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonUnknown, "")
 	})
 
 	require.NoError(t, err)
-	require.Empty(t, sink.entriesWithMsg("instance state transition"))
+	require.Empty(t, sink.entriesWithMsg("instance health transition"))
 }
 
 // TestCheckServerLogsWhenConditionAppearsForFirstTime verifies that a state transition log
 // is emitted when there was no prior ConditionHealthy and the provider sets one, and that
-// from_state is empty since there was no previous condition.
+// from_health is empty since there was no previous condition.
 func TestCheckServerLogsWhenConditionAppearsForFirstTime(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhaseRunning) // no prior condition
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning) // no prior condition
 	srv.CreationTimestamp = metav1.NewTime(time.Now().Add(-5 * time.Minute))
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
+		s.SetHealthCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonHealthy, "")
 	})
 
 	require.NoError(t, err)
 
-	entries := sink.entriesWithMsg("instance state transition")
+	entries := sink.entriesWithMsg("instance health transition")
 	require.Len(t, entries, 1)
-	require.Empty(t, entries[0]["from_state"])
-	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["to_state"])
+	require.Empty(t, entries[0]["from_health"])
+	require.Equal(t, string(unikornv1core.ConditionReasonHealthy), entries[0]["to_health"])
 	require.NotZero(t, entries[0]["duration_ms"])
 }
 
@@ -349,18 +365,18 @@ func TestCheckServerLogsWhenConditionAppearsForFirstTime(t *testing.T) {
 func TestCheckServerLogsBothOnCombinedChange(t *testing.T) {
 	t.Parallel()
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending,
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending,
 		healthCondition(),
 	)
 
 	sink, err := runCheck(t, srv, func(s *unikornv1.Server) {
-		s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
-		s.StatusConditionWrite(unikornv1core.ConditionHealthy, corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+		s.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "")
 	})
 
 	require.NoError(t, err)
-	require.Len(t, sink.entriesWithMsg("instance phase transition"), 1)
-	require.Len(t, sink.entriesWithMsg("instance state transition"), 1)
+	require.Len(t, sink.entriesWithMsg("lifecycle"), 1)
+	require.Len(t, sink.entriesWithMsg("instance health transition"), 1)
 }
 
 // TestCheckServerNoHistogramOnClockSkew verifies that no histogram observation is recorded
@@ -377,7 +393,7 @@ func TestCheckServerNoHistogramOnClockSkew(t *testing.T) {
 	// launchedAt is before createdAt — simulates clock skew.
 	launchedAt := metav1.NewTime(createdAt.Add(-30 * time.Second))
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
@@ -386,7 +402,7 @@ func TestCheckServerNoHistogramOnClockSkew(t *testing.T) {
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 			s.Status.LaunchedAt = &launchedAt
 
 			return nil
@@ -424,7 +440,7 @@ func TestCheckServerNoHistogramWhenTimestampsNil(t *testing.T) {
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 
 	ctrl := gomock.NewController(t)
 
@@ -432,7 +448,7 @@ func TestCheckServerNoHistogramWhenTimestampsNil(t *testing.T) {
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 			// LaunchedAt and ScheduledAt intentionally not set
 			return nil
 		})
@@ -470,7 +486,7 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	createdAt := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
 	launchedAt := createdAt.Add(2 * time.Minute)
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
@@ -479,7 +495,8 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+
 			t := metav1.NewTime(launchedAt)
 			s.Status.LaunchedAt = &t
 
@@ -525,7 +542,7 @@ func TestCheckServerRecordsSchedulingDurationOnPendingToRunning(t *testing.T) {
 	createdAt := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
 	scheduledAt := createdAt.Add(10 * time.Second)
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
@@ -534,7 +551,8 @@ func TestCheckServerRecordsSchedulingDurationOnPendingToRunning(t *testing.T) {
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+
 			t := metav1.NewTime(scheduledAt)
 			s.Status.ScheduledAt = &t
 
@@ -584,7 +602,7 @@ func TestCheckServerNoHistogramOnRestartAfterFirstBoot(t *testing.T) {
 	scheduledAt := metav1.NewTime(time.Now().Add(-2 * time.Minute))
 
 	// Server already has both timestamps from its first boot.
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 	srv.Status.LaunchedAt = &launchedAt
 	srv.Status.ScheduledAt = &scheduledAt
 
@@ -594,7 +612,7 @@ func TestCheckServerNoHistogramOnRestartAfterFirstBoot(t *testing.T) {
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 			s.Status.LaunchedAt = &launchedAt
 			s.Status.ScheduledAt = &scheduledAt
 
@@ -635,7 +653,7 @@ func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.Moc
 	createdAt := time.Now().Add(-time.Minute).Truncate(time.Second)
 	launchedAt := createdAt.Add(time.Minute)
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
@@ -644,7 +662,8 @@ func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.Moc
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+
 			t := metav1.NewTime(launchedAt)
 			s.Status.LaunchedAt = &t
 
@@ -753,7 +772,7 @@ func TestCheckGaugeEmitsLowercaseStateLabels(t *testing.T) {
 	m, err := healthserver.NewMetrics(meter)
 	require.NoError(t, err)
 
-	makeSrv := func(name string, phase unikornv1.InstanceLifecyclePhase) *unikornv1.Server {
+	makeSrv := func(name string, phase unikornv1.ActiveConditionReason) *unikornv1.Server {
 		srv := serverFixture(phase)
 		srv.Name = name
 
@@ -779,9 +798,9 @@ func TestCheckGaugeEmitsLowercaseStateLabels(t *testing.T) {
 	mockProviders := mockproviders.NewMockProviders(ctrl)
 	mockProviders.EXPECT().LookupCloud(regionID).Return(mockProvider, nil).AnyTimes()
 
-	srv1 := makeSrv("server-1", unikornv1.InstanceLifecyclePhasePending)
-	srv2 := makeSrv("server-2", unikornv1.InstanceLifecyclePhasePending)
-	srv3 := makeSrv("server-3", unikornv1.InstanceLifecyclePhaseRunning)
+	srv1 := makeSrv("server-1", unikornv1.ActiveConditionReasonPending)
+	srv2 := makeSrv("server-2", unikornv1.ActiveConditionReasonPending)
+	srv3 := makeSrv("server-3", unikornv1.ActiveConditionReasonRunning)
 
 	ctx := logr.NewContext(t.Context(), logr.Discard())
 	checker := healthserver.New(newFakeClient(t, identityFixture(), srv1, srv2, srv3), namespace, mockProviders, m)
@@ -805,7 +824,7 @@ func TestCheckGaugeEmitsLowercaseStateLabels(t *testing.T) {
 // is now Pending → Building → Running for VMs and Pending → Queued →
 // Building → Running for baremetal, so the histogram has to fire from any
 // pre-Running phase, not just Pending.
-func assertProvisionDurationRecorded(t *testing.T, startPhase unikornv1.InstanceLifecyclePhase) {
+func assertProvisionDurationRecorded(t *testing.T, startPhase unikornv1.ActiveConditionReason) {
 	t.Helper()
 
 	meter, reader := newTestMeter(t)
@@ -825,7 +844,8 @@ func assertProvisionDurationRecorded(t *testing.T, startPhase unikornv1.Instance
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseRunning
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+
 			t := metav1.NewTime(launchedAt)
 			s.Status.LaunchedAt = &t
 
@@ -860,7 +880,7 @@ func assertProvisionDurationRecorded(t *testing.T, startPhase unikornv1.Instance
 func TestCheckServerRecordsProvisionDurationOnBuildingToRunning(t *testing.T) {
 	t.Parallel()
 
-	assertProvisionDurationRecorded(t, unikornv1.InstanceLifecyclePhaseBuilding)
+	assertProvisionDurationRecorded(t, unikornv1.ActiveConditionReasonBuilding)
 }
 
 // TestCheckServerRecordsProvisionDurationOnQueuedToRunning covers the baremetal
@@ -869,7 +889,7 @@ func TestCheckServerRecordsProvisionDurationOnBuildingToRunning(t *testing.T) {
 func TestCheckServerRecordsProvisionDurationOnQueuedToRunning(t *testing.T) {
 	t.Parallel()
 
-	assertProvisionDurationRecorded(t, unikornv1.InstanceLifecyclePhaseQueued)
+	assertProvisionDurationRecorded(t, unikornv1.ActiveConditionReasonQueued)
 }
 
 // TestCheckServerNoHistogramOnIntermediatePhaseTransition verifies that
@@ -887,7 +907,7 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 	createdAt := time.Now().Add(-time.Minute).Truncate(time.Second)
 	launchedAt := metav1.NewTime(createdAt.Add(30 * time.Second))
 
-	srv := serverFixture(unikornv1.InstanceLifecyclePhasePending)
+	srv := serverFixture(unikornv1.ActiveConditionReasonPending)
 	srv.CreationTimestamp = metav1.NewTime(createdAt)
 
 	ctrl := gomock.NewController(t)
@@ -896,7 +916,7 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 	mockProvider.EXPECT().
 		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.Status.Phase = unikornv1.InstanceLifecyclePhaseBuilding
+			s.SetActiveCondition(unikornv1.ActiveConditionReasonBuilding)
 			s.Status.LaunchedAt = &launchedAt
 
 			return nil
@@ -919,4 +939,137 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 
 	require.Empty(t, collectHistogram(t, reader))
 	require.Empty(t, collectSchedulingHistogram(t, reader))
+}
+
+// TestCheckServerPersistsObservedStatus pins that the poll's single status patch
+// carries the monitor's observed subtree through to etcd. The subtree is the
+// monitor's exclusive write region, so this is the write that makes it readable at
+// all; a patch that dropped it would leave the region permanently empty while
+// every in-memory unit test still passed.
+func TestCheckServerPersistsObservedStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		s.Status.Observed = &unikornv1.ServerObservedStatus{
+			Generation: 9,
+			Image:      &imageID,
+			Errored:    true,
+		}
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.Equal(t, int64(9), updated.Status.Observed.Generation)
+	require.Equal(t, &imageID, updated.Status.Observed.Image)
+	require.True(t, updated.Status.Observed.Errored)
+}
+
+// TestCheckServerPersistsObservedStatusOnProviderAbsence pins that a server
+// whose Nova instance disappeared out-of-band still gets an observed write —
+// and thus an observed wake — on the monitor's poll path. The provider's
+// GetServer returns ErrResourceNotFound; updateServerStateWithClients records
+// an absent observation (errored cleared, generation stamped from
+// metadata.generation, image preserved as last-known) and surfaces the error
+// (the create-retry provisioner's confirmed-gone gate depends on it), so
+// UpdateServerState here both mutates and errors. checkServer still proceeds
+// to the status patch on that error while keeping the server out of the state
+// gauge, and the poll cycle itself does not fail. Without the patch, a parked
+// server (observed.errored: true) whose instance is deleted stays in error
+// forever: no observed change means no reconciler wake.
+func TestCheckServerPersistsObservedStatusOnProviderAbsence(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	// Seed a parked server: observed.errored is true and the observed
+	// generation lags metadata.generation, so a stale observation is
+	// distinguishable from a fresh one.
+	srv.Generation = 10
+	srv.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 9,
+		Image:      &imageID,
+		Errored:    true,
+	}
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		// Simulates updateServerStateWithClients on the not-found path:
+		// GetServer returned ErrResourceNotFound, so the absent observation
+		// is recorded and UpdateServerState surfaces the not-found error.
+		if s.Status.Observed == nil {
+			s.Status.Observed = &unikornv1.ServerObservedStatus{}
+		}
+
+		s.Status.Observed.Generation = s.Generation
+		s.Status.Observed.Errored = false
+
+		return coreerrors.ErrResourceNotFound
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.False(t, updated.Status.Observed.Errored)
+	require.Equal(t, updated.Generation, updated.Status.Observed.Generation)
+	require.Equal(t, &imageID, updated.Status.Observed.Image)
+}
+
+// TestCheckServerPersistsObservedStatusClearsErrored pins the un-park trigger for a
+// recovered-in-place server: a healthy ACTIVE read sets Errored to false, stamps
+// Generation from metadata.generation, and records the observed current image. The
+// observed subtree is the monitor's exclusive write region, so this is the write
+// that flips the reconciler's freshness predicate; Errored has omitempty JSON, so
+// asserting the clear survives the merge patch pins that the false value is
+// persisted (not omitted as a no-op) and the parked server is un-parked without a
+// spec edit.
+func TestCheckServerPersistsObservedStatusClearsErrored(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	staleImageID := idstest.MustParseImageID("44444444-4444-4444-a444-444444444444")
+	currentImageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	// Seed a parked server: observed.errored is true and the observed
+	// generation lags metadata.generation, so a stale observation is
+	// distinguishable from a fresh one.
+	srv.Generation = 10
+	srv.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 9,
+		Image:      &staleImageID,
+		Errored:    true,
+	}
+
+	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
+		// Simulates a healthy ACTIVE read on a recovered-in-place server:
+		// the provider clears the errored marker, stamps the generation
+		// from metadata.generation, and records the observed current image.
+		if s.Status.Observed == nil {
+			s.Status.Observed = &unikornv1.ServerObservedStatus{}
+		}
+
+		s.Status.Observed.Generation = s.Generation
+		s.Status.Observed.Errored = false
+		s.Status.Observed.Image = &currentImageID
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotNil(t, updated.Status.Observed)
+	require.False(t, updated.Status.Observed.Errored, "the clear must survive the merge patch despite omitempty JSON")
+	require.Equal(t, updated.Generation, updated.Status.Observed.Generation)
+	require.Equal(t, &currentImageID, updated.Status.Observed.Image)
 }

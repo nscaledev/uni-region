@@ -28,6 +28,9 @@ rule-shape validation rather than deep multi-object orchestration.
   `ResourceAPIVersionLabel=2`.
 - A `SecurityGroup v2` must belong to a visible and authorized network in the
   same project context.
+- Updates return `409 Conflict` when a concurrent controller finalizer or
+  status write advances the resource version; callers re-read and reapply
+  their requested change.
 - Deletion is primarily handled through the ownership graph rooted at the
   network rather than bespoke orchestration here.
 

@@ -41,6 +41,7 @@ type TestConfig struct {
 	InternalAPIActor        string
 	ServerFlavorID          string
 	ServerImageID           string
+	ServerRebuildImageID    string
 	ServerInfrastructureRef string
 	FileStorageSnapshotDir  string
 }
@@ -104,6 +105,7 @@ func LoadTestConfig() (*TestConfig, error) {
 		InternalAPIActor:        v.GetString("INTERNAL_API_ACTOR"),
 		ServerFlavorID:          v.GetString("TEST_SERVER_FLAVOR_ID"),
 		ServerImageID:           v.GetString("TEST_SERVER_IMAGE_ID"),
+		ServerRebuildImageID:    v.GetString("TEST_SERVER_REBUILD_IMAGE_ID"),
 		ServerInfrastructureRef: v.GetString("TEST_SERVER_INFRASTRUCTURE_REF"),
 		FileStorageSnapshotDir:  v.GetString("TEST_FILE_STORAGE_SNAPSHOT_DIR"),
 	}

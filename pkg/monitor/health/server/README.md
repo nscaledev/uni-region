@@ -17,7 +17,7 @@ status/telemetry model.
 
 - resolves provider and flavor context per region and caches it for a poll cycle
 - updates server status through provider `UpdateServerState(...)`
-- refines the server's live `Phase` from observed Nova + Ironic state. For OpenStack baremetal servers in Nova `BUILD`, an Ironic node lookup distinguishes `Queued` (provider has accepted the create but hardware is not yet engaged — pre-deploy Ironic states) from `Building` (Ironic actively deploying, including transient deploy failures). VMs in Nova `BUILD` go straight to `Building`. Provisioning status itself stays purely condition-derived (provisioner-owned, one-shot): the monitor never writes it. Phase is the live readiness signal once provisioning status reaches `provisioned`.
+- refines the server's live lifecycle state from observed Nova + Ironic state. Lifecycle state rides the generic core `Active` condition (status `True` only when the server is running; the reason carries the precise state via the domain-owned `ActiveConditionReason` vocabulary — `Pending`/`Queued`/`Building`/`Running`/`Stopping`/`Stopped`/`Error`), not a bespoke status field. For OpenStack baremetal servers in Nova `BUILD`, an Ironic node lookup distinguishes `Queued` (provider has accepted the create but hardware is not yet engaged — pre-deploy Ironic states) from `Building` (Ironic actively deploying, including transient deploy failures). VMs in Nova `BUILD` go straight to `Building`. Provisioning status itself is a separate axis (the `Available` condition), condition-derived and provisioner-owned (one-shot): the monitor never writes it. The `Active` condition is the live readiness signal once provisioning status reaches `provisioned`.
 - latches `status.provisionedAt` from Nova `launched_at`, alongside `launchedAt`
   and ahead of the `BUILD` early-return, so it fires for VMs and baremetal alike
   regardless of live power state. This is monitor-owned observed state (like
@@ -38,6 +38,48 @@ status/telemetry model.
   value, while unconditionally writing a valid MAC self-heals drift (the status
   PATCH makes a same-value write a no-op).
 - logs phase and health-condition transitions
+- populates `status.observed` from the poll's existing `GetServer` response. The
+  region has one writer *function* rather than one caller: the reconciler's
+  create-retry existence check goes through the same `UpdateServerState`, and so the
+  same projection. One derivation with no arbitration is what removes the ordering
+  argument between the two status writers — not the monitor holding the region
+  alone. That shared derivation also means a provider not-found is *surfaced* by
+  `UpdateServerState` — the create-retry path reads it as "confirmed gone" — but
+  the absent observation (errored cleared, generation stamped, image sticky) is
+  recorded on the server first, and this monitor persists it despite the error:
+  the observed wake is what lets the reconciler notice the out-of-band deletion
+  and recreate the server. The absent server is excluded from the state gauge for
+  that cycle, as the skip was before — there is no provider state to count.
+  `generation` is stamped unconditionally, so the subtree exists from the
+  first poll that read the provider at all — a present subtree with no `image`
+  means "polled, image unreadable", which is not the same fact as an absent
+  subtree meaning "never successfully polled".
+  `image` tracks the live provider image, but an unreadable ref (absent, empty or
+  unparseable) preserves the previous value and never clears it, for the same
+  reason `macAddress` is never cleared: a transient read miss must not erase a
+  known fact. `errored` is the opposite — live state that clears on an authoritative
+  non-error read. That is safe only because a provider that cannot be reached
+  aborts the poll before any write, so connectivity loss can never be mistaken for
+  a recovery. It is gated on the provider reporting `ERROR` rather than on Nova's
+  `fault` being populated, because Nova leaves a stale `fault` on a server that has
+  since recovered. The fault detail itself (code, message, created) never reaches
+  projected status: it is fetched and logged once, best-effort, on the transition
+  into the errored state, and `fault.details` is excluded even from the log as an
+  admin-only stack trace.
+  A write to this region wakes the reconciler: the server manager's
+  `serverObservedUpdate` predicate (`pkg/managers/server`) fires on any change to
+  the subtree, so the reconciler sleeps until a provider fact moves rather than
+  requeueing to re-read one. Nothing reads the region's *contents* yet.
+  Because `generation` is stamped unconditionally, the first poll after a spec edit
+  writes a real patch even when no provider fact moved, so it wakes the reconciler
+  once redundantly — the edit already woke it via the generation predicate. Harmless,
+  and cheaper than the alternative of making the stamp conditional on other fields
+  having changed, which would make the stamp mean something subtler than "the
+  generation this was observed at".
+  The rule for when something does read the contents: **an observation never
+  authorizes an action against the provider** — actuation is decided from a fresh
+  provider read, and an observation may only be read as a precondition that refuses
+  one.
 - rebuilds gauge counts from the effective server set each cycle
 
 ## Invariants And Guard Rails
@@ -47,8 +89,8 @@ status/telemetry model.
 - Servers skipped because region/provider resolution fails are absent from the
   gauge for that cycle rather than misreported as a fake state.
 - Provider-specific progress refinement must be best effort. For example,
-  OpenStack Ironic lookup failures degrade baremetal Phase derivation to the
-  VM default (Building) so API responses still get a coherent live signal
+  OpenStack Ironic lookup failures degrade baremetal `Active`-state derivation
+  to the VM default (Building) so API responses still get a coherent live signal
   instead of failing status refresh. Baremetal progress refinement depends on
   the Region provider credential having Ironic node visibility by instance
   UUID; if local or production policy withholds that visibility, the monitor
@@ -58,11 +100,19 @@ status/telemetry model.
 
 - This package is intentionally eventual and observational; it does not make
   provider state changes happen, it notices and projects them.
-- Phase is a live readiness signal once provisioning status reaches
-  `provisioned`. If the monitor stops running, or a server is persistently
-  skipped before the status patch (region resolution, identity, or Nova lookup
-  failures), Phase can lag observed reality by an unbounded amount. In healthy
-  operation staleness is bounded by one poll period.
+- The `Active` condition is a live readiness signal once provisioning status
+  reaches `provisioned`. If the monitor stops running, or a server is
+  persistently skipped before the status patch (region resolution, identity, or
+  Nova lookup failures), it can lag observed reality by an unbounded amount. In
+  healthy operation staleness is bounded by one poll period. A pending rebuild is
+  unaffected: it converges on the reconciler's own requeue, so a stopped monitor does
+  not stall it. It does leave the `Rebuilding` stamp standing after convergence,
+  because only the monitor writes `Active=Running`. A server parked on a quiesced
+  provider `ERROR` (the provider's failed-rebuild row) is different: no requeue
+  exists there, so recovery without a spec change depends on this monitor's
+  `status.observed` write. A stopped or persistently-skipping monitor (the failure
+  modes above) pins such a server at `provisioningStatus=error` until a spec edit,
+  whose generation wake is monitor-independent.
 - `unikorn_region_server_provision_duration_seconds` measures
   `CreationTimestamp → OS-SRV-USG:launched_at`. `launched_at` is when the
   hypervisor boots the instance, not when the guest OS finishes booting. For
@@ -75,8 +125,8 @@ status/telemetry model.
   overhead and Nova allocation time.
 - Both duration metrics fire only once per server, on the first transition
   into Running where the relevant Nova timestamp is non-nil. The intermediate
-  Phase path (Pending → Building → Running for VMs, Pending → Queued →
+  `Active`-state path (Pending → Building → Running for VMs, Pending → Queued →
   Building → Running for baremetal) is transparent to the histograms: they
-  trigger on the move into Running regardless of which earlier phase the
+  trigger on the move into Running regardless of which earlier state the
   server was last observed in. Negative durations (clock skew between the Uni
   controller and Nova) are logged and skipped rather than recorded.

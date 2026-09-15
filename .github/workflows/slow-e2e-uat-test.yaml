@@ -108,10 +108,25 @@ jobs:
     - name: Touch
       run: make touch
 
+    # The cert is minted by cert-manager on the stg cluster and pushed to Vault
+    # by a PushSecret in k8s-deploy-unikorn, so every run pulls the current cert.
+    # Auth is credential-less: the job's GitHub OIDC token (id-token: write) is
+    # exchanged against Vault's jwt-github-actions mount, per
+    # https://developer.hashicorp.com/validated-patterns/vault/retrieve-vault-secrets-from-github-actions
+    - name: Import internal API credentials from Vault
+      # Pinned SHA matches hashicorp/vault-action v4.0.0.
+      uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc
+      with:
+        url: https://vault.nscale.com
+        method: jwt
+        path: jwt-github-actions
+        role: uni-region-e2e
+        jwtGithubAudience: https://vault.nscale.com
+        secrets: >-
+          cloud-native/data/europe-west2/nks-stg/e2e/uat-test-runner/client-tls cert | UAT_INTERNAL_API_CLIENT_CERT ;
+          cloud-native/data/europe-west2/nks-stg/e2e/uat-test-runner/client-tls key | UAT_INTERNAL_API_CLIENT_KEY
+
     - name: Write internal API credentials
-      env:
-        UAT_INTERNAL_API_CLIENT_CERT: ${{ secrets.UAT_INTERNAL_API_CLIENT_CERT }}
-        UAT_INTERNAL_API_CLIENT_KEY: ${{ secrets.UAT_INTERNAL_API_CLIENT_KEY }}
       run: |
         : "${UAT_INTERNAL_API_CLIENT_CERT:?UAT_INTERNAL_API_CLIENT_CERT is required}"
         : "${UAT_INTERNAL_API_CLIENT_KEY:?UAT_INTERNAL_API_CLIENT_KEY is required}"

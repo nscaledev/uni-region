@@ -13,10 +13,13 @@ import (
 	reflect "reflect"
 
 	nodes "github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
+	volumes "github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
+	volumetypes "github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumetypes"
 	flavors "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	remoteconsoles "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/remoteconsoles"
 	servergroups "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servergroups"
 	servers "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
+	volumeattach "github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 	listeners "github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
 	loadbalancers "github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/loadbalancers"
 	monitors "github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/monitors"
@@ -2116,6 +2119,21 @@ func (mr *MockServerInterfaceMockRecorder) RebootServer(ctx, id, hard any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebootServer", reflect.TypeOf((*MockServerInterface)(nil).RebootServer), ctx, id, hard)
 }
 
+// RebuildServer mocks base method.
+func (m *MockServerInterface) RebuildServer(ctx context.Context, id string, options openstack.ServerRebuildOptions) (*servers.Server, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RebuildServer", ctx, id, options)
+	ret0, _ := ret[0].(*servers.Server)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RebuildServer indicates an expected call of RebuildServer.
+func (mr *MockServerInterfaceMockRecorder) RebuildServer(ctx, id, options any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebuildServer", reflect.TypeOf((*MockServerInterface)(nil).RebuildServer), ctx, id, options)
+}
+
 // ShowConsoleOutput mocks base method.
 func (m *MockServerInterface) ShowConsoleOutput(ctx context.Context, id string, length *int) (string, error) {
 	m.ctrl.T.Helper()
@@ -2157,6 +2175,257 @@ func (m *MockServerInterface) StopServer(ctx context.Context, id string) error {
 func (mr *MockServerInterfaceMockRecorder) StopServer(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopServer", reflect.TypeOf((*MockServerInterface)(nil).StopServer), ctx, id)
+}
+
+// MockServerObservationInterface is a mock of ServerObservationInterface interface.
+type MockServerObservationInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockServerObservationInterfaceMockRecorder
+}
+
+// MockServerObservationInterfaceMockRecorder is the mock recorder for MockServerObservationInterface.
+type MockServerObservationInterfaceMockRecorder struct {
+	mock *MockServerObservationInterface
+}
+
+// NewMockServerObservationInterface creates a new mock instance.
+func NewMockServerObservationInterface(ctrl *gomock.Controller) *MockServerObservationInterface {
+	mock := &MockServerObservationInterface{ctrl: ctrl}
+	mock.recorder = &MockServerObservationInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockServerObservationInterface) EXPECT() *MockServerObservationInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreateImageFromServer mocks base method.
+func (m *MockServerObservationInterface) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateImageFromServer", ctx, id, opts)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateImageFromServer indicates an expected call of CreateImageFromServer.
+func (mr *MockServerObservationInterfaceMockRecorder) CreateImageFromServer(ctx, id, opts any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateImageFromServer", reflect.TypeOf((*MockServerObservationInterface)(nil).CreateImageFromServer), ctx, id, opts)
+}
+
+// CreateRemoteConsole mocks base method.
+func (m *MockServerObservationInterface) CreateRemoteConsole(ctx context.Context, id string) (*remoteconsoles.RemoteConsole, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateRemoteConsole", ctx, id)
+	ret0, _ := ret[0].(*remoteconsoles.RemoteConsole)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateRemoteConsole indicates an expected call of CreateRemoteConsole.
+func (mr *MockServerObservationInterfaceMockRecorder) CreateRemoteConsole(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRemoteConsole", reflect.TypeOf((*MockServerObservationInterface)(nil).CreateRemoteConsole), ctx, id)
+}
+
+// CreateServer mocks base method.
+func (m *MockServerObservationInterface) CreateServer(ctx context.Context, server *v1alpha1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateServer", ctx, server, keyName, networks, serverGroupID, metadata)
+	ret0, _ := ret[0].(*servers.Server)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateServer indicates an expected call of CreateServer.
+func (mr *MockServerObservationInterfaceMockRecorder) CreateServer(ctx, server, keyName, networks, serverGroupID, metadata any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServer", reflect.TypeOf((*MockServerObservationInterface)(nil).CreateServer), ctx, server, keyName, networks, serverGroupID, metadata)
+}
+
+// DeleteServer mocks base method.
+func (m *MockServerObservationInterface) DeleteServer(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteServer", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteServer indicates an expected call of DeleteServer.
+func (mr *MockServerObservationInterfaceMockRecorder) DeleteServer(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteServer", reflect.TypeOf((*MockServerObservationInterface)(nil).DeleteServer), ctx, id)
+}
+
+// GetServer mocks base method.
+func (m *MockServerObservationInterface) GetServer(ctx context.Context, server *v1alpha1.Server) (*servers.Server, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetServer", ctx, server)
+	ret0, _ := ret[0].(*servers.Server)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetServer indicates an expected call of GetServer.
+func (mr *MockServerObservationInterfaceMockRecorder) GetServer(ctx, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServer", reflect.TypeOf((*MockServerObservationInterface)(nil).GetServer), ctx, server)
+}
+
+// GetServerFault mocks base method.
+func (m *MockServerObservationInterface) GetServerFault(ctx context.Context, id string) (*servers.Fault, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetServerFault", ctx, id)
+	ret0, _ := ret[0].(*servers.Fault)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetServerFault indicates an expected call of GetServerFault.
+func (mr *MockServerObservationInterfaceMockRecorder) GetServerFault(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServerFault", reflect.TypeOf((*MockServerObservationInterface)(nil).GetServerFault), ctx, id)
+}
+
+// RebootServer mocks base method.
+func (m *MockServerObservationInterface) RebootServer(ctx context.Context, id string, hard bool) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RebootServer", ctx, id, hard)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RebootServer indicates an expected call of RebootServer.
+func (mr *MockServerObservationInterfaceMockRecorder) RebootServer(ctx, id, hard any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebootServer", reflect.TypeOf((*MockServerObservationInterface)(nil).RebootServer), ctx, id, hard)
+}
+
+// RebuildServer mocks base method.
+func (m *MockServerObservationInterface) RebuildServer(ctx context.Context, id string, options openstack.ServerRebuildOptions) (*servers.Server, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RebuildServer", ctx, id, options)
+	ret0, _ := ret[0].(*servers.Server)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RebuildServer indicates an expected call of RebuildServer.
+func (mr *MockServerObservationInterfaceMockRecorder) RebuildServer(ctx, id, options any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebuildServer", reflect.TypeOf((*MockServerObservationInterface)(nil).RebuildServer), ctx, id, options)
+}
+
+// ShowConsoleOutput mocks base method.
+func (m *MockServerObservationInterface) ShowConsoleOutput(ctx context.Context, id string, length *int) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ShowConsoleOutput", ctx, id, length)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ShowConsoleOutput indicates an expected call of ShowConsoleOutput.
+func (mr *MockServerObservationInterfaceMockRecorder) ShowConsoleOutput(ctx, id, length any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ShowConsoleOutput", reflect.TypeOf((*MockServerObservationInterface)(nil).ShowConsoleOutput), ctx, id, length)
+}
+
+// StartServer mocks base method.
+func (m *MockServerObservationInterface) StartServer(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StartServer", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StartServer indicates an expected call of StartServer.
+func (mr *MockServerObservationInterfaceMockRecorder) StartServer(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartServer", reflect.TypeOf((*MockServerObservationInterface)(nil).StartServer), ctx, id)
+}
+
+// StopServer mocks base method.
+func (m *MockServerObservationInterface) StopServer(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StopServer", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StopServer indicates an expected call of StopServer.
+func (mr *MockServerObservationInterfaceMockRecorder) StopServer(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopServer", reflect.TypeOf((*MockServerObservationInterface)(nil).StopServer), ctx, id)
+}
+
+// MockVolumeAttachmentInterface is a mock of VolumeAttachmentInterface interface.
+type MockVolumeAttachmentInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockVolumeAttachmentInterfaceMockRecorder
+}
+
+// MockVolumeAttachmentInterfaceMockRecorder is the mock recorder for MockVolumeAttachmentInterface.
+type MockVolumeAttachmentInterfaceMockRecorder struct {
+	mock *MockVolumeAttachmentInterface
+}
+
+// NewMockVolumeAttachmentInterface creates a new mock instance.
+func NewMockVolumeAttachmentInterface(ctrl *gomock.Controller) *MockVolumeAttachmentInterface {
+	mock := &MockVolumeAttachmentInterface{ctrl: ctrl}
+	mock.recorder = &MockVolumeAttachmentInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockVolumeAttachmentInterface) EXPECT() *MockVolumeAttachmentInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreateVolumeAttachment mocks base method.
+func (m *MockVolumeAttachmentInterface) CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateVolumeAttachment", ctx, serverID, volumeID)
+	ret0, _ := ret[0].(*volumeattach.VolumeAttachment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateVolumeAttachment indicates an expected call of CreateVolumeAttachment.
+func (mr *MockVolumeAttachmentInterfaceMockRecorder) CreateVolumeAttachment(ctx, serverID, volumeID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVolumeAttachment", reflect.TypeOf((*MockVolumeAttachmentInterface)(nil).CreateVolumeAttachment), ctx, serverID, volumeID)
+}
+
+// DeleteVolumeAttachment mocks base method.
+func (m *MockVolumeAttachmentInterface) DeleteVolumeAttachment(ctx context.Context, serverID, volumeID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVolumeAttachment", ctx, serverID, volumeID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVolumeAttachment indicates an expected call of DeleteVolumeAttachment.
+func (mr *MockVolumeAttachmentInterfaceMockRecorder) DeleteVolumeAttachment(ctx, serverID, volumeID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolumeAttachment", reflect.TypeOf((*MockVolumeAttachmentInterface)(nil).DeleteVolumeAttachment), ctx, serverID, volumeID)
+}
+
+// GetVolumeAttachment mocks base method.
+func (m *MockVolumeAttachmentInterface) GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolumeAttachment", ctx, serverID, volumeID)
+	ret0, _ := ret[0].(*volumeattach.VolumeAttachment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVolumeAttachment indicates an expected call of GetVolumeAttachment.
+func (mr *MockVolumeAttachmentInterfaceMockRecorder) GetVolumeAttachment(ctx, serverID, volumeID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumeAttachment", reflect.TypeOf((*MockVolumeAttachmentInterface)(nil).GetVolumeAttachment), ctx, serverID, volumeID)
 }
 
 // MockComputeInterface is a mock of ComputeInterface interface.
@@ -2256,6 +2525,21 @@ func (mr *MockComputeInterfaceMockRecorder) CreateServerGroup(ctx, name any) *go
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateServerGroup", reflect.TypeOf((*MockComputeInterface)(nil).CreateServerGroup), ctx, name)
 }
 
+// CreateVolumeAttachment mocks base method.
+func (m *MockComputeInterface) CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateVolumeAttachment", ctx, serverID, volumeID)
+	ret0, _ := ret[0].(*volumeattach.VolumeAttachment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateVolumeAttachment indicates an expected call of CreateVolumeAttachment.
+func (mr *MockComputeInterfaceMockRecorder) CreateVolumeAttachment(ctx, serverID, volumeID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVolumeAttachment", reflect.TypeOf((*MockComputeInterface)(nil).CreateVolumeAttachment), ctx, serverID, volumeID)
+}
+
 // DeleteKeypair mocks base method.
 func (m *MockComputeInterface) DeleteKeypair(ctx context.Context, name string) error {
 	m.ctrl.T.Helper()
@@ -2298,6 +2582,20 @@ func (mr *MockComputeInterfaceMockRecorder) DeleteServerGroup(ctx, id any) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteServerGroup", reflect.TypeOf((*MockComputeInterface)(nil).DeleteServerGroup), ctx, id)
 }
 
+// DeleteVolumeAttachment mocks base method.
+func (m *MockComputeInterface) DeleteVolumeAttachment(ctx context.Context, serverID, volumeID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVolumeAttachment", ctx, serverID, volumeID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVolumeAttachment indicates an expected call of DeleteVolumeAttachment.
+func (mr *MockComputeInterfaceMockRecorder) DeleteVolumeAttachment(ctx, serverID, volumeID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolumeAttachment", reflect.TypeOf((*MockComputeInterface)(nil).DeleteVolumeAttachment), ctx, serverID, volumeID)
+}
+
 // GetFlavors mocks base method.
 func (m *MockComputeInterface) GetFlavors(ctx context.Context) ([]flavors.Flavor, error) {
 	m.ctrl.T.Helper()
@@ -2328,6 +2626,36 @@ func (mr *MockComputeInterfaceMockRecorder) GetServer(ctx, server any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServer", reflect.TypeOf((*MockComputeInterface)(nil).GetServer), ctx, server)
 }
 
+// GetServerFault mocks base method.
+func (m *MockComputeInterface) GetServerFault(ctx context.Context, id string) (*servers.Fault, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetServerFault", ctx, id)
+	ret0, _ := ret[0].(*servers.Fault)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetServerFault indicates an expected call of GetServerFault.
+func (mr *MockComputeInterfaceMockRecorder) GetServerFault(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServerFault", reflect.TypeOf((*MockComputeInterface)(nil).GetServerFault), ctx, id)
+}
+
+// GetVolumeAttachment mocks base method.
+func (m *MockComputeInterface) GetVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolumeAttachment", ctx, serverID, volumeID)
+	ret0, _ := ret[0].(*volumeattach.VolumeAttachment)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVolumeAttachment indicates an expected call of GetVolumeAttachment.
+func (mr *MockComputeInterfaceMockRecorder) GetVolumeAttachment(ctx, serverID, volumeID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumeAttachment", reflect.TypeOf((*MockComputeInterface)(nil).GetVolumeAttachment), ctx, serverID, volumeID)
+}
+
 // RebootServer mocks base method.
 func (m *MockComputeInterface) RebootServer(ctx context.Context, id string, hard bool) error {
 	m.ctrl.T.Helper()
@@ -2340,6 +2668,21 @@ func (m *MockComputeInterface) RebootServer(ctx context.Context, id string, hard
 func (mr *MockComputeInterfaceMockRecorder) RebootServer(ctx, id, hard any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebootServer", reflect.TypeOf((*MockComputeInterface)(nil).RebootServer), ctx, id, hard)
+}
+
+// RebuildServer mocks base method.
+func (m *MockComputeInterface) RebuildServer(ctx context.Context, id string, options openstack.ServerRebuildOptions) (*servers.Server, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RebuildServer", ctx, id, options)
+	ret0, _ := ret[0].(*servers.Server)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// RebuildServer indicates an expected call of RebuildServer.
+func (mr *MockComputeInterfaceMockRecorder) RebuildServer(ctx, id, options any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebuildServer", reflect.TypeOf((*MockComputeInterface)(nil).RebuildServer), ctx, id, options)
 }
 
 // ShowConsoleOutput mocks base method.
@@ -2435,6 +2778,111 @@ func (m *MockPlacementInterface) ResourceProviderAvailable(ctx context.Context, 
 func (mr *MockPlacementInterfaceMockRecorder) ResourceProviderAvailable(ctx, query any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ResourceProviderAvailable", reflect.TypeOf((*MockPlacementInterface)(nil).ResourceProviderAvailable), ctx, query)
+}
+
+// MockVolumeTypeInterface is a mock of VolumeTypeInterface interface.
+type MockVolumeTypeInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockVolumeTypeInterfaceMockRecorder
+}
+
+// MockVolumeTypeInterfaceMockRecorder is the mock recorder for MockVolumeTypeInterface.
+type MockVolumeTypeInterfaceMockRecorder struct {
+	mock *MockVolumeTypeInterface
+}
+
+// NewMockVolumeTypeInterface creates a new mock instance.
+func NewMockVolumeTypeInterface(ctrl *gomock.Controller) *MockVolumeTypeInterface {
+	mock := &MockVolumeTypeInterface{ctrl: ctrl}
+	mock.recorder = &MockVolumeTypeInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockVolumeTypeInterface) EXPECT() *MockVolumeTypeInterfaceMockRecorder {
+	return m.recorder
+}
+
+// GetVolumeTypes mocks base method.
+func (m *MockVolumeTypeInterface) GetVolumeTypes(ctx context.Context) ([]volumetypes.VolumeType, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolumeTypes", ctx)
+	ret0, _ := ret[0].([]volumetypes.VolumeType)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVolumeTypes indicates an expected call of GetVolumeTypes.
+func (mr *MockVolumeTypeInterfaceMockRecorder) GetVolumeTypes(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumeTypes", reflect.TypeOf((*MockVolumeTypeInterface)(nil).GetVolumeTypes), ctx)
+}
+
+// MockVolumeInterface is a mock of VolumeInterface interface.
+type MockVolumeInterface struct {
+	ctrl     *gomock.Controller
+	recorder *MockVolumeInterfaceMockRecorder
+}
+
+// MockVolumeInterfaceMockRecorder is the mock recorder for MockVolumeInterface.
+type MockVolumeInterfaceMockRecorder struct {
+	mock *MockVolumeInterface
+}
+
+// NewMockVolumeInterface creates a new mock instance.
+func NewMockVolumeInterface(ctrl *gomock.Controller) *MockVolumeInterface {
+	mock := &MockVolumeInterface{ctrl: ctrl}
+	mock.recorder = &MockVolumeInterfaceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockVolumeInterface) EXPECT() *MockVolumeInterfaceMockRecorder {
+	return m.recorder
+}
+
+// CreateVolume mocks base method.
+func (m *MockVolumeInterface) CreateVolume(ctx context.Context, volume *v1alpha1.Volume, metadata map[string]string) (*volumes.Volume, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateVolume", ctx, volume, metadata)
+	ret0, _ := ret[0].(*volumes.Volume)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateVolume indicates an expected call of CreateVolume.
+func (mr *MockVolumeInterfaceMockRecorder) CreateVolume(ctx, volume, metadata any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateVolume", reflect.TypeOf((*MockVolumeInterface)(nil).CreateVolume), ctx, volume, metadata)
+}
+
+// DeleteVolume mocks base method.
+func (m *MockVolumeInterface) DeleteVolume(ctx context.Context, id string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteVolume", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteVolume indicates an expected call of DeleteVolume.
+func (mr *MockVolumeInterfaceMockRecorder) DeleteVolume(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteVolume", reflect.TypeOf((*MockVolumeInterface)(nil).DeleteVolume), ctx, id)
+}
+
+// GetVolume mocks base method.
+func (m *MockVolumeInterface) GetVolume(ctx context.Context, volume *v1alpha1.Volume) (*volumes.Volume, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetVolume", ctx, volume)
+	ret0, _ := ret[0].(*volumes.Volume)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetVolume indicates an expected call of GetVolume.
+func (mr *MockVolumeInterfaceMockRecorder) GetVolume(ctx, volume any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolume", reflect.TypeOf((*MockVolumeInterface)(nil).GetVolume), ctx, volume)
 }
 
 // MockBaremetalInterface is a mock of BaremetalInterface interface.

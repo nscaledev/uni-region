@@ -28,7 +28,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
-	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -38,6 +37,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -115,7 +116,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 	quantity := gibToQuantity(s.request.Spec.SizeGiB)
 	required := s.client.generateAllocation(quantity.Value())
 
-	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Create(ctx, s.filestorage, required); err != nil {
+	if err := s.client.CreateAllocation(ctx, s.filestorage, required); err != nil {
 		return wrapAllocationError(err)
 	}
 
@@ -123,7 +124,7 @@ func (s *createSaga) createAllocation(ctx context.Context) error {
 }
 
 func (s *createSaga) deleteAllocation(ctx context.Context) error {
-	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Delete(ctx, s.filestorage); err != nil {
+	if err := s.client.DeleteAllocation(ctx, s.filestorage); err != nil {
 		return wrapAllocationError(err)
 	}
 
@@ -218,12 +219,10 @@ func newUpdateSaga(client *Client, current *regionv1.FileStorage, request *opena
 	}
 }
 
-// resolveGenerateRequest builds the update's generate request with snapshot
-// policies and default protection resolved against the current state: a nil
-// policy list preserves the current user-managed policies and a nil default
-// protection flag preserves the current value. The result is deterministic from
-// request + current, so validateRequest and generate share it and
-// the reserved-name check sees exactly what generate will persist.
+// resolveGenerateRequest builds the update's generate request with omitted
+// snapshot policies resolved against the current state. The result is deterministic
+// from request + current, so validateRequest and generate share it and the
+// reserved-name check sees exactly what generate will persist.
 func (s *updateSaga) resolveGenerateRequest() *storageV2GenerateRequest {
 	generateRequest := generateRequestFromUpdate(s.request, s.current.Spec.DefaultSnapshotProtectionEnabled)
 
@@ -292,7 +291,7 @@ func (s *updateSaga) generate(ctx context.Context) error {
 func (s *updateSaga) updateAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.updated.Spec.Size.Value())
 
-	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
+	if err := s.client.UpdateAllocation(ctx, s.current, required); err != nil {
 		return wrapAllocationError(err)
 	}
 
@@ -302,7 +301,7 @@ func (s *updateSaga) updateAllocation(ctx context.Context) error {
 func (s *updateSaga) revertAllocation(ctx context.Context) error {
 	required := s.client.generateAllocation(s.current.Spec.Size.Value())
 
-	if err := identityclient.NewAllocations(s.client.Client, s.client.Identity).Update(ctx, s.current, required); err != nil {
+	if err := s.client.UpdateAllocation(ctx, s.current, required); err != nil {
 		return wrapAllocationError(err)
 	}
 
@@ -311,6 +310,10 @@ func (s *updateSaga) revertAllocation(ctx context.Context) error {
 
 func (s *updateSaga) updateStorage(ctx context.Context) error {
 	if err := s.client.Client.Patch(ctx, s.updated, client.MergeFromWithOptions(s.current, &client.MergeFromWithOptimisticLock{})); err != nil {
+		if kerrors.IsConflict(err) {
+			return errors.HTTPConflict().WithError(err)
+		}
+
 		return fmt.Errorf("%w: unable to update filestorage", err)
 	}
 

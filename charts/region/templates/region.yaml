@@ -45,6 +45,9 @@ spec:
       namespace: {{ $.Release.Namespace }}
       {{- end }}
       name: {{ $openstack.serviceAccountSecret.name }}
+    {{- with $defaultArchitecture := $openstack.defaultArchitecture }}
+    defaultArchitecture: {{ $defaultArchitecture }}
+    {{- end }}
     {{- with $identity := $openstack.identity }}
       {{ printf "identity:" | nindent 4 }}
       {{- toYaml $identity | nindent 6 }}

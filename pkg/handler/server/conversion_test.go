@@ -21,46 +21,64 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
-// TestConvertInstanceLifecyclePhase verifies that every CRD phase maps to the
-// correct API enum value and that an unknown phase returns nil.
-func TestConvertInstanceLifecyclePhase(t *testing.T) {
+// TestServerPowerState verifies the server's Active condition (its lifecycle/power
+// axis) projects onto the correct API enum value, and that an absent condition or
+// an unknown reason returns nil (the field is omitted rather than bogus).
+func TestServerPowerState(t *testing.T) {
 	t.Parallel()
+
+	serverWithReason := func(reason unikornv1.ActiveConditionReason) *unikornv1.Server {
+		s := &unikornv1.Server{}
+		s.SetActiveCondition(reason)
+
+		return s
+	}
 
 	cases := []struct {
 		name  string
-		input unikornv1.InstanceLifecyclePhase
+		input *unikornv1.Server
 		want  *openapi.InstanceLifecyclePhase
 	}{
 		{
 			name:  "Pending",
-			input: unikornv1.InstanceLifecyclePhasePending,
+			input: serverWithReason(unikornv1.ActiveConditionReasonPending),
 			want:  ptr.To(openapi.InstanceLifecyclePhasePending),
 		},
 		{
 			name:  "Running",
-			input: unikornv1.InstanceLifecyclePhaseRunning,
+			input: serverWithReason(unikornv1.ActiveConditionReasonRunning),
 			want:  ptr.To(openapi.InstanceLifecyclePhaseRunning),
 		},
 		{
 			name:  "Stopping",
-			input: unikornv1.InstanceLifecyclePhaseStopping,
+			input: serverWithReason(unikornv1.ActiveConditionReasonStopping),
 			want:  ptr.To(openapi.InstanceLifecyclePhaseStopping),
 		},
 		{
 			name:  "Stopped",
-			input: unikornv1.InstanceLifecyclePhaseStopped,
+			input: serverWithReason(unikornv1.ActiveConditionReasonStopped),
 			want:  ptr.To(openapi.InstanceLifecyclePhaseStopped),
 		},
 		{
-			name:  "unknown phase returns nil",
-			input: "some-future-phase",
+			name:  "absent condition returns nil",
+			input: &unikornv1.Server{},
+			want:  nil,
+		},
+		{
+			name:  "unknown reason returns nil",
+			input: serverWithReason("some-future-state"),
 			want:  nil,
 		},
 	}
@@ -69,7 +87,7 @@ func TestConvertInstanceLifecyclePhase(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := server.ConvertInstanceLifecyclePhase(tc.input)
+			got := server.ServerPowerState(tc.input)
 			require.Equal(t, tc.want, got)
 		})
 	}
@@ -201,4 +219,26 @@ func TestGenerateAllowedAddressPairs(t *testing.T) {
 		require.Len(t, out, 1)
 		require.Equal(t, "192.168.1.0/24", out[0].CIDR.String())
 	})
+}
+
+// TestConvertV1StaleProvisionedReportsProvisioning: the deprecated v1 read
+// shares the freshness rule so the two generations cannot disagree.
+func TestConvertV1StaleProvisionedReportsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	in := &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Generation: 1},
+		Spec: unikornv1.ServerSpec{
+			Image:    &unikornv1.ServerImage{ID: idstest.MustParseImageID("55555555-5555-4555-a555-555555555555")},
+			Networks: []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID("aaaabbbb-1234-5678-9abc-def012345678")}},
+		},
+	}
+	in.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "provisioned")
+	in.Generation = 2
+
+	out, err := server.Convert(in)
+	require.NoError(t, err)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, out.Metadata.ProvisioningStatus)
+	require.Equal(t, coreapi.ProvisioningStatusReasonProvisioning, out.Metadata.ProvisioningStatusDetail.Reason)
+	require.Equal(t, "awaiting reconciliation of the current specification", out.Metadata.ProvisioningStatusDetail.Message)
 }

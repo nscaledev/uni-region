@@ -25,7 +25,7 @@ import (
 var Convert = convert
 
 //nolint:gochecknoglobals
-var ConvertInstanceLifecyclePhase = convertInstanceLifecyclePhase
+var ServerPowerState = serverPowerState
 
 //nolint:gochecknoglobals
 var ConvertPublicIPAllocation = convertPublicIPAllocation

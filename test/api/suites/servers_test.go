@@ -62,8 +62,7 @@ var _ = Describe("Server Management", func() {
 			api.SkipUnlessServerFixtureConfigured(config)
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			DeferCleanup(cleanupNetwork)
+			network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
 			networkID = network.Metadata.Id
 		})
 
@@ -124,8 +123,7 @@ var _ = Describe("Server Management", func() {
 			api.SkipUnlessServerFixtureConfigured(config)
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			DeferCleanup(cleanupNetwork)
+			network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
 			networkID = network.Metadata.Id
 		})
 
@@ -170,8 +168,7 @@ var _ = Describe("Server Management", func() {
 			skipUnlessServerInfrastructureRefConfigured()
 
 			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, cleanupNetwork := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			DeferCleanup(cleanupNetwork)
+			network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
 			networkID = network.Metadata.Id
 		})
 

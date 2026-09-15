@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
@@ -56,6 +57,8 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	k8score "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -68,6 +71,7 @@ import (
 var (
 	errNeutronConflict    = errors.New("409 Conflict: port still attached")
 	errNeutronServerError = errors.New("500 Internal Server Error")
+	errNovaListFailed     = errors.New("503 Service Unavailable")
 )
 
 func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
@@ -632,6 +636,32 @@ func TestDeleteServerNoopsWhenIdentityUnrealized(t *testing.T) {
 	require.NoError(t, p.DeleteServer(t.Context(), identity, server))
 }
 
+func TestDeleteVolumeNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	volume := volumeFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.DeleteVolume(t.Context(), identity, volume))
+}
+
+func TestUpdateVolumeStateNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	volume := volumeFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.UpdateVolumeState(t.Context(), identity, volume))
+}
+
 // TestDeleteLoadBalancerNoopsWhenIdentityUnrealized verifies the delete is a
 // clean no-op when the backing identity has no project allocated yet.
 func TestDeleteLoadBalancerNoopsWhenIdentityUnrealized(t *testing.T) {
@@ -800,6 +830,12 @@ func withFloatingIP(s *regionv1.Server) {
 	}
 }
 
+const providerTestImageID = "11111111-1111-4111-a111-111111111111"
+
+func withImage(s *regionv1.Server) {
+	s.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(providerTestImageID)}
+}
+
 func withSecurityGroup(securityGroup *regionv1.SecurityGroup) func(*regionv1.Server) {
 	return func(s *regionv1.Server) {
 		s.Spec.SecurityGroups = append(s.Spec.SecurityGroups, regionv1.ServerSecurityGroupSpec{
@@ -819,6 +855,35 @@ func withNetwork(network *regionv1.Network) func(*regionv1.Server) {
 func withTags(tags ...corev1.Tag) func(*regionv1.Server) {
 	return func(s *regionv1.Server) {
 		s.Spec.Tags = append(s.Spec.Tags, tags...)
+	}
+}
+
+func volumeFixture() *regionv1.Volume {
+	return &regionv1.Volume{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      string(uuid.NewUUID()),
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel: organizationID,
+				coreconstants.ProjectLabel:      projectID,
+				constants.RegionLabel:           regionID,
+			},
+		},
+		Spec: regionv1.VolumeSpec{
+			Tags: corev1.TagList{
+				{
+					Name:  "example.unikorn-cloud.org/owner",
+					Value: "storage-team",
+				},
+				{
+					Name:  "region.unikorn-cloud.org/volume-id",
+					Value: "must-be-overwritten",
+				},
+			},
+			NetworkID:     "22222222-2222-2222-2222-222222222222",
+			VolumeClassID: "fast",
+			Size:          resource.MustParse("20Gi"),
+		},
 	}
 }
 
@@ -871,10 +936,16 @@ func openstackFloatingIPFixture(port *ports.Port) *floatingips.FloatingIP {
 }
 
 func openstackServerFixture(server *regionv1.Server) *servers.Server {
-	return &servers.Server{
+	srv := &servers.Server{
 		ID:   string(uuid.NewUUID()),
 		Name: server.Labels[coreconstants.NameLabel],
 	}
+
+	if server.Spec.Image != nil {
+		srv.Image = map[string]any{"id": server.Spec.Image.ID.String()}
+	}
+
+	return srv
 }
 
 func sshCertificateAuthorityFixture() *regionv1.SSHCertificateAuthority {
@@ -1802,6 +1873,171 @@ func TestReconcileLoadBalancerFloatingIP(t *testing.T) {
 	})
 }
 
+func TestReconcileVolume(t *testing.T) {
+	t.Parallel()
+
+	identity := identityFixture()
+	volume := volumeFixture()
+	openstackVolume := &volumes.Volume{
+		ID:     "provider-volume-id",
+		Name:   "volume-" + volume.Name,
+		Status: "available",
+	}
+	metadata := map[string]string{
+		"example:owner":            "storage-team",
+		"region:volume_id":         volume.Name,
+		"identity:organization_id": organizationID,
+		"identity:project_id":      projectID,
+		"region:region_id":         regionID,
+		"region:network_id":        volume.Spec.NetworkID,
+		"region:identity_id":       identity.Name,
+	}
+
+	t.Run("ItDoesNotExist", func(t *testing.T) {
+		t.Parallel()
+
+		volume := volume.DeepCopy()
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
+		blockStorage.EXPECT().CreateVolume(t.Context(), volume, metadata).Return(openstackVolume, nil)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.Nil(t, volume.Status.ProvisionedAt)
+	})
+
+	t.Run("ItIsAvailable", func(t *testing.T) {
+		t.Parallel()
+
+		volume := volume.DeepCopy()
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
+
+		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+		require.NotNil(t, volume.Status.ProvisionedAt)
+	})
+
+	t.Run("ItIsCreating", func(t *testing.T) {
+		t.Parallel()
+
+		volume := volume.DeepCopy()
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "creating",
+		}, nil)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+
+	t.Run("ItIsErrored", func(t *testing.T) {
+		t.Parallel()
+
+		volume := volume.DeepCopy()
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "error",
+		}, nil)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrTerminal)
+
+		var provisioningError *provisioners.Error
+
+		require.ErrorAs(t, err, &provisioningError)
+		require.Equal(t, corev1.ConditionReasonErrored, provisioningError.Reason())
+		require.Equal(t, "provider volume entered an error state", provisioningError.Message())
+	})
+
+	t.Run("ItWasProvisionedButIsMissing", func(t *testing.T) {
+		t.Parallel()
+
+		missingVolume := volumeFixture()
+		provisionedAt := metav1.Now()
+		missingVolume.Status.ProvisionedAt = &provisionedAt
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), missingVolume).Return(nil, coreerrors.ErrResourceNotFound)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, missingVolume)
+		require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
+
+		health, healthErr := corev1.GetHealthyCondition(missingVolume)
+		require.NoError(t, healthErr)
+		require.Equal(t, k8score.ConditionFalse, health.Status)
+		require.Equal(t, corev1.ConditionReasonDegraded, health.Reason)
+	})
+
+	t.Run("ItHasAnUnknownProviderStatus", func(t *testing.T) {
+		t.Parallel()
+
+		volume := volume.DeepCopy()
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "unexpected",
+		}, nil)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	})
+}
+
+func TestDeleteVolumeWithClient(t *testing.T) {
+	t.Parallel()
+
+	volume := volumeFixture()
+	openstackVolume := &volumes.Volume{
+		ID:   "provider-volume-id",
+		Name: "volume-" + volume.Name,
+	}
+
+	t.Run("AlreadyAbsentSucceeds", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
+
+		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
+	})
+
+	t.Run("AcceptedDeleteYields", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
+		blockStorage.EXPECT().DeleteVolume(t.Context(), openstackVolume.ID).Return(nil)
+
+		require.ErrorIs(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume), provisioners.ErrYield)
+	})
+
+	t.Run("DisappearsBeforeDeleteSucceeds", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
+		blockStorage.EXPECT().DeleteVolume(t.Context(), openstackVolume.ID).Return(gophercloud.ErrUnexpectedResponseCode{
+			Actual: http.StatusNotFound,
+		})
+
+		require.NoError(t, openstack.DeleteVolumeWithClient(t.Context(), blockStorage, volume))
+	})
+}
+
 // TestReconcileServer tests a resource is created when one isn't present.
 func TestReconcileServer(t *testing.T) {
 	t.Parallel()
@@ -1811,7 +2047,7 @@ func TestReconcileServer(t *testing.T) {
 	c := gomock.NewController(t)
 	t.Cleanup(c.Finish)
 
-	server := serverFixture()
+	server := serverFixture(withImage)
 	network := networkFixture()
 
 	openstackNetwork := openstackNetworkFixture(network)
@@ -1863,6 +2099,22 @@ func TestReconcileServer(t *testing.T) {
 		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
 		require.NoError(t, err)
 	})
+
+	// An ambiguous read must fail closed: GetServer resolves by name via a
+	// list, so any failure other than a positive not-found must surface rather
+	// than fall through to CreateServer and mint a duplicate. No CreateServer
+	// expectation is set, so a fall-through fails the mock.
+	t.Run("AmbiguousReadDoesNotCreate", func(t *testing.T) {
+		t.Parallel()
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, errNovaListFailed)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.ErrorIs(t, err, errNovaListFailed)
+	})
 }
 
 // TestReconcileServerPreflight tests the optional preflight hook runs only
@@ -1872,7 +2124,7 @@ func TestReconcileServerPreflight(t *testing.T) {
 
 	client := getClient(t, nil)
 
-	server := serverFixture()
+	server := serverFixture(withImage)
 	network := networkFixture()
 
 	openstackNetwork := openstackNetworkFixture(network)
@@ -1967,6 +2219,60 @@ func TestReconcileServerPreflight(t *testing.T) {
 		})
 		require.NoError(t, err)
 	})
+}
+
+// TestCreateServerCopyBackPreservesPortAndFloatingIPStatus pins the
+// equivalence property of CreateServer's status copy-back for augmented
+// (managed user-data / SSH-CA) servers against the full create-path
+// interleaving: port and floating IP reconciliation write
+// Status.PrivateIP/PublicIP onto the caller's server BEFORE the augmented
+// copy is snapshotted, so the full status copy-back must both (a) preserve
+// those writes and (b) carry the rebuild's Phase/Rebuild status back to the
+// caller. Snapshotting the copy before port/FIP reconciliation (the original
+// defect placement) silently reverts PrivateIP/PublicIP on every reconcile.
+func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
+	t.Parallel()
+
+	network := networkFixture()
+	client := getClient(t, []client.Object{network})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	server := serverFixture(withNetwork(network), withFloatingIP)
+	server.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)}
+	server.Status.ProvisionedAt = ptr.To(metav1.Now())
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	openstackFloatingIP := openstackFloatingIPFixture(openstackServerPort)
+
+	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n")}
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+	networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
+	networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
+
+	compute := mock.NewMockServerInterface(c)
+	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
+	compute.EXPECT().RebuildServer(t.Context(), "server-1", openstack.ServerRebuildOptions{
+		ImageID: idstest.MustParseImageID(rebuildNewImageID),
+	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+	p := openstack.NewTestProvider(client, regionFixture())
+
+	err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, server, options, "")
+	require.ErrorIs(t, err, provisioners.ErrYield, "the accepted rebuild is in flight, so the pass yields")
+
+	// (a) the port/FIP status writes must survive the copy-back.
+	require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP, "copy-back must not revert PrivateIP written by port reconciliation")
+	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
+
+	// (b) the rebuild's accepted status stamp must propagate back to the caller.
+	requireRebuildAcceptedStamp(t, server)
 }
 
 // TestImageTagRoundTrip tests the round-trip conversion of tags:

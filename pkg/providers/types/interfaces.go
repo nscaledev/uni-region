@@ -91,9 +91,26 @@ type LoadBalancer interface {
 	DeleteLoadBalancer(ctx context.Context, identity *unikornv1.Identity, loadBalancer *unikornv1.LoadBalancer) error
 }
 
+// Volume manages provider-backed block-storage volume lifecycle.
+type Volume interface {
+	// CreateVolume reconciles the provider volume described by the Region Volume.
+	// It returns success only after the backing volume is usable; asynchronous
+	// progress and terminal provider states use the shared provisioning errors.
+	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+	// DeleteVolume idempotently deletes the provider volume described by the Region Volume.
+	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+	// UpdateVolumeState rediscovers provider state and updates the Region Volume in place.
+	// Provider failures are returned so callers can preserve the last observed state.
+	UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
+}
+
 type Server interface {
 	// CreateServer creates a new server.
 	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) error
+	// AttachVolume attaches an existing Region volume to a server.
+	AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*ServerVolumeAttachment, error)
+	// DetachVolume detaches an existing Region volume from a server.
+	DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error
 	// RebootServer soft reboots a server.
 	RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error
 	// StartServer starts a server.
@@ -103,6 +120,10 @@ type Server interface {
 	// DeleteServer deletes a server.
 	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// UpdateServerState checks a server's state and modifies the resource in place.
+	// Implementations MUST return ErrResourceNotFound when the provider server is
+	// absent (after recording any observation they wish to persist): the server
+	// provisioner's create-retry "confirmed gone" gate and the health monitor's
+	// absent-server handling both depend on it.
 	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 }
 
@@ -124,12 +145,14 @@ type CommonProvider interface {
 	Region(ctx context.Context) (*unikornv1.Region, error)
 	// Flavors list all available flavors.
 	Flavors(ctx context.Context) (FlavorList, error)
+	// VolumeClasses lists the block-storage volume classes exposed by the Region.
+	VolumeClasses(ctx context.Context) (VolumeClassList, error)
 }
 
 // Providers are expected to provide a provider agnostic manner.
 // They are also expected to provide any caching or memoization required
 // to provide high performance and a decent UX.
-type Provider interface {
+type Provider interface { //nolint:interfacebloat // This is the full workload-lifecycle contract.
 	CommonProvider
 	ImageRead
 	ImageWrite
@@ -137,6 +160,7 @@ type Provider interface {
 	Network
 	SecurityGroup
 	LoadBalancer
+	Volume
 	Server
 	ServerConsole
 	ServerSnapshot

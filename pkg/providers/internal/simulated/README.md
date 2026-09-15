@@ -25,12 +25,21 @@ development, while keeping behaviour deterministic and cheap to run.
 - The current implementation is deliberately incomplete. It represents the
   smallest useful amount of work needed to unlock broad push-left integration
   coverage, not a mature simulation of the full provider surface.
-- Determinism matters more than provider fidelity. Built-in flavors, images,
-  external networks, and synthetic addresses are stable by design.
+- Determinism matters more than provider fidelity. Built-in flavors,
+  volume classes, images, external networks, and synthetic addresses are stable
+  by design. Built-in volume classes include stable minimum and maximum capacity
+  bounds so higher-layer inventory consumers can exercise the complete neutral
+  contract.
 - Custom images are stored in-memory behind a lock and merged with built-in
   images through the same query/filter contract used by real providers.
 - Unsupported operations fail explicitly with `ErrUnsupportedOperation` rather
   than pretending to succeed.
+- Volume creation and observation are unsupported. Volume deletion is an
+  idempotent no-op so unconditional controller cleanup can converge when no
+  simulated backing volume could have been created.
+- Server volume attach/detach participates in the full interface contract but
+  is currently unsupported; attachment fidelity belongs to the OpenStack
+  provider until a higher-level simulated workflow requires it.
 - Some mutable operations intentionally act by mutating service-side resource
   status deterministically, for example network status and load balancer VIP or
   public IP assignment.
