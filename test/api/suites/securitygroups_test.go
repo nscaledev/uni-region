@@ -38,13 +38,17 @@ import (
 )
 
 var _ = Describe("SecurityGroup", func() {
-	Context("When managing security groups", Ordered, func() {
+	Context("When managing security groups", Ordered, Label("fake-dc"), func() {
+		var fakeRegionID string
 		var networkID string
 		var sgID string
 		var createReq regionopenapi.SecurityGroupV2Create
 
 		BeforeAll(func() {
-			network, err := regionClient.CreateNetwork(ctx, api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build())
+			Expect(config.FakeRegionID).NotTo(BeEmpty(), "FAKE_TEST_REGION_ID must be configured for Fake DC tests")
+			fakeRegionID = config.FakeRegionID
+
+			network, err := regionClient.CreateNetwork(ctx, api.NewNetworkPayload(config.OrgID, config.ProjectID, fakeRegionID).Build())
 			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
 			networkID = network.Metadata.Id
 			DeferCleanup(func() {
@@ -89,7 +93,7 @@ var _ = Describe("SecurityGroup", func() {
 					g.Expect(got.Metadata.Name).To(Equal(createReq.Metadata.Name))
 					g.Expect(got.Metadata.OrganizationId).To(Equal(config.OrgID))
 					g.Expect(got.Metadata.ProjectId).To(Equal(config.ProjectID))
-					g.Expect(got.Status.RegionId).To(Equal(config.RegionID))
+					g.Expect(got.Status.RegionId).To(Equal(fakeRegionID))
 					g.Expect(got.Status.NetworkId).To(Equal(networkID))
 					g.Expect(got.Spec.Rules).To(HaveLen(1))
 					g.Expect(got.Spec.Rules[0].Direction).To(Equal(regionopenapi.NetworkDirectionIngress))
@@ -102,7 +106,7 @@ var _ = Describe("SecurityGroup", func() {
 				// List GETs are served from the controller-runtime cache, so a
 				// just-created security group can briefly be absent from the list.
 				Eventually(func(g Gomega) {
-					list, err := regionClient.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					list, err := regionClient.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, fakeRegionID)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					var found *regionopenapi.SecurityGroupV2Read

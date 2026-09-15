@@ -703,6 +703,14 @@ func WaitForFileStorageGone(c *APIClient, ctx context.Context, filestorageID str
 	})
 }
 
+// WaitForSecurityGroupGone polls until the security group has been deleted.
+func WaitForSecurityGroupGone(c *APIClient, ctx context.Context, securityGroupID string) {
+	waitForResourceGone("security group", securityGroupID, func() error {
+		_, err := c.GetSecurityGroup(ctx, securityGroupID)
+		return err
+	})
+}
+
 // WaitForNetworkGone polls until the network has been deleted.
 func WaitForNetworkGone(c *APIClient, ctx context.Context, networkID string) {
 	waitForResourceGone("network", networkID, func() error {
