@@ -40,10 +40,11 @@ import (
 )
 
 const (
-	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
-	regionCRDFile      = "region.unikorn-cloud.org_regions.yaml"
-	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
-	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
+	fileStorageCRDFile         = "region.unikorn-cloud.org_filestorages.yaml"
+	fileStorageSnapshotCRDFile = "region.unikorn-cloud.org_filestoragesnapshots.yaml"
+	regionCRDFile              = "region.unikorn-cloud.org_regions.yaml"
+	serverCRDFile              = "region.unikorn-cloud.org_servers.yaml"
+	volumeCRDFile              = "region.unikorn-cloud.org_volumes.yaml"
 )
 
 func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ...string) *apixv1.JSONSchemaProps {
@@ -123,6 +124,12 @@ func (v crdValidator) validates(t *testing.T, resource any) bool {
 func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bool {
 	t.Helper()
 
+	return v.validatesUpdateUnstructured(t, obj, nil)
+}
+
+func (v crdValidator) validatesUpdateUnstructured(t *testing.T, obj, oldObj map[string]any) bool {
+	t.Helper()
+
 	validator, _, err := apixvalidation.NewSchemaValidator(v.schema)
 	require.NoError(t, err)
 
@@ -138,7 +145,7 @@ func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bo
 	celValidator := celvalidation.NewValidator(v.structural, true, celconfig.PerCallLimit)
 	require.NotNil(t, celValidator)
 
-	celErrors, _ := celValidator.Validate(t.Context(), field.NewPath("root"), v.structural, obj, nil, celconfig.RuntimeCELCostBudget)
+	celErrors, _ := celValidator.Validate(t.Context(), field.NewPath("root"), v.structural, obj, oldObj, celconfig.RuntimeCELCostBudget)
 
 	return len(celErrors) == 0
 }

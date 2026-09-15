@@ -91,6 +91,11 @@ func TestStringFormats(t *testing.T) {
 			fmt.Sprintf("%v", idstest.MustParseFileStorageID(validUUID)),
 		},
 		{
+			"FileStorageSnapshotID",
+			fmt.Sprintf("%s", idstest.MustParseFileStorageSnapshotID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseFileStorageSnapshotID(validUUID)),
+		},
+		{
 			"ImageID",
 			fmt.Sprintf("%s", idstest.MustParseImageID(validUUID)), //nolint:staticcheck
 			fmt.Sprintf("%v", idstest.MustParseImageID(validUUID)),
@@ -133,6 +138,7 @@ func TestMarshalText(t *testing.T) {
 		{"ServerID", idstest.MustParseServerID(validUUID)},
 		{"SSHCertificateAuthorityID", idstest.MustParseSSHCertificateAuthorityID(validUUID)},
 		{"FileStorageID", idstest.MustParseFileStorageID(validUUID)},
+		{"FileStorageSnapshotID", idstest.MustParseFileStorageSnapshotID(validUUID)},
 		{"ImageID", idstest.MustParseImageID(validUUID)},
 		{"FlavorID", idstest.MustParseFlavorID(validUUID)},
 	}
@@ -171,6 +177,7 @@ func TestUnstructuredEncoding(t *testing.T) {
 		{"ServerID", idstest.MustParseServerID(validUUID)},
 		{"SSHCertificateAuthorityID", idstest.MustParseSSHCertificateAuthorityID(validUUID)},
 		{"FileStorageID", idstest.MustParseFileStorageID(validUUID)},
+		{"FileStorageSnapshotID", idstest.MustParseFileStorageSnapshotID(validUUID)},
 		{"ImageID", idstest.MustParseImageID(validUUID)},
 		{"FlavorID", idstest.MustParseFlavorID(validUUID)},
 	}
@@ -213,6 +220,7 @@ func TestUnmarshalTextAcceptsValid(t *testing.T) {
 		{"ServerID", new(ids.ServerID)},
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
+		{"FileStorageSnapshotID", new(ids.FileStorageSnapshotID)},
 		{"ImageID", new(ids.ImageID)},
 		{"FlavorID", new(ids.FlavorID)},
 	}
@@ -252,6 +260,7 @@ func TestUnmarshalTextRejectsInvalid(t *testing.T) {
 		{"ServerID", new(ids.ServerID)},
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
+		{"FileStorageSnapshotID", new(ids.FileStorageSnapshotID)},
 		{"ImageID", new(ids.ImageID)},
 		{"FlavorID", new(ids.FlavorID)},
 	}
@@ -308,6 +317,10 @@ func TestParseRoundTrips(t *testing.T) {
 		}},
 		{"ParseFileStorageID", func(s string) (string, error) {
 			v, err := ids.ParseFileStorageID(s)
+			return v.String(), err
+		}},
+		{"ParseFileStorageSnapshotID", func(s string) (string, error) {
+			v, err := ids.ParseFileStorageSnapshotID(s)
 			return v.String(), err
 		}},
 		{"ParseImageID", func(s string) (string, error) {

@@ -543,6 +543,17 @@ func (s *FileStorage) OrganizationAndProjectID() (identityids.OrganizationID, id
 	return organizationAndProjectIDFromLabels(s.Labels)
 }
 
+// OrganizationID returns the snapshot's owning organization ID as a typed identifier.
+func (s *FileStorageSnapshot) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(s.Labels)
+}
+
+// OrganizationAndProjectID returns the snapshot's owning organization and
+// project IDs as typed identifiers.
+func (s *FileStorageSnapshot) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(s.Labels)
+}
+
 // OrganizationID returns the identity's owning organization ID as a typed identifier.
 func (c *Identity) OrganizationID() (identityids.OrganizationID, error) {
 	return organizationIDFromLabels(c.Labels)
@@ -565,6 +576,7 @@ var (
 	_ identityids.ProjectScopeReader = (*Volume)(nil)
 	_ identityids.ProjectScopeReader = (*SSHCertificateAuthority)(nil)
 	_ identityids.ProjectScopeReader = (*FileStorage)(nil)
+	_ identityids.ProjectScopeReader = (*FileStorageSnapshot)(nil)
 	_ identityids.ProjectScopeReader = (*Identity)(nil)
 )
 
@@ -587,6 +599,27 @@ func (s *FileStorage) StatusConditionRead(t unikornv1core.ConditionType) (*metav
 // the provisioning vocabulary.
 func (s *FileStorage) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
 	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// Paused implements the ReconcilePauser interface.
+func (s *FileStorageSnapshot) Paused() bool {
+	return s.Spec.Pause
+}
+
+// StatusConditionRead returns a snapshot condition by type.
+func (s *FileStorageSnapshot) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
+	return unikornv1core.GetCondition(s.Status.Conditions, t)
+}
+
+// SetProvisioningCondition updates the snapshot's Available lifecycle condition.
+func (s *FileStorageSnapshot) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// ResourceLabels satisfies the managed resource interface.
+func (s *FileStorageSnapshot) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
 }
 
 // StatusConditionRead lets a snapshot policy status be read through the typed
