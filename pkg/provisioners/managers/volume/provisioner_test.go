@@ -987,6 +987,8 @@ func TestProvisionWaitsForIdentity(t *testing.T) {
 
 	provider, providerSet := volumeMocks(t)
 	resource := testVolume(false)
+	attachedAt := metav1.Now()
+	resource.Status.AttachedAt = &attachedAt
 	identity := testIdentity(false)
 
 	providerSet.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
@@ -994,6 +996,7 @@ func TestProvisionWaitsForIdentity(t *testing.T) {
 	provisioner := volume.NewForTest(resource, providerSet, nil)
 	err := provisioner.Provision(controllerContext(t, resource, identity))
 	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.Nil(t, resource.Status.AttachedAt)
 }
 
 func TestProvisionReturnsProviderYield(t *testing.T) {
