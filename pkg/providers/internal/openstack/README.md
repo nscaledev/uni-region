@@ -434,7 +434,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 
   Attachment intent and observed rows remain on `Server.Spec.Volumes` and
   `Server.Status.Volumes`; this provider slice does not mirror attachments into
-  `Volume.Status`, claim volumes, or reconcile server controllers.
+  `Volume.Status`, claim volumes, or reconcile server controllers. Those
+  belong to the volume provisioner
+  ([../../../provisioners/managers/volume](../../../provisioners/managers/volume/README.md)),
+  which populates `Volume.Status.AttachedAt` and owns claim release.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified

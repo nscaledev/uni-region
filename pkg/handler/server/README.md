@@ -43,10 +43,16 @@ related dependencies rather than from nested path scope.
   controller owns the corresponding Server reference and places it before
   provider attachment. The Volume controller leaves an unconfirmed claim
   untouched while its Server is absent or does not yet contain the attachment
-  intent. A failed terminal write releases its claims through saga compensation.
+  intent. Saga compensation attempts to release claims after a failed terminal
+  write.
   Update also repairs a missing claim for Volume intent already present on the
   Server. Removed claims remain until the Volume controller reconciles the
   changed Server intent. Providers remain exclusively controller-owned
+- Claim records identify the Server but not the request that created them.
+  Concurrent updates for the same Server can therefore clear a winning claim
+  during compensation. A failed multi-Volume rollback can also leave claims
+  without Server intent. The Volume controller retains these ambiguous claims,
+  so they require operator repair.
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only
