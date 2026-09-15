@@ -111,11 +111,11 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 
 func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
 	if p.volume.Spec.ClaimRef == nil {
+		p.volume.Status.AttachedAt = nil
+
 		if err := manager.ResourceReady(ctx, identity); err != nil {
 			return err
 		}
-
-		p.volume.Status.AttachedAt = nil
 
 		return provider.CreateVolume(ctx, identity, p.volume)
 	}
