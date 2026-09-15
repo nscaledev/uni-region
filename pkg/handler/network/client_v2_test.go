@@ -366,7 +366,7 @@ func TestUpdateV2ConflictReturns409(t *testing.T) {
 		ProjectID:      projectID,
 	})
 
-	_, err = c.Update(ctx, regionids.MustParseNetworkID(current.Name), &openapi.NetworkV2Update{
+	_, err = c.Update(ctx, idstest.MustParseNetworkID(current.Name), &openapi.NetworkV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{
 			Name: "test-network",
 		},
