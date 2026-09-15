@@ -3175,22 +3175,14 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		},
 	}
 
-	// Legacy camelCase keys — frozen for backwards compat.
 	systemMetadata := map[string]string{
-		"serverID":       server.Name,
-		"organizationID": server.Labels[coreconstants.OrganizationLabel],
-		"projectID":      server.Labels[coreconstants.ProjectLabel],
-		"regionID":       server.Labels[constants.RegionLabel],
-	}
-	// New namespaced duplicates — upgrade path for new consumers.
-	namespacedSystemMetadata := map[string]string{
 		"region:server_id":         server.Name,
 		"identity:organization_id": server.Labels[coreconstants.OrganizationLabel],
 		"identity:project_id":      server.Labels[coreconstants.ProjectLabel],
 		"region:region_id":         server.Labels[constants.RegionLabel],
 	}
 
-	metadata := make(map[string]string, len(server.Spec.Tags)+len(systemMetadata)+len(namespacedSystemMetadata))
+	metadata := make(map[string]string, len(server.Spec.Tags)+len(systemMetadata))
 
 	for _, tag := range server.Spec.Tags {
 		if k, ok := metadataKey(tag.Name); ok {
@@ -3199,10 +3191,6 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	}
 
 	// System keys written last — unconditionally overwrite any colliding user tag.
-	for k, v := range namespacedSystemMetadata {
-		metadata[k] = v
-	}
-
 	for k, v := range systemMetadata {
 		metadata[k] = v
 	}
