@@ -3522,27 +3522,7 @@ func (p *Provider) updateServerStateWithClients(
 		return err
 	}
 
-	setServerHealthStatus(server, openstackServer)
-	setServerMACAddress(ctx, server, openstackServer)
-
-	if enteredError := setServerObservedStatus(server, openstackServer); enteredError {
-		// The enrichment is best-effort and bounded so a hung Nova read cannot
-		// stall the whole poll cycle.
-		faultCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		logServerFault(faultCtx, serverClient, server, openstackServer)
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())
-
-	var ironicNode *nodes.Node
-
-	if shouldCallIronicForPhase(*openstackServer, baremetal) {
-		ironicNode = p.lookupIronicNodeForPhase(ctx, identity, server, openstackServer, baremetalForPhase)
-	}
-
-	setServerActive(ctx, server, openstackServer, ironicNode)
+	p.projectServerState(ctx, identity, server, openstackServer, serverClient, baremetalForPhase)
 
 	return nil
 }
