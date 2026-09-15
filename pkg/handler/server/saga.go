@@ -334,30 +334,30 @@ func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network
 }
 
 func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network, region *regionv1.Region, flavorID, volumeID, serverID string) (*regionv1.Volume, error) {
-	volume, err := volume.New(c.Client.ClientArgs).GetV2Raw(ctx, volumeID)
+	resource, err := volume.New(c.Client.ClientArgs).GetV2Raw(ctx, volumeID)
 	if err != nil {
 		return nil, err
 	}
 
-	if volume.DeletionTimestamp != nil {
+	if resource.DeletionTimestamp != nil {
 		return nil, errors.HTTPUnprocessableContent("volume is being deleted")
 	}
 
 	for _, label := range []string{constants.RegionLabel, constants.IdentityLabel, coreconstants.OrganizationLabel, coreconstants.ProjectLabel} {
-		if volume.Labels[label] != network.Labels[label] {
+		if resource.Labels[label] != network.Labels[label] {
 			return nil, errors.HTTPUnprocessableContent("volume must have the same Region, Identity, organization, and project as the Server")
 		}
 	}
 
-	if claim := volume.Spec.ClaimRef; claim != nil && (claim.Kind != regionv1.VolumeClaimKindServer || claim.ID != serverID) {
+	if claim := resource.Spec.ClaimRef; claim != nil && claim.ID != serverID {
 		return nil, errors.HTTPUnprocessableContent("volume is already claimed by another server")
 	}
 
-	if !volumeClassSupportsFlavor(region, volume.Spec.VolumeClassID, flavorID) {
+	if !volumeClassSupportsFlavor(region, resource.Spec.VolumeClassID, flavorID) {
 		return nil, errors.HTTPUnprocessableContent("volume class does not support the server flavor")
 	}
 
-	return volume, nil
+	return resource, nil
 }
 
 func volumeClassSupportsFlavor(region *regionv1.Region, volumeClassID, flavorID string) bool {
