@@ -48,6 +48,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
@@ -121,7 +122,12 @@ func testSrvRegion() *regionv1.Region {
 	return &regionv1.Region{
 		ObjectMeta: metav1.ObjectMeta{Name: srvRegionID, Namespace: srvNamespace},
 		Spec: regionv1.RegionSpec{Openstack: &regionv1.RegionOpenstackSpec{BlockStorage: &regionv1.RegionOpenstackBlockStorageSpec{VolumeClasses: &regionv1.OpenstackVolumeClassesSpec{
-			Metadata: []regionv1.VolumeClassMetadata{{ID: "fast"}},
+			Metadata: []regionv1.VolumeClassMetadata{{
+				ID: "fast",
+				SupportedFlavors: &regionv1.VolumeClassFlavorSelector{
+					IDs: []regionids.FlavorID{idstest.MustParseFlavorID(srvFlavorID)},
+				},
+			}},
 		}}}},
 	}
 }

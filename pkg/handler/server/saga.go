@@ -353,31 +353,33 @@ func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network,
 		return nil, errors.HTTPUnprocessableContent("volume is already claimed by another server")
 	}
 
-	if !volumeClassSupportsFlavor(region, resource.Spec.VolumeClassID, flavorID) {
-		return nil, errors.HTTPUnprocessableContent("volume class does not support the server flavor")
+	if err := validateVolumeClassFlavor(region, resource.Spec.VolumeClassID, flavorID); err != nil {
+		return nil, err
 	}
 
 	return resource, nil
 }
 
-func volumeClassSupportsFlavor(region *regionv1.Region, volumeClassID, flavorID string) bool {
-	if region.Spec.Openstack == nil || region.Spec.Openstack.BlockStorage == nil || region.Spec.Openstack.BlockStorage.VolumeClasses == nil {
-		return true
+func validateVolumeClassFlavor(region *regionv1.Region, volumeClassID, flavorID string) error {
+	var classes []regionv1.VolumeClassMetadata
+	if openstack := region.Spec.Openstack; openstack != nil && openstack.BlockStorage != nil && openstack.BlockStorage.VolumeClasses != nil {
+		classes = openstack.BlockStorage.VolumeClasses.Metadata
 	}
 
-	for _, class := range region.Spec.Openstack.BlockStorage.VolumeClasses.Metadata {
-		if class.ID == volumeClassID {
-			if class.SupportedFlavors == nil || len(class.SupportedFlavors.IDs) == 0 {
-				return true
-			}
-
-			flavor, err := regionids.ParseFlavorID(flavorID)
-
-			return err == nil && slices.Contains(class.SupportedFlavors.IDs, flavor)
+	for _, class := range classes {
+		if class.ID != volumeClassID {
+			continue
 		}
+
+		flavor, err := regionids.ParseFlavorID(flavorID)
+		if class.SupportedFlavors != nil && err == nil && slices.Contains(class.SupportedFlavors.IDs, flavor) {
+			return nil
+		}
+
+		return errors.HTTPUnprocessableContent("volume class does not support the server flavor")
 	}
 
-	return true
+	return errors.HTTPUnprocessableContent(fmt.Sprintf("volume class %q is not defined in the region", volumeClassID))
 }
 
 func setClaims(ctx context.Context, c *ClientV2, volumes map[string]*regionv1.Volume, serverID string) error {
