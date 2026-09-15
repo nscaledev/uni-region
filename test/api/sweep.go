@@ -72,7 +72,22 @@ func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConf
 			func() { WaitForFileStorageGone(c, ctx, storage.Metadata.Id) })
 	}
 
-	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
+	sweepStaleNetworks(c, ctx, config, config.RegionID)
+}
+
+// SweepStaleFakeDataCenterResources removes stale Fake DC network fixtures.
+// Fake DC API tests currently create networks only, so sweeping dependent
+// resource types here would be unnecessary and could affect unrelated tests.
+func SweepStaleFakeDataCenterResources(c *APIClient, ctx context.Context, config *TestConfig) {
+	if config.FakeRegionID == "" {
+		return
+	}
+
+	sweepStaleNetworks(c, ctx, config, config.FakeRegionID)
+}
+
+func sweepStaleNetworks(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, regionID)
 	Expect(err).NotTo(HaveOccurred(), "sweep should list networks")
 
 	for i := range networks {

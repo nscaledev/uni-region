@@ -112,9 +112,10 @@ jobs:
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ vars.DEV_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
-      # Temporary fake data centre target for VPC API test validation.
-      TEST_REGION_ID: e3e4c201-54ae-5387-b846-4fdf0a4127a1
-      TEST_NETWORK_ID: b548cdc8-cbc2-435f-bc64-c0d6518eb130
+      TEST_REGION_ID: ${{ inputs.region_id || vars.DEV_TEST_REGION_ID }}
+      TEST_NETWORK_ID: ${{ vars.DEV_TEST_NETWORK_ID }}
+      FAKE_TEST_REGION_ID: ${{ vars.DEV_FAKE_TEST_REGION_ID }}
+      FAKE_TEST_NETWORK_ID: ${{ vars.DEV_FAKE_TEST_NETWORK_ID }}
       TEST_PRIVATE_REGION_ID: ${{ vars.DEV_TEST_PRIVATE_REGION_ID }}
       TEST_SECONDARY_ORG_ID: ${{ vars.DEV_TEST_SECONDARY_ORG_ID }}
       TEST_SECONDARY_PROJECT_ID: ${{ vars.DEV_TEST_SECONDARY_PROJECT_ID }}
@@ -235,10 +236,10 @@ jobs:
       API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
       TEST_ORG_ID: ${{ vars.UAT_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
-      # Temporarily exercise UAT network lifecycle tests against Fake DC.
-      # An explicit workflow input remains available for targeted diagnostics.
-      TEST_REGION_ID: ${{ inputs.region_id || '45bad6a9-3477-5560-b61e-7f7a6b6ede54' }}
-      TEST_NETWORK_ID: dc34eceb-7fd7-495f-9f7f-80ade2081241
+      TEST_REGION_ID: ${{ inputs.region_id || vars.UAT_TEST_REGION_ID }}
+      TEST_NETWORK_ID: ${{ vars.UAT_TEST_NETWORK_ID }}
+      FAKE_TEST_REGION_ID: ${{ vars.UAT_FAKE_TEST_REGION_ID }}
+      FAKE_TEST_NETWORK_ID: ${{ vars.UAT_FAKE_TEST_NETWORK_ID }}
       TEST_PRIVATE_REGION_ID: ${{ vars.UAT_TEST_PRIVATE_REGION_ID }}
       TEST_SECONDARY_ORG_ID: ${{ vars.UAT_TEST_SECONDARY_ORG_ID }}
       TEST_SECONDARY_PROJECT_ID: ${{ vars.UAT_TEST_SECONDARY_PROJECT_ID }}
