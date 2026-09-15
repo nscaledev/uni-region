@@ -46,11 +46,17 @@ provisioning or errored Server yields; its condition can recover without a
 Volume generation change.
 Claims are created before the terminal Server write. While `AttachedAt` is nil,
 the provisioner retains a claim if the Server is absent or does not yet request
-the Volume, allowing the handler saga to persist attachment intent. A failed
-terminal write releases the claim through saga compensation. This deliberately
-prefers a visible, indefinitely provisioning Volume over releasing an ambiguous
-claim: failed compensation or a lost attachment-status write requires operator
-repair.
+the Volume. This wait lets the handler persist attachment intent or complete
+saga compensation.
+
+This coordination does not record which request owns a claim. Concurrent
+updates for the same Server can both treat a same-Server claim as their own. A
+losing update can then clear the claim that the winning update needs. During a
+multi-Volume claim, failed rollback can also leave claims without Server intent.
+The controller cannot distinguish these orphaned claims from claims that await
+the terminal Server write. It leaves the Volume in the provisioning state until
+an operator repairs the claim. This behavior is an accepted limitation until
+claim records include durable ownership or phase.
 Before provider attachment, the Volume controller uses the core reference
 helpers to place its canonical per-Volume reference on the Server. During Server
 deletion those references block Server deprovisioning, so each Volume actively
