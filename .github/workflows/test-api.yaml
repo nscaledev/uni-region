@@ -113,8 +113,8 @@ jobs:
       TEST_ORG_ID: ${{ vars.DEV_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.DEV_TEST_PROJECT_ID }}
       # Temporary fake data centre target for VPC API test validation.
-      TEST_REGION_ID: 3c5f5d1e-f7b9-5058-bb66-5eea98038a9b
-      TEST_NETWORK_ID: ${{ vars.DEV_TEST_NETWORK_ID }}
+      TEST_REGION_ID: e3e4c201-54ae-5387-b846-4fdf0a4127a1
+      TEST_NETWORK_ID: b548cdc8-cbc2-435f-bc64-c0d6518eb130
       TEST_PRIVATE_REGION_ID: ${{ vars.DEV_TEST_PRIVATE_REGION_ID }}
       TEST_SECONDARY_ORG_ID: ${{ vars.DEV_TEST_SECONDARY_ORG_ID }}
       TEST_SECONDARY_PROJECT_ID: ${{ vars.DEV_TEST_SECONDARY_PROJECT_ID }}
