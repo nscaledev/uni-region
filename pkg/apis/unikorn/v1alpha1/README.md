@@ -97,16 +97,26 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Volume` does not define a per-network name uniqueness key; its resource ID
   follows the platform's normal UUID v4 identity pattern, while mutable display
   names live in standard metadata labels. `Volume.Spec.ClaimRef` is internal
-  handler-owned state that records the exclusive Server reservation; its ID must
-  be non-empty, and a nil claim means the volume is available for claiming.
-  `Server` is the current supported claim kind. `Server.Status.Volumes` projects
+  coordination state that records the exclusive Server reservation. The Server
+  handler creates and compensates claims, while the Volume controller releases
+  them after provider teardown. Its ID must be non-empty, and a nil claim means
+  the Volume is available for claiming. `Server` is the current supported claim
+  kind. `Server.Status.Volumes` projects
   attachment progress, optional provider device, and a safe message.
   `Volume.Status.AttachedAt` records when the current attachment was first
-  confirmed; omission means no current attachment is recorded. Future attachment
-  reconciliation will
-  advance `ObservedGeneration` only after both backing volume and requested
-  attachment state converge, and will report attachment errors through the generic
-  `Available` condition. The Volume controller drives provider create/delete,
+  confirmed; omission means no current attachment is recorded. The attachment
+  finalizer `volumes.region.unikorn-cloud.org/<volume-id>` is stored on the
+  claimed Server. It blocks Server deletion until the Volume controller confirms
+  provider detachment and removes that finalizer. The Volume controller creates
+  this canonical resource reference before provider attachment and removes it
+  before releasing the claim. References for removed intent remain until
+  controller teardown completes. The Volume
+  controller advances
+  `ObservedGeneration`
+  only after both backing Volume and requested attachment state converge,
+  reports attachment errors through the generic `Available` condition, and
+  discovers provider attachments from the Volume before detaching them. The
+  controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
   The Volume controller exclusively owns the generic `Available` provisioning
@@ -122,11 +132,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   server-created volume templates are deliberately excluded from the first
   implementation. `Server.Status.Volumes` is keyed by the same Volume ID and
   reports per-volume attachment reconciliation state and the observed guest
-  device name for later controller and monitor work. The provider layer now
-  supplies a server-owned attach/detach boundary and the OpenStack provider
-  realizes it with Nova, but this package still only owns the persisted shape;
-  reference placement, claim/locking behavior, and controller reconciliation live
-  in later layers/tickets. The v2 Server read projects stored attachment status.
+  device name. The Server handler owns attachment intent and claim
+  creation/compensation. The Volume controller owns reference placement,
+  provider attachment and detachment, status projection, and claim release
+  after teardown. The OpenStack provider realizes the attachment lifecycle
+  through Nova and Cinder. The v2 Server read projects both desired Volume
+  intent and stored attachment status.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;

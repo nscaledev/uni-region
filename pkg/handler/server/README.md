@@ -38,12 +38,34 @@ related dependencies rather than from nested path scope.
   uploads, images predating the label) or an architecture are not rejected,
   because absence of evidence is not evidence of incompatibility
 - create/update can validate and bind an SSH certificate authority
-- create/update execute their existing lookup, authorization, validation, generation, and terminal persistence sequence as explicit saga actions. The terminal persistence action has no compensation because the controller owns cleanup after the Server exists; reversible attachment claim/release actions belong immediately before it in a later change
+- create/update execute as sagas. Before the terminal Server write, they acquire
+  new Volume claims. The terminal write persists only Server intent; the Volume
+  controller owns the corresponding Server reference and places it before
+  provider attachment. The Volume controller leaves an unconfirmed claim
+  untouched while its Server is absent or does not yet contain the attachment
+  intent. Saga compensation attempts to release claims after a failed terminal
+  write.
+  Update also repairs a missing claim for Volume intent already present on the
+  Server. Removed claims remain until the Volume controller reconciles the
+  changed Server intent. Providers remain exclusively controller-owned
+- Claim records identify the Server but not the request that created them.
+  Concurrent updates for the same Server can therefore clear a winning claim
+  during compensation. A failed multi-Volume rollback can also leave claims
+  without Server intent. The Volume controller retains these ambiguous claims,
+  so they require operator repair.
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only
-  when the controller clears that status row. This is status only; handlers do
-  not claim Volumes or call providers in this slice.
+  when the controller clears that status row. The read `spec.volumes` is the
+  complete desired existing-Volume set; create omission means no attachments,
+  update omission preserves it, and explicit update replacement (including an
+  empty list) changes it. A Volume claimed by another Server is rejected with
+  HTTP 422 until detached. The handler validates duplicate, deletion, claim,
+  scope, and VolumeClass/Flavor compatibility before it claims Volumes. A
+  VolumeClass must define a non-empty supported-flavor list that contains the
+  Server flavor. The handler returns HTTP 422 when the class is missing, the
+  list is unset or empty, or the flavor does not match. The handler never calls
+  a provider.
 - create accepts an explicit SSH injection mode: `ca`, `identityKeypair`, or
   `none`. Omitted values preserve the legacy contract: requests with
   `sshCertificateAuthorityId` resolve to `ca`, all other requests resolve to
