@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/sync/errgroup"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -35,11 +36,21 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers"
 	providertypes "github.com/unikorn-cloud/region/pkg/providers/types"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// checkConcurrency is how many identities are observed at once.
+//
+// Each concurrent observation decodes and retains one identity's whole project,
+// so this bounds peak memory and must move with the monitor's memory limit and
+// GOMEMLIMIT (charts/region/values.yaml). It also bounds how much of the estate
+// one degraded cell can hold up, since a bucket has no deadline of its own. See
+// the README's cycle section for the sizing and the trade-off.
+const checkConcurrency = 4
 
 // Checker for server health.
 type Checker struct {
@@ -64,7 +75,7 @@ func New(client client.Client, namespace string, providers providers.Providers, 
 }
 
 // serverLogger returns a logger pre-populated with the standard server identity fields.
-// Precondition: region label validated by Check; identity label validated by checkServer.
+// Precondition: region and identity labels validated by groupServers.
 func serverLogger(ctx context.Context, s *unikornv1.Server) logr.Logger {
 	return log.FromContext(ctx).WithValues(
 		"instance_id", s.Name,
@@ -102,7 +113,7 @@ func (c *Checker) recordDurationIfFirstObservation(ctx context.Context, server *
 // "Pending → Running" predicate would silently miss every observation. The
 // per-server one-shot guarantee is preserved by recordDurationIfFirstObservation,
 // which fires only when the relevant timestamp transitions from nil to non-nil.
-// Precondition: region label validated by Check; identity label validated by checkServer.
+// Precondition: region and identity labels validated by groupServers.
 func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikornv1.Server, regionID, regionName, flavorID, flavorName string) {
 	newActive, err := unikornv1.GetActiveCondition(updated)
 	if err != nil {
@@ -142,7 +153,7 @@ func (c *Checker) onPhaseTransition(ctx context.Context, server, updated *unikor
 
 // logStateTransition emits a structured log entry when the server's ConditionHealthy
 // status changes.
-// Precondition: region label validated by Check; identity label validated by checkServer.
+// Precondition: region and identity labels validated by groupServers.
 func (c *Checker) logStateTransition(ctx context.Context, server, updated *unikornv1.Server) {
 	// StatusConditionRead only errors when the condition is absent (ErrStatusConditionLookup).
 	oldCondition, oldErr := server.StatusConditionRead(unikornv1core.ConditionHealthy)
@@ -178,7 +189,7 @@ func (c *Checker) logStateTransition(ctx context.Context, server, updated *uniko
 func resolveRegionName(ctx context.Context, provider providertypes.Provider, regionID string) string {
 	region, err := provider.Region(ctx)
 	if err != nil {
-		log.FromContext(ctx).Error(err, "failed to get region name", "region", regionID)
+		logFailure(ctx, log.FromContext(ctx).WithValues("region", regionID), err, "failed to get region name")
 		return ""
 	}
 
@@ -207,51 +218,77 @@ type checkedServer struct {
 	flavorName string
 }
 
-// checkServer consults the provider for the server health status. Returns the
-// effective server state and resolved metric label values.
-func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server, provider providertypes.Provider, regionID, regionName, flavorID, flavorName string) (*checkedServer, error) {
-	identityID, ok := server.Labels[constants.IdentityLabel]
-	if !ok {
-		return nil, fmt.Errorf("%w: server %s missing identity label", errors.ErrConsistency, server.Name)
-	}
-
-	identity := &unikornv1.Identity{}
-
-	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: identityID}, identity); err != nil {
-		return nil, err
-	}
-
+// checkServer projects the group's provider read onto one server and persists it.
+// Best effort: a failure logs and drops this server, leaving the rest of the group
+// alone. Returns nil when the server contributes nothing to the state gauge.
+func (c *Checker) checkServer(ctx context.Context, server *unikornv1.Server, observer providertypes.ServerObserver, group *serverGroup) *checkedServer {
 	updated := server.DeepCopy()
 
-	// A not-found does not abort the check: the provider records the absent
+	// A not-found does not abort the check: the observer records the absent
 	// observation (errored cleared, generation stamped, image sticky) before
 	// surfacing the error, and that observation must still be persisted so the
 	// observed wake fires and the reconciler recreates the server.
-	stateErr := provider.UpdateServerState(ctx, identity, updated)
+	stateErr := observer.Observe(ctx, updated)
 	if stateErr != nil && !goerrors.Is(stateErr, errors.ErrResourceNotFound) {
-		return nil, stateErr
+		logFailure(ctx, serverLogger(ctx, server), stateErr, "failed to observe server, skipping")
+
+		return nil
+	}
+
+	patched, err := c.patchServer(ctx, server, updated)
+	if err != nil {
+		// Including a conflict: the reconciler won the race, and re-deriving on
+		// the next poll is the right answer, not retrying on a stale base.
+		logFailure(ctx, serverLogger(ctx, server), err, "failed to patch server status, skipping")
+
+		return nil
+	}
+
+	if stateErr != nil {
+		// The absent server contributes nothing to the state gauge for this
+		// cycle: there is no provider state to count, and phase/health
+		// transitions cannot have moved on a read of nothing. Only say the
+		// observation was persisted if it actually was — a server already
+		// recorded as absent projects identically and is skipped.
+		if patched {
+			serverLogger(ctx, server).Info("server not found in provider, absent observation persisted")
+		}
+
+		return nil
+	}
+
+	flavorID := server.Spec.FlavorID.String()
+	flavorName := lookupFlavorName(group.region.flavors, flavorID)
+
+	c.onPhaseTransition(ctx, server, updated, group.regionID, group.region.regionName, flavorID, flavorName)
+	c.logStateTransition(ctx, server, updated)
+
+	return &checkedServer{
+		server:     updated,
+		regionID:   group.regionID,
+		regionName: group.region.regionName,
+		flavorID:   flavorID,
+		flavorName: flavorName,
+	}
+}
+
+// patchServer writes the projection, and only when it changed. Over a steady
+// estate every server would otherwise have its status rewritten every poll.
+// Reports whether it wrote, so a caller does not claim to have persisted
+// something it skipped.
+func (c *Checker) patchServer(ctx context.Context, server, updated *unikornv1.Server) (bool, error) {
+	if equality.Semantic.DeepEqual(server.Status, updated.Status) {
+		return false, nil
 	}
 
 	// One patch for health, phase, MAC and the observed region together, under an
 	// optimistic lock: a poll that races the reconciler must lose and re-read rather
 	// than write a projection built from a stale base.
 	if err := c.client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
-		return nil, err
+		return false, err
 	}
 
-	if stateErr != nil {
-		// The absent server was patched but is propagated as not-found so the
-		// caller keeps it out of the state gauge for this cycle, exactly as
-		// the skip did before the absent observation existed: there is no
-		// provider state to count, and phase/health transitions cannot have
-		// moved on a read of nothing.
-		return nil, stateErr
-	}
-
-	c.onPhaseTransition(ctx, server, updated, regionID, regionName, flavorID, flavorName)
-	c.logStateTransition(ctx, server, updated)
-
-	return &checkedServer{server: updated, regionID: regionID, regionName: regionName, flavorID: flavorID, flavorName: flavorName}, nil
+	return true, nil
 }
 
 // regionInfo holds the resolved provider and label values for a region.
@@ -278,10 +315,9 @@ func (c *Checker) resolveRegion(ctx context.Context, cache map[string]regionEntr
 
 	provider, err := c.providers.LookupCloud(regionID)
 	if err != nil {
-		if !goerrors.Is(err, context.Canceled) && !goerrors.Is(err, context.DeadlineExceeded) {
-			log.FromContext(ctx).Error(err, "failed to resolve region, skipping", "region", regionID)
-			cache[regionID] = regionEntry{err: err}
-		}
+		logFailure(ctx, log.FromContext(ctx).WithValues("region", regionID), err, "failed to resolve region, skipping")
+
+		cache[regionID] = regionEntry{err: err}
 
 		return nil, err
 	}
@@ -290,7 +326,7 @@ func (c *Checker) resolveRegion(ctx context.Context, cache map[string]regionEntr
 	if err != nil {
 		// Flavor lookup failure is non-fatal: regionInfo is still cached so subsequent
 		// servers in this region don't re-attempt. Affected servers fall back to raw flavor ID.
-		log.FromContext(ctx).Error(err, "failed to list flavors", "region", regionID)
+		logFailure(ctx, log.FromContext(ctx).WithValues("region", regionID), err, "failed to list flavors")
 	}
 
 	ri := &regionInfo{
@@ -304,60 +340,129 @@ func (c *Checker) resolveRegion(ctx context.Context, cache map[string]regionEntr
 	return ri, nil
 }
 
-// isFatal reports whether err should abort the poll cycle.
-func isFatal(err error) bool {
-	return goerrors.Is(err, context.Canceled) || goerrors.Is(err, context.DeadlineExceeded)
+// logFailure records a best-effort failure, staying quiet only when the cycle's
+// own context is done.
+//
+// The test is the context and NEVER the error: the shared provider client bounds
+// each request with an http.Client timeout whose expiry also satisfies
+// errors.Is(err, context.DeadlineExceeded), so keying off the error would hide a
+// wedged provider. See the README's best-effort section.
+func logFailure(ctx context.Context, logger logr.Logger, err error, msg string) {
+	if ctx.Err() != nil {
+		return
+	}
+
+	logger.Error(err, msg)
 }
 
-// processServer resolves the region, checks one server, and appends the result to effective.
-// Returns a non-nil error only for fatal errors that should abort the poll cycle.
-func (c *Checker) processServer(ctx context.Context, srv *unikornv1.Server, regions map[string]regionEntry, effective *[]checkedServer) error {
-	if srv.DeletionTimestamp != nil {
-		return nil
-	}
-
-	regionID, ok := srv.Labels[constants.RegionLabel]
-	if !ok {
-		log.FromContext(ctx).Info("server missing region label, skipping", "server", srv.Name)
-
-		return nil
-	}
-
-	ri, err := c.resolveRegion(ctx, regions, regionID)
-	if err != nil {
-		if isFatal(err) {
-			return err
-		}
-
-		return nil
-	}
-
-	flavorID := srv.Spec.FlavorID.String()
-
-	result, err := c.checkServer(ctx, srv, ri.provider, regionID, ri.regionName, flavorID, lookupFlavorName(ri.flavors, flavorID))
-	if err != nil {
-		if isFatal(err) {
-			return err
-		}
-
-		if goerrors.Is(err, errors.ErrResourceNotFound) {
-			// checkServer already persisted the absent observation; the server
-			// is only excluded from the state gauge for this cycle.
-			log.FromContext(ctx).Info("server not found in provider, absent observation persisted", "server", srv.Name)
-		} else {
-			log.FromContext(ctx).Error(err, "failed to check server, skipping", "server", srv.Name)
-		}
-
-		return nil
-	}
-
-	*effective = append(*effective, *result)
-
-	return nil
+// serverGroup is the servers sharing one identity, and so one Keystone project
+// and one provider read.
+type serverGroup struct {
+	region     *regionInfo
+	regionID   string
+	identityID string
+	servers    []*unikornv1.Server
 }
 
-// Check does a full health check against all servers on the platform.
-// NOTE: this is going to be very heavy weight!
+// groupServers buckets servers by identity, resolving each region as it goes.
+// Region resolution happens here rather than inside the fan-out because
+// resolveRegion writes an unguarded map, and there are only ever a handful of
+// regions to resolve.
+func (c *Checker) groupServers(ctx context.Context, items []unikornv1.Server) []serverGroup {
+	regions := map[string]regionEntry{}
+	index := map[string]int{}
+
+	groups := make([]serverGroup, 0, len(items))
+
+	for i := range items {
+		server := &items[i]
+
+		if server.DeletionTimestamp != nil {
+			continue
+		}
+
+		regionID, ok := server.Labels[constants.RegionLabel]
+		if !ok {
+			log.FromContext(ctx).Info("server missing region label, skipping", "server", server.Name)
+
+			continue
+		}
+
+		identityID, ok := server.Labels[constants.IdentityLabel]
+		if !ok {
+			// A broken invariant rather than routine news, so it stays on the
+			// error axis where it can be alerted on.
+			err := fmt.Errorf("%w: server %s missing identity label", errors.ErrConsistency, server.Name)
+			logFailure(ctx, log.FromContext(ctx), err, "server missing identity label, skipping")
+
+			continue
+		}
+
+		region, err := c.resolveRegion(ctx, regions, regionID)
+		if err != nil {
+			continue
+		}
+
+		key := regionID + "/" + identityID
+
+		at, ok := index[key]
+		if !ok {
+			at = len(groups)
+			index[key] = at
+
+			group := serverGroup{region: region, regionID: regionID, identityID: identityID}
+			groups = append(groups, group)
+		}
+
+		groups[at].servers = append(groups[at].servers, server)
+	}
+
+	return groups
+}
+
+// checkGroup observes one identity's project in a single provider read and
+// projects it onto every server in the group. Best effort: a failure logs and
+// skips this identity for this cycle, leaving every other identity alone.
+//
+// The batch is read once and projected serially, so it ages as the group is
+// walked, and the per-server fault and Ironic reads remain inside that loop —
+// which delays everything behind them in the same identity, VMs included. See
+// the README's cycle section.
+func (c *Checker) checkGroup(ctx context.Context, group *serverGroup) []checkedServer {
+	logger := log.FromContext(ctx).WithValues(
+		"region_id", group.regionID,
+		"identity_id", group.identityID,
+		"servers", len(group.servers),
+	)
+
+	identity := &unikornv1.Identity{}
+
+	if err := c.client.Get(ctx, client.ObjectKey{Namespace: c.namespace, Name: group.identityID}, identity); err != nil {
+		logFailure(ctx, logger, err, "failed to get identity, skipping servers")
+
+		return nil
+	}
+
+	observer, err := group.region.provider.ObserveServers(ctx, identity)
+	if err != nil {
+		logFailure(ctx, logger, err, "failed to observe identity servers, skipping")
+
+		return nil
+	}
+
+	checked := make([]checkedServer, 0, len(group.servers))
+
+	for _, server := range group.servers {
+		if result := c.checkServer(ctx, server, observer, group); result != nil {
+			checked = append(checked, *result)
+		}
+	}
+
+	return checked
+}
+
+// Check does a full health check against all servers on the platform: one
+// provider read per identity, a bounded number of identities at a time.
 func (c *Checker) Check(ctx context.Context) error {
 	servers := &unikornv1.ServerList{}
 
@@ -365,13 +470,44 @@ func (c *Checker) Check(ctx context.Context) error {
 		return err
 	}
 
-	regions := make(map[string]regionEntry)
-	effective := make([]checkedServer, 0, len(servers.Items))
+	groups := c.groupServers(ctx, servers.Items)
 
-	for i := range servers.Items {
-		if err := c.processServer(ctx, &servers.Items[i], regions, &effective); err != nil {
-			return err
+	results := make([][]checkedServer, len(groups))
+
+	// What makes this best effort is checkGroup absorbing its own failures, not
+	// the choice of Group: nothing here hands the errgroup a failure to react to.
+	// A plain Group rather than WithContext so that stays true if it ever does.
+	group := &errgroup.Group{}
+	group.SetLimit(checkConcurrency)
+
+	for i := range groups {
+		// Checked before dispatching as well as inside: on shutdown the group
+		// would otherwise be fed every remaining bucket just to watch each one
+		// fail against a dead context.
+		if ctx.Err() != nil {
+			break
 		}
+
+		group.Go(func() error {
+			results[i] = c.checkGroup(ctx, &groups[i])
+
+			return ctx.Err()
+		})
+	}
+
+	if err := group.Wait(); err != nil {
+		return err
+	}
+
+	// Also checked here, because a cycle cancelled before its first bucket was
+	// dispatched has nothing to report the cancellation through.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	effective := make([]checkedServer, 0, len(servers.Items))
+	for _, result := range results {
+		effective = append(effective, result...)
 	}
 
 	c.updateStateCounts(effective)

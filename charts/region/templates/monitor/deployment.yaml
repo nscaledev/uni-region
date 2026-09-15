@@ -23,6 +23,16 @@ spec:
         env:
         - name: OTEL_SERVICE_NAME
           value: {{ .Release.Name }}-monitor
+        {{- with .Values.monitor.memoryLimit }}
+        # Validated here because a malformed GOMEMLIMIT is a fatal error before
+        # main, so a typo would be a crash-loop with nothing logged. Go accepts
+        # only B, KiB, MiB, GiB and TiB -- not Kubernetes' Mi.
+        {{- if not (regexMatch "^[0-9]+(B|KiB|MiB|GiB|TiB)$" (toString .)) }}
+        {{- fail (printf "monitor.memoryLimit %q is not a Go memory limit: use a byte count with an optional B, KiB, MiB, GiB or TiB suffix (not Kubernetes' Mi/M/MB)" .) }}
+        {{- end }}
+        - name: GOMEMLIMIT
+          value: {{ . | quote }}
+        {{- end }}
         resources:
           {{- .Values.monitor.resources | toYaml | nindent 10 }}
         securityContext:

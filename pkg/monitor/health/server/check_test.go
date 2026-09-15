@@ -19,6 +19,7 @@ package server_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -61,23 +62,52 @@ const (
 // captureSink is a logr.LogSink that records Info calls so tests can assert on them.
 // entries is a shared pointer so that copies produced by WithValues all write to the
 // same slice (logr calls WithValues even with an empty key list).
+// The lock is shared, not copied, because the fan-out reaches this sink from
+// several goroutines at once and an unguarded append to a shared slice header
+// both races and silently loses entries — which would make any assertion on
+// what was logged unsound rather than merely flaky.
 type captureSink struct {
+	lock      *sync.Mutex
 	entries   *[]map[string]any
+	errors    *[]string
 	presetKVs []any
 }
 
 func newCaptureSink() *captureSink {
 	entries := make([]map[string]any, 0)
+	errors := make([]string, 0)
 
-	return &captureSink{entries: &entries}
+	return &captureSink{lock: &sync.Mutex{}, entries: &entries, errors: &errors}
+}
+
+// entriesSnapshot returns a copy of what has been logged, safe to assert on.
+func (s *captureSink) entriesSnapshot() []map[string]any {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return append([]map[string]any{}, *s.entries...)
+}
+
+// errorsSnapshot returns a copy of the error messages logged.
+func (s *captureSink) errorsSnapshot() []string {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	return append([]string{}, *s.errors...)
 }
 
 var _ logr.LogSink = (*captureSink)(nil)
 
 func (s *captureSink) Init(logr.RuntimeInfo)        {}
 func (s *captureSink) Enabled(int) bool             { return true }
-func (s *captureSink) Error(error, string, ...any)  {}
 func (s *captureSink) WithName(string) logr.LogSink { return s }
+
+func (s *captureSink) Error(_ error, msg string, _ ...any) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	*s.errors = append(*s.errors, msg)
+}
 
 func (s *captureSink) WithValues(kvs ...any) logr.LogSink {
 	c := *s // shares the entries pointer; each copy gets its own presetKVs
@@ -97,13 +127,16 @@ func (s *captureSink) Info(_ int, msg string, keysAndValues ...any) {
 		entry[fmt.Sprint(keysAndValues[i])] = keysAndValues[i+1]
 	}
 
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	*s.entries = append(*s.entries, entry)
 }
 
 func (s *captureSink) entriesWithMsg(msg string) []map[string]any {
 	var out []map[string]any
 
-	for _, e := range *s.entries {
+	for _, e := range s.entriesSnapshot() {
 		if e["_msg"] == msg {
 			out = append(out, e)
 		}
@@ -112,7 +145,7 @@ func (s *captureSink) entriesWithMsg(msg string) []map[string]any {
 	return out
 }
 
-func newFakeClient(t *testing.T, objects ...runtime.Object) client.Client {
+func newFakeClient(t *testing.T, objects ...runtime.Object) client.WithWatch {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
@@ -183,23 +216,42 @@ func healthCondition() metav1.Condition {
 	}
 }
 
+// expectObserve wires the provider's batched read to an observer that runs
+// observe against each server, standing in for the projection the real observer
+// performs from one provider list.
+func expectObserve(ctrl *gomock.Controller, provider *mocktypes.MockProvider, observe func(context.Context, *unikornv1.Identity, *unikornv1.Server) error) {
+	observer := mocktypes.NewMockServerObserver(ctrl)
+
+	provider.EXPECT().
+		ObserveServers(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, identity *unikornv1.Identity) (providerTypes.ServerObserver, error) {
+			observer.EXPECT().
+				Observe(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(ctx context.Context, s *unikornv1.Server) error {
+					return observe(ctx, identity, s)
+				}).
+				AnyTimes()
+
+			return observer, nil
+		}).
+		AnyTimes()
+}
+
 // runCheckFull builds a Checker, injects a capturing logger, and runs Check.
 // It returns the fake Kubernetes client (for inspecting object state), the
 // log sink (for asserting on emitted entries), and any error from Check.
-// updateFn both mutates the server and supplies UpdateServerState's return
-// value, so a test can model a provider that records state before surfacing
-// an error (the real not-found contract).
+// updateFn both mutates the server and supplies Observe's return value, so a
+// test can model an observer that records state before surfacing an error (the
+// real not-found contract).
 func runCheckFull(t *testing.T, srv *unikornv1.Server, updateFn func(*unikornv1.Server) error) (client.Client, *captureSink, error) {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			return updateFn(s)
-		})
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		return updateFn(s)
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -399,14 +451,12 @@ func TestCheckServerNoHistogramOnClockSkew(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
-			s.Status.LaunchedAt = &launchedAt
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+		s.Status.LaunchedAt = &launchedAt
 
-			return nil
-		})
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -445,13 +495,11 @@ func TestCheckServerNoHistogramWhenTimestampsNil(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
-			// LaunchedAt and ScheduledAt intentionally not set
-			return nil
-		})
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+		// LaunchedAt and ScheduledAt intentionally not set
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -492,16 +540,14 @@ func TestCheckServerRecordsProvisionDurationOnPendingToRunning(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 
-			t := metav1.NewTime(launchedAt)
-			s.Status.LaunchedAt = &t
+		t := metav1.NewTime(launchedAt)
+		s.Status.LaunchedAt = &t
 
-			return nil
-		})
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -548,16 +594,14 @@ func TestCheckServerRecordsSchedulingDurationOnPendingToRunning(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 
-			t := metav1.NewTime(scheduledAt)
-			s.Status.ScheduledAt = &t
+		t := metav1.NewTime(scheduledAt)
+		s.Status.ScheduledAt = &t
 
-			return nil
-		})
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -609,15 +653,13 @@ func TestCheckServerNoHistogramOnRestartAfterFirstBoot(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
-			s.Status.LaunchedAt = &launchedAt
-			s.Status.ScheduledAt = &scheduledAt
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+		s.Status.LaunchedAt = &launchedAt
+		s.Status.ScheduledAt = &scheduledAt
 
-			return nil
-		})
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -659,16 +701,14 @@ func runFallbackCheck(t *testing.T, setupRegion, setupFlavor func(*mocktypes.Moc
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 
-			t := metav1.NewTime(launchedAt)
-			s.Status.LaunchedAt = &t
+		t := metav1.NewTime(launchedAt)
+		s.Status.LaunchedAt = &t
 
-			return nil
-		})
+		return nil
+	})
 	setupRegion(mockProvider)
 	setupFlavor(mockProvider)
 
@@ -782,10 +822,9 @@ func TestCheckGaugeEmitsLowercaseStateLabels(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil).
-		AnyTimes()
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) error {
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -841,16 +880,14 @@ func assertProvisionDurationRecorded(t *testing.T, startPhase unikornv1.ActiveCo
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 
-			t := metav1.NewTime(launchedAt)
-			s.Status.LaunchedAt = &t
+		t := metav1.NewTime(launchedAt)
+		s.Status.LaunchedAt = &t
 
-			return nil
-		})
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -913,14 +950,12 @@ func TestCheckServerNoHistogramOnIntermediatePhaseTransition(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockProvider := mocktypes.NewMockProvider(ctrl)
-	mockProvider.EXPECT().
-		UpdateServerState(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
-			s.SetActiveCondition(unikornv1.ActiveConditionReasonBuilding)
-			s.Status.LaunchedAt = &launchedAt
+	expectObserve(ctrl, mockProvider, func(_ context.Context, _ *unikornv1.Identity, s *unikornv1.Server) error {
+		s.SetActiveCondition(unikornv1.ActiveConditionReasonBuilding)
+		s.Status.LaunchedAt = &launchedAt
 
-			return nil
-		})
+		return nil
+	})
 	mockProvider.EXPECT().
 		Region(gomock.Any()).
 		Return(regionFixture(), nil).
@@ -975,11 +1010,11 @@ func TestCheckServerPersistsObservedStatus(t *testing.T) {
 // TestCheckServerPersistsObservedStatusOnProviderAbsence pins that a server
 // whose Nova instance disappeared out-of-band still gets an observed write —
 // and thus an observed wake — on the monitor's poll path. The provider's
-// GetServer returns ErrResourceNotFound; updateServerStateWithClients records
-// an absent observation (errored cleared, generation stamped from
-// metadata.generation, image preserved as last-known) and surfaces the error
-// (the create-retry provisioner's confirmed-gone gate depends on it), so
-// UpdateServerState here both mutates and errors. checkServer still proceeds
+// read has no row for the server; the observer records an absent observation
+// (errored cleared, generation stamped from metadata.generation, image
+// preserved as last-known) and surfaces the error (the create-retry
+// provisioner's confirmed-gone gate depends on the same contract on
+// UpdateServerState), so Observe here both mutates and errors. checkServer still proceeds
 // to the status patch on that error while keeping the server out of the state
 // gauge, and the poll cycle itself does not fail. Without the patch, a parked
 // server (observed.errored: true) whose instance is deleted stays in error
@@ -1001,9 +1036,9 @@ func TestCheckServerPersistsObservedStatusOnProviderAbsence(t *testing.T) {
 	}
 
 	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
-		// Simulates updateServerStateWithClients on the not-found path:
-		// GetServer returned ErrResourceNotFound, so the absent observation
-		// is recorded and UpdateServerState surfaces the not-found error.
+		// Simulates the observer on the not-found path: the project read has no
+		// row for this server, so the absent observation is recorded and Observe
+		// surfaces the not-found error.
 		if s.Status.Observed == nil {
 			s.Status.Observed = &unikornv1.ServerObservedStatus{}
 		}
