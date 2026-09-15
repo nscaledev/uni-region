@@ -11,7 +11,7 @@ The package contains three broad kinds of object:
 
 - user-meaningful region resources such as `Region`, `Identity`, `Network`,
   `SecurityGroup`, `LoadBalancer`, `SSHCertificateAuthority`, `Server`, and
-  `Volume`, and `FileStorage`
+  `Volume`, `FileStorage`, and `FileStorageSnapshot`
 - service-internal provider state, primarily `OpenstackIdentity`
 - operational support objects such as `VLANAllocation`, `FileStorageClass`, and
   `FileStorageProvisioner`
@@ -87,6 +87,16 @@ stored objects rely on for linkage, migration, and operational coordination.
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
   reconciliation contract.
+- `FileStorageSnapshot` is a namespaced CRD for Manual Snapshot intent and
+  observed state.
+- Snapshot `spec.name`, `spec.fileStorageID`, `spec.expirationTime`, and
+  `spec.protectedPath` are immutable. Name admission rejects `.` and `..` and
+  permits letters, digits, underscores, periods, and hyphens up to 63 characters.
+  Protected paths are optional relative paths; omission selects the
+  File Storage root. Pause and tags remain mutable.
+- Snapshot status stores conditions, provider capture time, absolute protected
+  path, and first backend observation time. CRD admission makes
+  `backendObservedAt` write-once. The resource has no phase field.
 - `FileStorage.Spec.NFS` stores POSIX ACL and atime update interval desired state
   as required, defaulted values. The CRD defaults missing values to `false` and
   `0` before validation. An atime value of `0` means read-driven updates are
@@ -232,10 +242,8 @@ stored objects rely on for linkage, migration, and operational coordination.
 - Where possible, OpenStack itself is now the intended source of truth for
   cloud-side state, with local code preferring deterministic lookup over
   mirrored persistence.
-- `ResourceLabels()` exists on several resources to satisfy shared controller
-  interfaces, but currently returns `nil, nil`. That is an implementation
-  contract for generic integration, not proof that these resources already have
-  a meaningful label-tuple identity model defined here.
+- `FileStorage.ResourceLabels()` and `FileStorageSnapshot.ResourceLabels()`
+  currently return `nil, nil` to satisfy shared controller interfaces.
 - `SSHCertificateAuthority` is structurally much lighter than the other major
   resource types. It has no status and behaves more like a stored project-scoped
   OpenSSH user CA record than a long-running provisioned object.

@@ -40,6 +40,7 @@ func TestMustParsePanics(t *testing.T) {
 		{"MustParseServerID", func(s string) { idstest.MustParseServerID(s) }},
 		{"MustParseSSHCertificateAuthorityID", func(s string) { idstest.MustParseSSHCertificateAuthorityID(s) }},
 		{"MustParseFileStorageID", func(s string) { idstest.MustParseFileStorageID(s) }},
+		{"MustParseFileStorageSnapshotID", func(s string) { idstest.MustParseFileStorageSnapshotID(s) }},
 		{"MustParseImageID", func(s string) { idstest.MustParseImageID(s) }},
 		{"MustParseFlavorID", func(s string) { idstest.MustParseFlavorID(s) }},
 	}
