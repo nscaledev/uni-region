@@ -179,8 +179,7 @@ jobs:
         format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-        # This temporary fake data centre test must not notify Slack.
-        send-slack: false
+        send-slack: ${{ github.event.inputs.skip_slack_notifications != 'true' && 'true' || 'false' }}
         environment: dev
         deployed-version: ${{ needs.find-dev-deployed-version.outputs.version || needs.find-dev-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
