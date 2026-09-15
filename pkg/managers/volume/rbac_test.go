@@ -32,6 +32,10 @@ import (
 func TestVolumeControllerHelmRBAC(t *testing.T) {
 	t.Parallel()
 
+	if _, err := exec.LookPath("helm"); err != nil {
+		t.Skip("helm binary not available")
+	}
+
 	_, filename, _, ok := runtime.Caller(0)
 	require.True(t, ok)
 
@@ -43,13 +47,20 @@ func TestVolumeControllerHelmRBAC(t *testing.T) {
 	role := &rbacv1.ClusterRole{}
 	require.NoError(t, yaml.Unmarshal(output, role))
 
-	for _, rule := range role.Rules {
-		if len(rule.Resources) == 1 && rule.Resources[0] == "servers" {
-			require.ElementsMatch(t, []string{"list", "watch", "update"}, rule.Verbs)
+	verbs := map[string][]string{}
 
-			return
+	for _, rule := range role.Rules {
+		for _, resource := range rule.Resources {
+			verbs[resource] = append(verbs[resource], rule.Verbs...)
 		}
 	}
 
-	require.Fail(t, "rendered Volume controller ClusterRole has no Server rule")
+	expected := map[string][]string{
+		"servers":        {"list", "watch", "update"},
+		"servers/status": {"update"},
+	}
+
+	for resource, want := range expected {
+		require.ElementsMatchf(t, want, verbs[resource], "rendered Volume controller ClusterRole rule for %q", resource)
+	}
 }

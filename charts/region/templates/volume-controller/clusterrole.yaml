@@ -36,7 +36,6 @@ rules:
   - servers/status
   verbs:
   - update
-  - patch
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
