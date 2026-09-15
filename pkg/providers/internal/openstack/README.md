@@ -606,21 +606,54 @@ of an eviction is one login.
 It does not share provider *reads*. Collapsing `GetServer` was measured and
 rejected. Nova's name filter is a regular expression, so a filtered read scans the
 project and returns one row; dropping the filter would let concurrent callers
-share one list, but it returns every row in the project to every caller. Against a
-modelled 1538-server estate the unfiltered form cost the sequential monitor cycle
-1m40s where the filtered form costs 35s, which is the difference between fitting
-the one-minute poll period and not, and a bulk create emitted three orders of
-magnitude more instance records because each create retires the sharing anyway.
-Sharing the reads would also have needed a guard against a caller joining a read
-opened before its own create and building a second server.
+share one list, but it returns every row in the project to every caller. A bulk
+create emitted three orders of magnitude more instance records because each
+create retires the sharing anyway, and sharing the reads would have needed a
+guard against a caller joining a read opened before its own create and building
+a second server.
 
-The real saving on the monitor's path is not a shared read but a single read: it
-walks servers one at a time (`pkg/monitor/health/server/check.go`), so one list
-per identity per cycle indexed by name would replace a read per server with a
-read per identity — around two orders of magnitude fewer requests against that
-same estate.
-Observation-only reads are allowed to do that; see the note on projected status in
+The figures that comparison rested on came from a model whose service times were
+plausible rather than measured, and a real deployment contradicted them by two
+orders of magnitude: over a representative estate of around 1500 servers a
+sequential cycle took tens of minutes, where the model put it at 35 seconds. The
+model counted requests and rows; it did not price what a loaded Nova charges for
+a regular expression scan over a project. Do not size anything off the 35s
+figure — neither read form ever fitted the one-minute poll period.
+
+The saving on the monitor's path was never a shared read but a single read, and
+`ObserveServers` is now that: one unfiltered, paginated list of the identity's
+project per cycle, indexed by name, replacing a read per server with a read per
+identity — two orders of magnitude fewer Nova calls against the same estate.
+Observation-only reads are allowed to do this; see the note on projected status in
 [the API package](../../../apis/unikorn/v1alpha1/README.md).
+
+It pages explicitly rather than using `AllPages`, and that is not incidental.
+`AllPages` holds every page as a generic map tree and then re-marshals the whole
+thing through JSON to decode it, so that overhead scales with the project rather
+than the page: against a project of around 1500 servers, eight concurrent
+`AllPages` reads peaked around 288MiB of heap where the same reads paged at
+`serverListPageSize` peaked around 198MiB.
+
+Paging bounds the decode overhead, not the peak. The decoded slice is the whole
+project by construction, and `ObserveServers` then retains it for the length of
+its caller's projection — 23-28MiB for a project that size, and the dominant
+term. No page size changes that, so a caller observing several identities at once
+has to be sized for the largest projects it reads concurrently — never more than
+the whole estate, since one read is one project. What paging buys is roughly a
+third off, and a page size well under Nova's default `osapi_max_limit` of 1000
+so Nova never truncates below it.
+
+Because an unfiltered list is walked by marker, a server created between two
+pages can be missed and read as absent for that cycle. Harmless here — the absent
+path stamps an observation and touches no condition, and it self-heals on the next
+poll — but it is a way to reach that path which a filtered read of one name could
+not. Nothing destructive keys off it: the create-retry gate goes through
+`UpdateServerState`'s own fresh read, never the batch.
+
+`UpdateServerState` keeps its own per-server filtered read, and must. An
+observation may only refuse an action, never authorise one, so the create path's
+"is there already a server with exactly this name" question takes a fresh read at
+decision time rather than consulting a batch someone else took.
 
 ## Octavia Load Balancers
 

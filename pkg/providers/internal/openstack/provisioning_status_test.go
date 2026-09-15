@@ -289,6 +289,7 @@ type stubComputeClient struct {
 	fault           *servers.Fault
 	faultErr        error
 	faultReads      int
+	listReads       int
 }
 
 func (c *stubComputeClient) CreateKeypair(context.Context, string, string) error  { return nil }
@@ -320,6 +321,19 @@ func (c *stubComputeClient) GetServerFault(context.Context, string) (*servers.Fa
 	}
 
 	return c.fault, nil
+}
+func (c *stubComputeClient) ListServers(context.Context) ([]servers.Server, error) {
+	c.listReads++
+
+	if c.serverErr != nil {
+		return nil, c.serverErr
+	}
+
+	if c.server == nil {
+		return nil, nil
+	}
+
+	return []servers.Server{*c.server}, nil
 }
 func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
 	return nil, nil //nolint:nilnil // unused stub method

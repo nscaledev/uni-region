@@ -15,8 +15,10 @@ status/telemetry model.
 
 ## Distinctive Behaviour
 
-- resolves provider and flavor context per region and caches it for a poll cycle
-- updates server status through provider `UpdateServerState(...)`
+- resolves provider and flavor context per region, before the fan-out, and
+  caches it for a poll cycle
+- updates server status through provider `ObserveServers(...)`: one unfiltered
+  read of an identity's whole project, projected onto every server in it
 - refines the server's live lifecycle state from observed Nova + Ironic state. Lifecycle state rides the generic core `Active` condition (status `True` only when the server is running; the reason carries the precise state via the domain-owned `ActiveConditionReason` vocabulary — `Pending`/`Queued`/`Building`/`Running`/`Stopping`/`Stopped`/`Error`), not a bespoke status field. For OpenStack baremetal servers in Nova `BUILD`, an Ironic node lookup distinguishes `Queued` (provider has accepted the create but hardware is not yet engaged — pre-deploy Ironic states) from `Building` (Ironic actively deploying, including transient deploy failures). VMs in Nova `BUILD` go straight to `Building`. Provisioning status itself is a separate axis (the `Available` condition), condition-derived and provisioner-owned (one-shot): the monitor never writes it. The `Active` condition is the live readiness signal once provisioning status reaches `provisioned`.
 - latches `status.provisionedAt` from Nova `launched_at`, alongside `launchedAt`
   and ahead of the `BUILD` early-return, so it fires for VMs and baremetal alike
@@ -28,7 +30,7 @@ status/telemetry model.
   rebuilt. Servers predating the field backfill it on the next poll once booted.
 - is the sole owner of `status.macAddress`, recorded from the Nova server
   response (the port MAC carried inline in `addresses`, reused from the poll's
-  existing `GetServer` — no extra provider call) once the server reaches Nova
+  existing project read — no extra provider call) once the server reaches Nova
   `ACTIVE`. ACTIVE is the barrier at which the port MAC is guaranteed bound for
   VMs and baremetal alike: for baremetal Ironic rebinds the port to the real NIC
   MAC asynchronously during deploy, so the value observed earlier (e.g. by the
@@ -38,12 +40,13 @@ status/telemetry model.
   value, while unconditionally writing a valid MAC self-heals drift (the status
   PATCH makes a same-value write a no-op).
 - logs phase and health-condition transitions
-- populates `status.observed` from the poll's existing `GetServer` response. The
+- populates `status.observed` from the poll's existing project read. The
   region has one writer *function* rather than one caller: the reconciler's
-  create-retry existence check goes through the same `UpdateServerState`, and so the
-  same projection. One derivation with no arbitration is what removes the ordering
-  argument between the two status writers — not the monitor holding the region
-  alone. That shared derivation also means a provider not-found is *surfaced* by
+  create-retry existence check takes its own per-server read but lands in the same
+  `projectServerState`, and so the same projection. One derivation with no
+  arbitration is what removes the ordering argument between the two status
+  writers — not the monitor holding the region alone. That shared derivation also
+  means a provider not-found is *surfaced* by both `Observe` and
   `UpdateServerState` — the create-retry path reads it as "confirmed gone" — but
   the absent observation (errored cleared, generation stamped, image sticky) is
   recorded on the server first, and this monitor persists it despite the error:
@@ -82,10 +85,130 @@ status/telemetry model.
   one.
 - rebuilds gauge counts from the effective server set each cycle
 
+## The Cycle
+
+A cycle lists Server resources from the informer cache, buckets them by
+`(region, identity)`, and observes each bucket with one provider read.
+
+The bucket is the identity because the identity *is* the Keystone project: one
+unfiltered list covers every server in it, whether a given server authenticates
+as the tenant service principal or as the region admin scoped into that project.
+Regions resolve before the fan-out, not inside it, because `resolveRegion` writes
+an unguarded map and there are only ever a handful of regions.
+
+Buckets run `checkConcurrency` at a time, which is bounded for memory first of
+all: each concurrent observation decodes one identity's whole project and retains
+it until the last server in that bucket is patched, so peak footprint is the sum
+of the largest that-many projects. Since a bucket *is* a Keystone project, that
+sum can never exceed the estate — an estate concentrated in one big project stays
+cheap however high the concurrency goes, and one spread across several large
+tenants does not.
+
+The limit is set for the pessimal shape, not the likely one: four concurrent
+reads of a project of around 1500 servers each measured about 100MiB of heap and
+124MiB of process memory, before the controller-runtime caches this process also
+holds. An estate holding one large project and a tail of small ones retains
+nearer 30MiB, so the memory limit and `GOMEMLIMIT` have headroom; raising the
+concurrency on a many-large-tenant estate is what would make them matter.
+
+It also bounds how much of the estate one degraded cell can hold up. There is no
+per-bucket deadline, so a wedged identity occupies a slot until its pages time
+out, and enough of them starve the rest of that cycle. The poll period is the
+recovery, and the failures are logged rather than swallowed. A cycle budget would
+be the real fix; it is a change to this component's contract and not worth making
+to something already scheduled for deletion.
+
+This replaced a sequential walk that paid a name-filtered Nova list *per server*.
+Nova evaluates that filter as a regular expression against every row of the
+project, so the cycle cost grew with servers times project size. Over a
+representative estate of around 1500 servers a cycle took tens of minutes
+against a one-minute poll period — and because the ticker drops ticks when a
+cycle overruns, the cycle length *is* how long a new server waits to be seen. See
+the [provider README](../../../providers/internal/openstack/README.md) for the
+read shape and why the create path keeps its own per-server read.
+
+The Keystone login was already shared per credential before this, so it is not
+part of the saving here. A release without that sharing pays a login per server
+on top, which is worth knowing when comparing against an older deployment.
+
+The batch is taken once per bucket and projected serially, so the last server in
+a large bucket is projected from a snapshot as old as the bucket took to walk. Two
+per-server provider calls still happen inside that loop — a fault fetch on a
+transition into error, and an Ironic node lookup for a baremetal server in Nova
+`BUILD`.
+
+A bucket mid baremetal deploy is therefore the shape this read does not help, and
+the effect is not confined to those servers: nothing partitions an identity by
+flavour, so anything else in it — a VM included — is observed only once the walk
+reaches it, behind one Ironic round trip per baremetal server still in `BUILD`.
+Other identities are unaffected, being separate buckets running in parallel. It
+is a smaller wait than the per-server walk this replaced, where the same server
+queued behind a Keystone login and a whole-project regexp scan as well, but it is
+the remaining serial term. Batching it the way the Nova read was batched is not
+open to us: Ironic nodes are not identity-scoped, so the per-bucket equivalent
+lists every node in the region, and the phase-derivation credential is scoped to
+the project.
+
+### Best Effort
+
+A cycle is best effort: one failure must never stop anything else updating, and
+there is no retry anywhere in it. The poll period is the retry — a minute later
+the cycle re-derives everything from a fresh read, so a transient failure costs
+one cycle of staleness on the servers it touched.
+
+| failure | blast radius |
+| -- | -- |
+| region resolve | every bucket in that region skips |
+| Identity read | that bucket skips |
+| project read | that identity's servers skip |
+| `Observe` on one server | that server skips |
+| status patch | that server skips, conflicts included |
+| the cycle's own context being cancelled | the cycle stops |
+
+Note the last row carefully: it is the *cycle's context* being done, not an error
+that happens to be a context error. A provider call that hits the shared client's
+per-request timeout returns something for which `errors.Is(err, context.DeadlineExceeded)`
+is true, and that is an ordinary bucket failure — logged, skipped, retried next
+poll. Conflating the two is how a wedged Nova would be mistaken for an orderly
+shutdown and go unreported.
+
+A patch conflict is dropped rather than retried: it means the reconciler won the
+race, so re-deriving next cycle is the correct answer, not rewriting from a stale
+base. Skipped servers keep their existing status and drop out of the state gauge
+for that cycle, which is the same behaviour a region-wide provider outage always
+had, now reachable at identity granularity too.
+
+What makes a cycle best effort is `checkGroup` absorbing its own failures;
+nothing hands the errgroup a failure to react to. It is a plain `errgroup.Group`
+rather than `WithContext` so that stays true if it ever does — `WithContext`
+cancels its siblings on the first error.
+
+A failure is not logged when the cycle's own context is already done. A shutdown
+cancels every bucket at once, and an error line per identity and per server for
+an orderly restart is noise anything alerting on the monitor's error rate would
+fire on at every deploy. The test is the context and not the error, because the
+shared provider client bounds each request with its own timeout whose expiry is
+indistinguishable from a cancellation by inspecting the error — and a wedged
+provider is the one condition that must not go quiet.
+
+### Writes Only On Change
+
+The projection is compared against what was read and the patch is skipped when
+they match. Over a steady estate every server would otherwise have its status
+rewritten every poll, which at a few thousand servers is both the dominant cost
+of the cycle and a `resourceVersion` bump on every object every minute.
+
+The absent-server path is compared the same way, and this cannot lose the
+observed wake: the reconciler's wake predicate is itself a comparison of
+`status.observed` against its previous value, so an observation identical to the
+stored one never woke anything to begin with. The first cycle after an instance
+disappears does change the observation, is written, and does wake the reconciler.
+
 ## Invariants And Guard Rails
 
-- Fatal context cancellation/deadline errors abort the poll cycle; most
-  per-server/provider failures are logged and skipped.
+- The cycle's own context being cancelled aborts the poll cycle; every
+  per-server and provider failure, context-flavoured errors included, is logged
+  and skipped.
 - Servers skipped because region/provider resolution fails are absent from the
   gauge for that cycle rather than misreported as a fake state.
 - Provider-specific progress refinement must be best effort. For example,

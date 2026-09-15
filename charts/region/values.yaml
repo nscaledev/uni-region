@@ -143,11 +143,19 @@ server:
 monitor:
   # Allow override of the controller image.
   image: ~
+  # GOMEMLIMIT for the monitor. Must stay below the memory limit below; empty
+  # leaves it unset. A Go size, NOT a Kubernetes quantity: only B, KiB, MiB, GiB
+  # and TiB are accepted, so 400Mi crash-loops the pod and a bare 400 means 400
+  # bytes. The template rejects anything malformed.
+  memoryLimit: 400MiB
   # Allows resource limits to be set.
   resources:
     limits:
       cpu: 100m
-      memory: 100Mi
+      # Sized for a poll holding several whole Nova projects at once, so it
+      # moves with checkConcurrency in pkg/monitor/health/server/check.go and
+      # with GOMEMLIMIT above. See that package's README for the measurements.
+      memory: 512Mi
 
 # Project event consumer.
 projectConsumer:

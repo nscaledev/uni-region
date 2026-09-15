@@ -125,6 +125,24 @@ type Server interface {
 	// provisioner's create-retry "confirmed gone" gate and the health monitor's
 	// absent-server handling both depend on it.
 	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
+	// ObserveServers takes one provider read of the identity's whole project and
+	// returns an observer over it, so a caller with many servers to observe pays
+	// one read rather than one read per server.
+	ObserveServers(ctx context.Context, identity *unikornv1.Identity) (ServerObserver, error)
+}
+
+// ServerObserver projects provider server state onto Server resources from a
+// single read taken when it was created.
+//
+// Observation only. It must never authorise an action against the provider: an
+// actuation decision takes its own fresh read at decision time, which is why the
+// create path keeps UpdateServerState.
+type ServerObserver interface {
+	// Observe projects the held provider state onto server, in place.
+	// Implementations MUST return ErrResourceNotFound when the provider has no
+	// server of that name, with the same observation recording UpdateServerState
+	// does on that path.
+	Observe(ctx context.Context, server *unikornv1.Server) error
 }
 
 type ServerConsole interface {
