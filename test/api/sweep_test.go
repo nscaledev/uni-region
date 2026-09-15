@@ -175,14 +175,16 @@ var _ = Describe("Stale test resource sweep", func() {
 		})
 	})
 
-	Context("When Fake DC network fixtures are stale", func() {
+	Context("When Fake DC security group and network fixtures are stale", func() {
 		Describe("Given a Fake DC region is configured", func() {
-			It("sweeps only networks in the Fake DC region", func() {
+			It("deletes the security group before its network in the Fake DC region", func() {
 				const (
-					fakeRegionID = "fake-region-1"
-					networkID    = "network-1"
+					fakeRegionID    = "fake-region-1"
+					securityGroupID = "security-group-1"
+					networkID       = "network-1"
 				)
 
+				var securityGroupDeleted atomic.Bool
 				var networkDeleted atomic.Bool
 
 				created := time.Now().Add(-StaleTestResourceTTL - time.Hour).UTC()
@@ -199,14 +201,30 @@ var _ = Describe("Stale test resource sweep", func() {
 								"creationTime": created,
 							},
 						}})).To(Succeed())
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/securitygroups":
+						Expect(r.URL.Query().Get("regionID")).To(Equal(fakeRegionID))
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{
+								"id":           securityGroupID,
+								"name":         "ginkgo-test-security-group-12345678",
+								"creationTime": created,
+							},
+						}})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/securitygroups/"+securityGroupID:
+						securityGroupDeleted.Store(true)
+						w.WriteHeader(http.StatusAccepted)
+					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/securitygroups/"+securityGroupID:
+						Expect(securityGroupDeleted.Load()).To(BeTrue())
+						w.WriteHeader(http.StatusNotFound)
 					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/networks/"+networkID:
+						Expect(securityGroupDeleted.Load()).To(BeTrue())
 						networkDeleted.Store(true)
 						w.WriteHeader(http.StatusAccepted)
 					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks/"+networkID:
 						Expect(networkDeleted.Load()).To(BeTrue())
 						w.WriteHeader(http.StatusNotFound)
 					default:
-						Fail("Fake DC sweep must only request network endpoints")
+						Fail("Fake DC sweep must only request security group and network endpoints")
 					}
 				}))
 				DeferCleanup(server.Close)
@@ -224,6 +242,7 @@ var _ = Describe("Stale test resource sweep", func() {
 				})
 
 				SweepStaleFakeDataCenterResources(client, context.Background(), client.config)
+				Expect(securityGroupDeleted.Load()).To(BeTrue())
 				Expect(networkDeleted.Load()).To(BeTrue())
 			})
 		})

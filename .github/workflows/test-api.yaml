@@ -37,6 +37,7 @@ on:
           - 'External Network Discovery'
           - 'File Storage Management'
           - 'Network Management'
+          - 'SecurityGroup'
           - 'LoadBalancer'
       region_id:
         description: 'Override TEST_REGION_ID (leave empty to use default)'
