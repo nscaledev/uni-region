@@ -66,8 +66,9 @@ encryption flag, with provider-neutral media and advertised-performance metadata
 when the Region publishes them. Optional minimum and maximum size bounds are
 returned in whole GiB only when configured by the Region operator. A non-empty
 `supportedFlavorIds` value is a typed Region Flavor compatibility allowlist;
-omitted or empty means unrestricted. The public contract deliberately contains
-no Cinder, storage-pool, or other provider-specific fields.
+omitted or empty means Volumes of that class cannot be attached to Servers but
+does not prevent standalone Volume creation. The public contract deliberately
+contains no Cinder, storage-pool, or other provider-specific fields.
 
 `/api/v2/volumes` is the published lifecycle contract for project-scoped block
 storage. Creation is anchored to a Network and requires a provider-neutral

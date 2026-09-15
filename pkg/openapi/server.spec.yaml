@@ -4204,7 +4204,7 @@ components:
           format: int64
           minimum: 1
         supportedFlavorIds:
-          description: Optional allowlist of Region flavors compatible with this volume class. Omitted or empty means no compatibility restriction.
+          description: Optional allowlist of Region flavors that can attach Volumes of this class to Servers. Omitted or empty means Server attachment is not supported; standalone Volume creation remains available.
           type: array
           uniqueItems: true
           items:

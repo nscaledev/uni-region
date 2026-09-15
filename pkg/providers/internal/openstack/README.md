@@ -367,9 +367,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   exports no VolumeClasses. Selected classes can be enriched with user-facing
   metadata such as optional minimum/maximum capacity bounds, a
   `supportedFlavors` selector, media, maximum performance caps, and encryption
-  signals. Omitted selectors and omitted or empty selector IDs mean unrestricted
-  compatibility; the provider resolves this operator-authored selector to the
-  neutral Flavor ID allowlist and does not infer it from Cinder volume types.
+  signals. Omitted selectors and omitted or empty selector IDs make the class
+  ineligible for Server attachment; the provider resolves this operator-authored
+  selector to the neutral Flavor ID allowlist and does not infer it from Cinder
+  volume types.
   Capacity bounds are
   operator-authored positive whole GiB values; either may be omitted, and when
   both are present the maximum must be at least the minimum. The provider

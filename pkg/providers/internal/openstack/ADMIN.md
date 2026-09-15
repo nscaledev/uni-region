@@ -162,9 +162,10 @@ be a positive whole number of GiB; when both are present, the maximum must be
 greater than or equal to the minimum. These are Region configuration metadata,
 not values discovered from Cinder. Operators may additionally set
 `supportedFlavors.ids` to a unique list of Region Flavor UUIDs. A non-empty list
-is a compatibility allowlist; an omitted selector or omitted/empty IDs permits
-every Flavor. Admission validates UUID shape and uniqueness but does not check
-that the Flavors currently exist in the provider.
+is a compatibility allowlist for Server attachment; an omitted selector or
+omitted/empty IDs prevents Volumes of that class from attaching to Servers but
+does not prevent standalone Volume creation. Admission validates UUID shape and
+uniqueness but does not check that the Flavors currently exist in the provider.
 
 VolumeClass selection is fail-closed. Only Cinder volume type IDs explicitly
 listed in `spec.openstack.blockStorage.volumeClasses.selector.ids` are exported.

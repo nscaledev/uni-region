@@ -55,7 +55,8 @@ continue to be passed directly through many provider interface methods.
   exposes the inventory. Optional minimum and maximum capacity bounds are
   operator-authored Region configuration propagated through this neutral
   model; they are not provider-discovered values. The same model carries an
-  optional typed Region Flavor allowlist; nil or empty means unrestricted.
+  optional typed Region Flavor allowlist for Server attachment; nil or empty
+  means Volumes of that class cannot be attached to Servers.
 - `Volume` is a focused create/delete/state-update capability that accepts the
   native `unikornv1.Volume` lifecycle intent and is embedded in the full
   `Provider` composition. `CreateVolume` is a reconciliation operation rather

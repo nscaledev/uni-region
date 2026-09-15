@@ -329,8 +329,8 @@ type VolumeClassSelector struct {
 }
 
 type VolumeClassFlavorSelector struct {
-	// IDs is an explicit allowlist of Region flavors. If nil or empty, all
-	// flavors are considered compatible.
+	// IDs is an explicit allowlist of Region flavors that can attach Volumes of
+	// this class to Servers. If nil or empty, Server attachment is not supported.
 	// +kubebuilder:validation:items:Type=string
 	// +kubebuilder:validation:items:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
 	// +listType=set
@@ -351,9 +351,9 @@ type VolumeClassMetadata struct {
 	// ID is the immutable provider identifier for the volume class. For OpenStack,
 	// this is the Cinder volume type ID.
 	ID string `json:"id"`
-	// SupportedFlavors optionally restricts this volume class to selected Region
-	// flavors. An undefined selector or nil or empty IDs means no compatibility
-	// restriction.
+	// SupportedFlavors lists the Region flavors that can attach Volumes of this
+	// class to Servers. An undefined selector or nil or empty IDs means Server
+	// attachment is not supported.
 	SupportedFlavors *VolumeClassFlavorSelector `json:"supportedFlavors,omitempty"`
 	// MinimumSizeGiB is the minimum volume capacity accepted by the class, in
 	// whole GiB.

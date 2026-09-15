@@ -57,8 +57,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   `maximumSizeGiB` as positive whole GiB values. When both are present, the
   maximum must be greater than or equal to the minimum. Metadata may also carry
   a `supportedFlavors` selector whose `ids` are a unique typed Region Flavor
-  allowlist. An omitted selector or omitted/empty IDs means the VolumeClass is
-  compatible with every Flavor. Flavor IDs must use canonical lowercase,
+  allowlist for Server attachment. An omitted selector or omitted/empty IDs
+  means Volumes of that class cannot be attached to Servers; it does not prevent
+  standalone Volume creation. Flavor IDs must use canonical lowercase,
   hyphenated UUID spelling. CRD admission enforces that static UUID shape,
   uniqueness, and the capacity invariants without provider lookups.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
