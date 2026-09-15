@@ -63,6 +63,7 @@ func init() {
 	SchemeBuilder.Register(&Server{}, &ServerList{})
 	SchemeBuilder.Register(&OpenstackServer{}, &OpenstackServerList{})
 	SchemeBuilder.Register(&FileStorage{}, &FileStorageList{})
+	SchemeBuilder.Register(&FileStorageSnapshot{}, &FileStorageSnapshotList{})
 	SchemeBuilder.Register(&FileStorageClass{}, &FileStorageClassList{})
 	SchemeBuilder.Register(&FileStorageProvisioner{}, &FileStorageProvisionerList{})
 }

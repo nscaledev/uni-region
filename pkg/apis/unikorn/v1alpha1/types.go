@@ -1364,6 +1364,70 @@ type FileStorage struct {
 	Status            FileStorageStatus `json:"status,omitempty"`
 }
 
+// FileStorageSnapshotList is a list of FileStorageSnapshot resources.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageSnapshotList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageSnapshot `json:"items"`
+}
+
+// FileStorageSnapshot records customer intent and observed lifecycle state for
+// one manual snapshot of a File Storage.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="display name",type="string",JSONPath=".metadata.labels['unikorn-cloud\\.org/name']"
+// +kubebuilder:printcolumn:name="file storage",type="string",JSONPath=".spec.fileStorageID"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageSnapshot struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              FileStorageSnapshotSpec   `json:"spec"`
+	Status            FileStorageSnapshotStatus `json:"status,omitempty"`
+}
+
+// FileStorageSnapshotSpec is the capture request plus mutable reconciliation and user metadata.
+// +kubebuilder:validation:XValidation:rule="self.name == oldSelf.name",message="name is immutable"
+// +kubebuilder:validation:XValidation:rule="self.fileStorageID == oldSelf.fileStorageID",message="fileStorageID is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.expirationTime) == has(oldSelf.expirationTime) && (!has(self.expirationTime) || self.expirationTime == oldSelf.expirationTime)",message="expirationTime is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.protectedPath) == has(oldSelf.protectedPath) && (!has(self.protectedPath) || self.protectedPath == oldSelf.protectedPath)",message="protectedPath is immutable"
+type FileStorageSnapshotSpec struct {
+	// Pause inhibits reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Name is the immutable, case-sensitive Manual Snapshot Name.
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+	// FileStorageID identifies the immutable parent File Storage.
+	FileStorageID regionids.FileStorageID `json:"fileStorageID"`
+	// ExpirationTime optionally requests automatic expiration. Omission means
+	// that the snapshot does not expire automatically.
+	ExpirationTime *metav1.Time `json:"expirationTime,omitempty"`
+	// ProtectedPath is the relative path captured by the snapshot.
+	// Omission selects the File Storage root.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+	// Tags are arbitrary user-managed key/value metadata.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+}
+
+type FileStorageSnapshotStatus struct {
+	// SnapshotTime is the provider-observed capture time.
+	SnapshotTime *metav1.Time `json:"snapshotTime,omitempty"`
+	// AbsoluteProtectedPath is the exact path returned by the provider. Writers
+	// must preserve it byte-for-byte and must not clear a known value on an
+	// incomplete or failed observation.
+	AbsoluteProtectedPath *string `json:"absoluteProtectedPath,omitempty"`
+	// Conditions are the sanitized lifecycle and health state.
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
 // FileStorageSpec defines the storage request.
 type FileStorageSpec struct {
 	// StorageClassID is the storage class ID.
