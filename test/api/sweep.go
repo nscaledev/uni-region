@@ -75,12 +75,23 @@ func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConf
 	sweepStaleNetworks(c, ctx, config, config.RegionID)
 }
 
-// SweepStaleFakeDataCenterResources removes stale Fake DC network fixtures.
-// Fake DC API tests currently create networks only, so sweeping dependent
-// resource types here would be unnecessary and could affect unrelated tests.
+// SweepStaleFakeDataCenterResources removes stale Fake DC security group and
+// network fixtures. Security groups are swept first because they reference and
+// can block deletion of their network.
 func SweepStaleFakeDataCenterResources(c *APIClient, ctx context.Context, config *TestConfig) {
 	if config.FakeRegionID == "" {
 		return
+	}
+
+	securityGroups, err := c.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, config.FakeRegionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list Fake DC security groups")
+
+	for i := range securityGroups {
+		securityGroup := &securityGroups[i]
+		sweepStaleTestResource("security group", securityGroup.Metadata.Id, securityGroup.Metadata.Name,
+			securityGroup.Metadata.CreationTime, securityGroup.Metadata.DeletionTime,
+			func() error { return c.DeleteSecurityGroup(ctx, securityGroup.Metadata.Id) },
+			func() { WaitForSecurityGroupGone(c, ctx, securityGroup.Metadata.Id) })
 	}
 
 	sweepStaleNetworks(c, ctx, config, config.FakeRegionID)
