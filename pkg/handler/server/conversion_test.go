@@ -21,10 +21,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
+	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -214,4 +219,26 @@ func TestGenerateAllowedAddressPairs(t *testing.T) {
 		require.Len(t, out, 1)
 		require.Equal(t, "192.168.1.0/24", out[0].CIDR.String())
 	})
+}
+
+// TestConvertV1StaleProvisionedReportsProvisioning: the deprecated v1 read
+// shares the freshness rule so the two generations cannot disagree.
+func TestConvertV1StaleProvisionedReportsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	in := &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Generation: 1},
+		Spec: unikornv1.ServerSpec{
+			Image:    &unikornv1.ServerImage{ID: idstest.MustParseImageID("55555555-5555-4555-a555-555555555555")},
+			Networks: []unikornv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID("aaaabbbb-1234-5678-9abc-def012345678")}},
+		},
+	}
+	in.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "provisioned")
+	in.Generation = 2
+
+	out, err := server.Convert(in)
+	require.NoError(t, err)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, out.Metadata.ProvisioningStatus)
+	require.Equal(t, coreapi.ProvisioningStatusReasonProvisioning, out.Metadata.ProvisioningStatusDetail.Reason)
+	require.Equal(t, "awaiting reconciliation of the current specification", out.Metadata.ProvisioningStatusDetail.Message)
 }

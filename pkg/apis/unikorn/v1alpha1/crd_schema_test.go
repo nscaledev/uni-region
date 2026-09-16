@@ -40,10 +40,11 @@ import (
 )
 
 const (
-	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
-	regionCRDFile      = "region.unikorn-cloud.org_regions.yaml"
-	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
-	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
+	fileStorageCRDFile         = "region.unikorn-cloud.org_filestorages.yaml"
+	fileStorageSnapshotCRDFile = "region.unikorn-cloud.org_filestoragesnapshots.yaml"
+	regionCRDFile              = "region.unikorn-cloud.org_regions.yaml"
+	serverCRDFile              = "region.unikorn-cloud.org_servers.yaml"
+	volumeCRDFile              = "region.unikorn-cloud.org_volumes.yaml"
 )
 
 func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ...string) *apixv1.JSONSchemaProps {
@@ -95,11 +96,19 @@ func TestVolumeClaimSchema(t *testing.T) {
 	claim := requireSchemaProperty(t, schema, "spec", "claimRef")
 	require.Contains(t, claim.Properties, "kind")
 	require.Contains(t, claim.Properties, "id")
+	require.Len(t, claim.Properties, 2)
 	require.Len(t, claim.Properties["kind"].Enum, 1)
 	require.JSONEq(t, `"Server"`, string(claim.Properties["kind"].Enum[0].Raw))
+	require.NotNil(t, claim.Properties["id"].MinLength)
+	require.Equal(t, int64(1), *claim.Properties["id"].MinLength)
 
 	status := requireSchemaProperty(t, schema, "status")
 	require.NotContains(t, status.Properties, "attachment")
+
+	attachedAt := requireSchemaProperty(t, status, "attachedAt")
+	require.Equal(t, "string", attachedAt.Type)
+	require.Equal(t, "date-time", attachedAt.Format)
+	require.NotContains(t, status.Required, "attachedAt")
 }
 
 type crdValidator struct {
@@ -114,6 +123,12 @@ func (v crdValidator) validates(t *testing.T, resource any) bool {
 }
 
 func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bool {
+	t.Helper()
+
+	return v.validatesUpdateUnstructured(t, obj, nil)
+}
+
+func (v crdValidator) validatesUpdateUnstructured(t *testing.T, obj, oldObj map[string]any) bool {
 	t.Helper()
 
 	validator, _, err := apixvalidation.NewSchemaValidator(v.schema)
@@ -131,7 +146,7 @@ func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bo
 	celValidator := celvalidation.NewValidator(v.structural, true, celconfig.PerCallLimit)
 	require.NotNil(t, celValidator)
 
-	celErrors, _ := celValidator.Validate(t.Context(), field.NewPath("root"), v.structural, obj, nil, celconfig.RuntimeCELCostBudget)
+	celErrors, _ := celValidator.Validate(t.Context(), field.NewPath("root"), v.structural, obj, oldObj, celconfig.RuntimeCELCostBudget)
 
 	return len(celErrors) == 0
 }

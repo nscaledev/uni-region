@@ -72,7 +72,33 @@ func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConf
 			func() { WaitForFileStorageGone(c, ctx, storage.Metadata.Id) })
 	}
 
-	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
+	sweepStaleNetworks(c, ctx, config, config.RegionID)
+}
+
+// SweepStaleFakeDataCenterResources removes stale Fake DC security group and
+// network fixtures. Security groups are swept first because they reference and
+// can block deletion of their network.
+func SweepStaleFakeDataCenterResources(c *APIClient, ctx context.Context, config *TestConfig) {
+	if config.FakeRegionID == "" {
+		return
+	}
+
+	securityGroups, err := c.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, config.FakeRegionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list Fake DC security groups")
+
+	for i := range securityGroups {
+		securityGroup := &securityGroups[i]
+		sweepStaleTestResource("security group", securityGroup.Metadata.Id, securityGroup.Metadata.Name,
+			securityGroup.Metadata.CreationTime, securityGroup.Metadata.DeletionTime,
+			func() error { return c.DeleteSecurityGroup(ctx, securityGroup.Metadata.Id) },
+			func() { WaitForSecurityGroupGone(c, ctx, securityGroup.Metadata.Id) })
+	}
+
+	sweepStaleNetworks(c, ctx, config, config.FakeRegionID)
+}
+
+func sweepStaleNetworks(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, regionID)
 	Expect(err).NotTo(HaveOccurred(), "sweep should list networks")
 
 	for i := range networks {

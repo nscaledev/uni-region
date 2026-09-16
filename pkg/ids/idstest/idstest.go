@@ -63,6 +63,11 @@ func MustParseFileStorageID(s string) ids.FileStorageID {
 	return ids.FileStorageID(uuid.MustParse(s))
 }
 
+// MustParseFileStorageSnapshotID parses s as a UUID into a FileStorageSnapshotID, panicking if invalid.
+func MustParseFileStorageSnapshotID(s string) ids.FileStorageSnapshotID {
+	return ids.FileStorageSnapshotID(uuid.MustParse(s))
+}
+
 // MustParseImageID parses s as a UUID into an ImageID, panicking if invalid.
 func MustParseImageID(s string) ids.ImageID { return ids.ImageID(uuid.MustParse(s)) }
 

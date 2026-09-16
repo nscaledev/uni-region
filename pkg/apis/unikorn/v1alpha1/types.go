@@ -329,8 +329,8 @@ type VolumeClassSelector struct {
 }
 
 type VolumeClassFlavorSelector struct {
-	// IDs is an explicit allowlist of Region flavors. If nil or empty, all
-	// flavors are considered compatible.
+	// IDs is an explicit allowlist of Region flavors that can attach Volumes of
+	// this class to Servers. If nil or empty, Server attachment is not supported.
 	// +kubebuilder:validation:items:Type=string
 	// +kubebuilder:validation:items:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
 	// +listType=set
@@ -351,9 +351,9 @@ type VolumeClassMetadata struct {
 	// ID is the immutable provider identifier for the volume class. For OpenStack,
 	// this is the Cinder volume type ID.
 	ID string `json:"id"`
-	// SupportedFlavors optionally restricts this volume class to selected Region
-	// flavors. An undefined selector or nil or empty IDs means no compatibility
-	// restriction.
+	// SupportedFlavors lists the Region flavors that can attach Volumes of this
+	// class to Servers. An undefined selector or nil or empty IDs means Server
+	// attachment is not supported.
 	SupportedFlavors *VolumeClassFlavorSelector `json:"supportedFlavors,omitempty"`
 	// MinimumSizeGiB is the minimum volume capacity accepted by the class, in
 	// whole GiB.
@@ -887,6 +887,7 @@ type VolumeClaimRef struct {
 	// Kind is the kind of resource claiming the volume attachment.
 	Kind VolumeClaimKind `json:"kind"`
 	// ID is the Region resource ID of the resource claiming the volume attachment.
+	// +kubebuilder:validation:MinLength=1
 	ID string `json:"id"`
 }
 
@@ -905,6 +906,9 @@ type VolumeStatus struct {
 	// It is never cleared, because a missing provider volume must not be recreated
 	// under the same Region Volume ID.
 	ProvisionedAt *metav1.Time `json:"provisionedAt,omitempty"`
+	// AttachedAt is when the current attachment was first confirmed.
+	// Unset means no current attachment is recorded.
+	AttachedAt *metav1.Time `json:"attachedAt,omitempty"`
 	// Current service state of a volume.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
@@ -1360,6 +1364,70 @@ type FileStorage struct {
 	Status            FileStorageStatus `json:"status,omitempty"`
 }
 
+// FileStorageSnapshotList is a list of FileStorageSnapshot resources.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageSnapshotList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageSnapshot `json:"items"`
+}
+
+// FileStorageSnapshot records customer intent and observed lifecycle state for
+// one manual snapshot of a File Storage.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="display name",type="string",JSONPath=".metadata.labels['unikorn-cloud\\.org/name']"
+// +kubebuilder:printcolumn:name="file storage",type="string",JSONPath=".spec.fileStorageID"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageSnapshot struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              FileStorageSnapshotSpec   `json:"spec"`
+	Status            FileStorageSnapshotStatus `json:"status,omitempty"`
+}
+
+// FileStorageSnapshotSpec is the capture request plus mutable reconciliation and user metadata.
+// +kubebuilder:validation:XValidation:rule="self.name == oldSelf.name",message="name is immutable"
+// +kubebuilder:validation:XValidation:rule="self.fileStorageID == oldSelf.fileStorageID",message="fileStorageID is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.expirationTime) == has(oldSelf.expirationTime) && (!has(self.expirationTime) || self.expirationTime == oldSelf.expirationTime)",message="expirationTime is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.protectedPath) == has(oldSelf.protectedPath) && (!has(self.protectedPath) || self.protectedPath == oldSelf.protectedPath)",message="protectedPath is immutable"
+type FileStorageSnapshotSpec struct {
+	// Pause inhibits reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Name is the immutable, case-sensitive Manual Snapshot Name.
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+	// FileStorageID identifies the immutable parent File Storage.
+	FileStorageID regionids.FileStorageID `json:"fileStorageID"`
+	// ExpirationTime optionally requests automatic expiration. Omission means
+	// that the snapshot does not expire automatically.
+	ExpirationTime *metav1.Time `json:"expirationTime,omitempty"`
+	// ProtectedPath is the relative path captured by the snapshot.
+	// Omission selects the File Storage root.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+	// Tags are arbitrary user-managed key/value metadata.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+}
+
+type FileStorageSnapshotStatus struct {
+	// SnapshotTime is the provider-observed capture time.
+	SnapshotTime *metav1.Time `json:"snapshotTime,omitempty"`
+	// AbsoluteProtectedPath is the exact path returned by the provider. Writers
+	// must preserve it byte-for-byte and must not clear a known value on an
+	// incomplete or failed observation.
+	AbsoluteProtectedPath *string `json:"absoluteProtectedPath,omitempty"`
+	// Conditions are the sanitized lifecycle and health state.
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
 // FileStorageSpec defines the storage request.
 type FileStorageSpec struct {
 	// StorageClassID is the storage class ID.
@@ -1399,6 +1467,12 @@ type FileStorageSnapshotPolicy struct {
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=19
 	Name string `json:"name"`
+	// ProtectedPath is the relative path within the file storage data hierarchy protected by this policy.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
+	// +optional
+	ProtectedPath string `json:"protectedPath,omitempty"`
 	// Schedule defines when snapshots run in UTC.
 	Schedule FileStorageSnapshotPolicySchedule `json:"schedule"`
 	// Retention defines how many snapshots are retained.

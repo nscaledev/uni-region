@@ -27,12 +27,14 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"slices"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
@@ -46,6 +48,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
@@ -53,8 +56,10 @@ import (
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 
 	corev1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -73,6 +78,8 @@ const (
 	srvServerID           = "66666666-6666-4666-a666-666666666666"
 	srvNonexistentID      = "77777777-7777-4777-a777-777777777777"
 	srvRegionID           = "88888888-8888-4888-a888-888888888888"
+	srvVolumeID           = "99999999-9999-4999-a999-999999999999"
+	srvVolumeID2          = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
 	srvProviderGate       = "example.unikorn-cloud.org/pre-create-ready"
 )
 
@@ -104,15 +111,39 @@ func testSrvNetworkWithProject(projID string) *regionv1.Network {
 				coreconstants.OrganizationLabel:   srvOrganizationID,
 				coreconstants.ProjectLabel:        projID,
 				constants.RegionLabel:             srvRegionID,
+				constants.IdentityLabel:           "test-identity",
 				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
 			},
 		},
 	}
 }
 
-// aclWithOrgScopeServerCreate grants network:read, securitygroups:read,
-// sshcertificateauthorities:read and region:servers/Create at organization scope so
-// the referenced-resource GetV2Raw calls pass and AllowProjectScopeCreate is reached.
+func testSrvRegion() *regionv1.Region {
+	return &regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{Name: srvRegionID, Namespace: srvNamespace},
+		Spec: regionv1.RegionSpec{Openstack: &regionv1.RegionOpenstackSpec{BlockStorage: &regionv1.RegionOpenstackBlockStorageSpec{VolumeClasses: &regionv1.OpenstackVolumeClassesSpec{
+			Metadata: []regionv1.VolumeClassMetadata{{
+				ID: "fast",
+				SupportedFlavors: &regionv1.VolumeClassFlavorSelector{
+					IDs: []regionids.FlavorID{idstest.MustParseFlavorID(srvFlavorID)},
+				},
+			}},
+		}}}},
+	}
+}
+
+func testSrvVolume() *regionv1.Volume {
+	return &regionv1.Volume{ObjectMeta: metav1.ObjectMeta{
+		Name: srvVolumeID, Namespace: srvNamespace, Labels: map[string]string{
+			coreconstants.OrganizationLabel: srvOrganizationID, coreconstants.ProjectLabel: srvProjectID,
+			constants.RegionLabel: srvRegionID, constants.IdentityLabel: "test-identity",
+			constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+		},
+	}, Spec: regionv1.VolumeSpec{VolumeClassID: "fast"}}
+}
+
+// aclWithOrgScopeServerCreate grants read access to referenced resources and
+// region:servers/Create at organization scope.
 func aclWithOrgScopeServerCreate() *identityapi.Acl {
 	return &identityapi.Acl{
 		Organizations: &identityapi.AclOrganizationList{
@@ -133,6 +164,10 @@ func aclWithOrgScopeServerCreate() *identityapi.Acl {
 					},
 					{
 						Name:       "region:sshcertificateauthorities:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
+					},
+					{
+						Name:       "region:volumes:v2",
 						Operations: identityapi.AclOperations{identityapi.Read},
 					},
 				},
@@ -172,6 +207,10 @@ func aclWithSrvUpdate() *identityapi.Acl {
 					{
 						Name:       "region:servers",
 						Operations: identityapi.AclOperations{identityapi.Read, identityapi.Update},
+					},
+					{
+						Name:       "region:volumes:v2",
+						Operations: identityapi.AclOperations{identityapi.Read},
 					},
 				},
 			},
@@ -582,12 +621,58 @@ func TestServerCreateV2SagaPersistsServer(t *testing.T) {
 	require.Equal(t, result.Spec.ImageId, created.Spec.Image.ID)
 }
 
+func TestServerCreateV2ClaimsRequestedVolumes(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	network := testSrvNetworkWithProject(srvProjectID)
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, network, testSrvRegion(), volume).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity, Providers: newMockProvidersWithReadyImage(ctrl)})
+	request := minimalServerV2CreateRequest()
+	request.Spec.Volumes = &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)}
+
+	result, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())), request)
+
+	require.NoError(t, err)
+	require.Equal(t, *request.Spec.Volumes, *result.Spec.Volumes)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: result.Metadata.Id}, volume.Spec.ClaimRef)
+}
+
+func TestServerCreateV2RejectsUnreadableVolume(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), volume).Build()
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity)
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace, Identity: mockIdentity, Providers: newMockProvidersWithReadyImage(ctrl)})
+	request := minimalServerV2CreateRequest()
+	request.Spec.Volumes = &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)}
+	acl := aclWithOrgScopeServerCreate()
+	endpoints := (*acl.Organizations)[0].Endpoints
+	*endpoints = slices.DeleteFunc(*endpoints, func(endpoint identityapi.AclEndpoint) bool {
+		return endpoint.Name == "region:volumes:v2"
+	})
+
+	_, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), acl)), request)
+
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(volume), volume))
+	require.Nil(t, volume.Spec.ClaimRef)
+}
+
 func TestServerCreateV2SagaReturnsPersistenceError(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
 	network := testSrvNetworkWithProject(srvProjectID)
-	k8sClient := newSrvFakeClient(t, network).
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, network, testSrvRegion(), volume).
 		WithInterceptorFuncs(interceptor.Funcs{
 			Create: func(context.Context, client.WithWatch, client.Object, ...client.CreateOption) error {
 				return errServerPersistence
@@ -604,9 +689,14 @@ func TestServerCreateV2SagaReturnsPersistenceError(t *testing.T) {
 		Providers: newMockProvidersWithReadyImage(ctrl),
 	})
 
-	_, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())), minimalServerV2CreateRequest())
+	request := minimalServerV2CreateRequest()
+	request.Spec.Volumes = &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)}
+
+	_, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate())), request)
 
 	require.ErrorContains(t, err, "unable to create server")
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
+	require.Nil(t, volume.Spec.ClaimRef)
 }
 
 func TestServerCreateV2SSHCertificateAuthorityRejectsUnsupportedUserData(t *testing.T) {
@@ -1146,20 +1236,103 @@ func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
 	require.Equal(t, *result.Spec.UserData, updated.Spec.UserData)
 }
 
-func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {
+func TestServerUpdateV2VolumeSetSemantics(t *testing.T) {
 	t.Parallel()
 
 	resource := testServerV2(srvServerID)
-	network := testSrvNetworkWithProject(srvProjectID)
-	k8sClient := newSrvFakeClient(t, network, resource).
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
+	volume := testSrvVolume()
+	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: srvServerID}
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+	request := &openapi.ServerV2Update{Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name}, Spec: openapi.ServerV2Spec{FlavorId: resource.Spec.FlavorID, ImageId: resource.Spec.Image.ID}}
+
+	result, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.Equal(t, []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}, resource.Spec.Volumes)
+	require.Equal(t, openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)}, *result.Spec.Volumes)
+
+	request.Spec.Volumes = &openapi.ServerV2VolumeList{}
+	_, err = c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvVolumeID}, volume))
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: srvServerID}, volume.Spec.ClaimRef)
+}
+
+func TestServerUpdateV2ClaimsAddedVolumeBeforeServerUpdate(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.Generation = 2
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
+	existingVolume := testSrvVolume()
+	existingVolume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}
+	addedVolume := testSrvVolume()
+	addedVolume.Name = srvVolumeID2
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, existingVolume, addedVolume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes: &openapi.ServerV2VolumeList{
+				idstest.MustParseVolumeID(srvVolumeID),
+				idstest.MustParseVolumeID(srvVolumeID2),
+			},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(addedVolume), addedVolume))
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}, addedVolume.Spec.ClaimRef)
+}
+
+func TestServerUpdateV2ReturnsConflictWhenClaimChangesConcurrently(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).
 		WithInterceptorFuncs(interceptor.Funcs{
-			Patch: func(context.Context, client.WithWatch, client.Object, client.Patch, ...client.PatchOption) error {
-				return errServerPersistence
+			Patch: func(_ context.Context, _ client.WithWatch, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				if _, ok := object.(*regionv1.Volume); ok {
+					return kerrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "volumes"}, object.GetName(), nil)
+				}
+
+				return nil
 			},
 		}).
 		Build()
 	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(volume.Name)},
+		},
+	}
 
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
+}
+
+func TestServerUpdateV2ReturnsConflictWhenServerChangesConcurrently(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), resource).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				return kerrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "servers"}, object.GetName(), nil)
+			},
+		}).
+		Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
 	request := &openapi.ServerV2Update{
 		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
 		Spec: openapi.ServerV2Spec{
@@ -1170,7 +1343,122 @@ func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {
 
 	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
 
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
+}
+
+func TestServerUpdateV2RepairsMissingClaimForCurrentIntent(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.Generation = 2
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
+	volume := testSrvVolume()
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+	require.NoError(t, err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(volume), volume))
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}, volume.Spec.ClaimRef)
+}
+
+func TestServerUpdateV2RejectsVolumeClaimedByAnotherServer(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	volume := testSrvVolume()
+	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: srvNonexistentID}
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+
+	require.True(t, coreerrors.IsUnprocessableContent(err))
+	require.EqualError(t, err, "volume is already claimed by another server")
+}
+
+func TestServerUpdateV2RejectsConcurrentClaimForNewIntent(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	volume := testSrvVolume()
+	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(volume.Name)},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(resource), resource))
+	require.Empty(t, resource.Spec.Volumes)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(volume), volume))
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}, volume.Spec.ClaimRef)
+}
+
+func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	network := testSrvNetworkWithProject(srvProjectID)
+	volume := testSrvVolume()
+	claimPatches := []string{}
+	k8sClient := newSrvFakeClient(t, network, testSrvRegion(), resource, volume).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, object client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				switch resource := object.(type) {
+				case *regionv1.Server:
+					return errServerPersistence
+				case *regionv1.Volume:
+					if resource.Spec.ClaimRef == nil {
+						claimPatches = append(claimPatches, "")
+					} else {
+						claimPatches = append(claimPatches, resource.Spec.ClaimRef.ID)
+					}
+				}
+
+				return nil
+			},
+		}).
+		Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(srvVolumeID)},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+
 	require.ErrorContains(t, err, "unable to update server")
+	require.Equal(t, []string{srvServerID, ""}, claimPatches)
 }
 
 func TestServerUpdateV2RejectsFlavorChange(t *testing.T) {
@@ -2482,6 +2770,31 @@ func TestServerDeleteV2_NoDeletePermission(t *testing.T) {
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
 }
 
+func TestServerDeleteV2_LeavesVolumeClaimsForDeprovision(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.Volumes = []regionv1.ServerVolumeSpec{{ID: srvVolumeID}}
+	volume := testSrvVolume()
+	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}
+	k8sClient := newSrvFakeClient(t, resource, volume).Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+	})
+
+	err := c.DeleteV2(rbac.NewContext(t.Context(), srvProjectACL(identityapi.Read, identityapi.Delete)), idstest.MustParseServerID(resource.Name))
+
+	require.NoError(t, err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: volume.Name}, volume))
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}, volume.Spec.ClaimRef)
+}
+
 // srvProjectACL grants the given region:servers operations at project scope, which
 // is what ListV2 uses to both build its label selector and filter each result.
 func srvProjectACL(ops ...identityapi.AclOperation) *identityapi.Acl {
@@ -2787,4 +3100,79 @@ func TestServerUpdateV2RejectsRename(t *testing.T) {
 	_, err := c.UpdateV2(ctx, idstest.MustParseServerID(resource.Name), request)
 	require.Error(t, err)
 	require.True(t, coreerrors.IsUnprocessableContent(err), "rename attempt must return 422 Unprocessable Content, got: %v", err)
+}
+
+// testServerWithProvisioningResult returns a v2 server whose Available condition
+// was evaluated at conditionGeneration while the spec is at specGeneration.
+func testServerWithProvisioningResult(specGeneration, conditionGeneration int64, status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason) *regionv1.Server {
+	resource := testServerWithSSHCertificateAuthority()
+	resource.Generation = conditionGeneration
+	resource.SetProvisioningCondition(status, reason, "message")
+	resource.Generation = specGeneration
+
+	return resource
+}
+
+func getServerV2(t *testing.T, resource *regionv1.Server) *openapi.ServerV2Read {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    newSrvFakeClient(t, resource).Build(),
+		Namespace: srvNamespace,
+		Identity:  identitymock.NewMockClientWithResponsesInterface(ctrl),
+	})
+
+	result, err := c.GetV2(rbac.NewContext(t.Context(), aclWithSrvUpdate()), idstest.MustParseServerID(resource.Name))
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	return result
+}
+
+// TestServerGetV2ProvisioningStatusFreshness pins the freshness rule end to
+// end: a v2 read must not present a result recorded for a previous spec
+// generation as convergence, but a current result keeps its own outcome, and
+// deletion and pending are unaffected.
+func TestServerGetV2ProvisioningStatusFreshness(t *testing.T) {
+	t.Parallel()
+
+	unstamped := testServerWithSSHCertificateAuthority()
+	unstamped.Generation = 1
+	unikornv1core.UpdateCondition(&unstamped.Status.Conditions, unikornv1core.ConditionAvailable, corev1.ConditionTrue, string(unikornv1core.ConditionReasonProvisioned), "provisioned")
+
+	noCondition := testServerWithSSHCertificateAuthority()
+	noCondition.Generation = 1
+
+	deleting := testServerWithProvisioningResult(2, 1, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned)
+	deleting.DeletionTimestamp = ptr.To(metav1.Now())
+	deleting.Finalizers = []string{"test"}
+
+	for _, tc := range []struct {
+		resource   *regionv1.Server
+		wantStatus coreapi.ResourceProvisioningStatus
+		wantReason *coreapi.ProvisioningStatusReason
+	}{
+		{testServerWithProvisioningResult(2, 1, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{testServerWithProvisioningResult(2, 2, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned), coreapi.ResourceProvisioningStatusProvisioned, ptr.To(coreapi.ProvisioningStatusReasonProvisioned)},
+		{testServerWithProvisioningResult(3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{testServerWithProvisioningResult(3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusError, ptr.To(coreapi.ProvisioningStatusReasonErrored)},
+		{testServerWithProvisioningResult(2, 1, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{unstamped, coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{noCondition, coreapi.ResourceProvisioningStatusPending, nil},
+		{deleting, coreapi.ResourceProvisioningStatusDeprovisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioned)},
+	} {
+		result := getServerV2(t, tc.resource)
+		require.Equal(t, tc.wantStatus, result.Metadata.ProvisioningStatus)
+
+		if tc.wantReason == nil {
+			require.Nil(t, result.Metadata.ProvisioningStatusDetail)
+
+			continue
+		}
+
+		require.NotNil(t, result.Metadata.ProvisioningStatusDetail)
+		require.Equal(t, *tc.wantReason, result.Metadata.ProvisioningStatusDetail.Reason)
+	}
 }

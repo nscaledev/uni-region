@@ -192,6 +192,7 @@ type ServerInterface interface {
 type ServerObservationInterface interface {
 	ServerInterface
 	GetServerFault(ctx context.Context, id string) (*servers.Fault, error)
+	ListServers(ctx context.Context) ([]servers.Server, error)
 }
 
 type VolumeAttachmentInterface interface {

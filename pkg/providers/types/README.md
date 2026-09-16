@@ -34,9 +34,10 @@ continue to be passed directly through many provider interface methods.
 - `Provider` is a capability composition interface, not one monolithic "SDK"
   wrapper. It embeds smaller contracts such as `ImageRead`, `ImageWrite`,
   `Network`, `Volume`, `Server`, `ServerConsole`, and `ServerSnapshot`.
-- The `Server` capability owns both ends of the existing-volume attachment
-  boundary. `AttachVolume` and `DetachVolume` receive the repo-native
-  `Server` and `Volume` resources; `Volume` does not own attachment intent.
+- The `Server` capability attaches an existing Volume to its desired Server.
+  The `Volume` detach capability also receives that Server while it exists, so
+  providers can verify the claimed relationship without relying on lagging
+  block-storage attachment data or derived Server status.
 - CRD-backed lifecycle operations continue to use repo-native
   `unikornv1.*` resource types where those are the stable service contract.
 - Provider-derived or non-CRD concepts use the intermediate types defined in
@@ -54,7 +55,8 @@ continue to be passed directly through many provider interface methods.
   exposes the inventory. Optional minimum and maximum capacity bounds are
   operator-authored Region configuration propagated through this neutral
   model; they are not provider-discovered values. The same model carries an
-  optional typed Region Flavor allowlist; nil or empty means unrestricted.
+  optional typed Region Flavor allowlist for Server attachment; nil or empty
+  means Volumes of that class cannot be attached to Servers.
 - `Volume` is a focused create/delete/state-update capability that accepts the
   native `unikornv1.Volume` lifecycle intent and is embedded in the full
   `Provider` composition. `CreateVolume` is a reconciliation operation rather
@@ -71,6 +73,13 @@ continue to be passed directly through many provider interface methods.
 - `UpdateVolumeState` distinguishes absence, failed reads, and observed lifecycle
   truth. Providers own status mapping and missing-volume semantics; read and
   validation failures are returned so monitors preserve the last state.
+- `ServerObserver` is the batched half of server observation. `ObserveServers`
+  takes one provider read of an identity's whole project and returns an observer
+  whose `Observe` projects it onto individual servers, so a caller with many
+  servers to observe pays one read rather than one per server. It is observation
+  only: an observation may refuse an action but never authorise one, so an
+  actuation decision keeps `UpdateServerState`, which takes its own fresh
+  per-server read at decision time. Both reach the same projection.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by

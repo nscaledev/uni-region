@@ -21,6 +21,7 @@ import (
 	"math"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -207,7 +208,7 @@ func TestCreateV2DerivesScopeAndPersistsCapacity(t *testing.T) {
 	providers := mockproviders.NewMockProviders(ctrl)
 	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectVolumeClasses(ctrl, providers, providertypes.VolumeClassList{{ID: testVolumeClassID}})
-	expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: 20 * (1 << 30)}})
+	expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volume", Committed: 20}})
 
 	volumeClient, cli := testClientWithIdentity(t, providers, identity, testNetwork())
 	tags := coreapi.TagList{{Name: "environment", Value: "test"}}
@@ -222,6 +223,7 @@ func TestCreateV2DerivesScopeAndPersistsCapacity(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, int64(20), result.Spec.SizeGiB)
+	require.Nil(t, result.Status.AttachedAt)
 	require.Nil(t, result.Status.SizeGiB)
 	require.Equal(t, coreapi.ResourceProvisioningStatusPending, result.Metadata.ProvisioningStatus)
 
@@ -287,7 +289,7 @@ func TestCreateV2PersistenceFailureDeletesAllocation(t *testing.T) {
 	identity := identitymock.NewMockClientWithResponsesInterface(ctrl)
 	expectVolumeClasses(ctrl, providers, providertypes.VolumeClassList{{ID: testVolumeClassID}})
 	gomock.InOrder(
-		expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: 20 * (1 << 30)}}),
+		expectAllocationCreate(t, identity, identityapi.ResourceAllocationList{{Kind: "volume", Committed: 20}}),
 		expectAllocationDelete(identity),
 	)
 
@@ -382,7 +384,7 @@ func TestCreateV2ValidatesVolumeClass(t *testing.T) {
 
 			if !test.wantError {
 				mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-				expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{{Kind: "volumes", Committed: int(test.size * (1 << 30))}})
+				expectAllocationCreate(t, mockIdentity, identityapi.ResourceAllocationList{{Kind: "volume", Committed: int(test.size)}})
 				identity = mockIdentity
 			}
 
@@ -405,13 +407,15 @@ func TestCreateV2ValidatesVolumeClass(t *testing.T) {
 	}
 }
 
-func TestListAndGetV2ProjectBaseStatusWithoutAttachments(t *testing.T) {
+func TestListAndGetV2ProjectBaseStatus(t *testing.T) {
 	t.Parallel()
 
+	attachedAt := metav1.NewTime(time.Date(2026, time.September, 7, 12, 30, 0, 0, time.UTC))
 	observedSize := resource.MustParse("25Gi")
 	resource := testVolume("beta")
 	resource.Spec.Tags = corev1.TagList{{Name: "environment", Value: "test"}}
 	resource.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: testServerID}
+	resource.Status.AttachedAt = &attachedAt
 	resource.Status.Size = &observedSize
 	resource.Status.Conditions = []metav1.Condition{{
 		Type:   string(corev1.ConditionAvailable),
@@ -431,6 +435,8 @@ func TestListAndGetV2ProjectBaseStatusWithoutAttachments(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result, 1)
 	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioned, result[0].Metadata.ProvisioningStatus)
+	require.NotNil(t, result[0].Status.AttachedAt)
+	require.WithinDuration(t, attachedAt.Time, *result[0].Status.AttachedAt, 0)
 	require.Equal(t, ptr.To(int64(25)), result[0].Status.SizeGiB)
 
 	got, err := volumeClient.GetV2(ctx, idstest.MustParseVolumeID(testVolumeID))
@@ -439,6 +445,8 @@ func TestListAndGetV2ProjectBaseStatusWithoutAttachments(t *testing.T) {
 	require.Equal(t, testProjectID, got.Metadata.ProjectId)
 	require.Equal(t, testRegionID, got.Status.RegionId.String())
 	require.Equal(t, testNetworkID, got.Spec.NetworkId.String())
+	require.NotNil(t, got.Status.AttachedAt)
+	require.WithinDuration(t, attachedAt.Time, *got.Status.AttachedAt, 0)
 }
 
 func TestUpdateV2ChangesOnlyMetadataAndTags(t *testing.T) {

@@ -58,6 +58,7 @@ var _ = BeforeSuite(func() {
 	// before any specs execute. Runs irrespective of spec randomization; the
 	// 6-hour age floor keeps it clear of concurrent or in-flight runs.
 	api.SweepStaleTestResources(regionClient, ctx, config)
+	api.SweepStaleFakeDataCenterResources(regionClient, ctx, config)
 })
 
 var _ = BeforeEach(func() {

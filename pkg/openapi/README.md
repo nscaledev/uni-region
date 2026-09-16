@@ -66,16 +66,18 @@ encryption flag, with provider-neutral media and advertised-performance metadata
 when the Region publishes them. Optional minimum and maximum size bounds are
 returned in whole GiB only when configured by the Region operator. A non-empty
 `supportedFlavorIds` value is a typed Region Flavor compatibility allowlist;
-omitted or empty means unrestricted. The public contract deliberately contains
-no Cinder, storage-pool, or other provider-specific fields.
+omitted or empty means Volumes of that class cannot be attached to Servers but
+does not prevent standalone Volume creation. The public contract deliberately
+contains no Cinder, storage-pool, or other provider-specific fields.
 
 `/api/v2/volumes` is the published lifecycle contract for project-scoped block
 storage. Creation is anchored to a Network and requires a provider-neutral
 VolumeClass ID plus a positive whole-GiB size. Network, class, and size are
 immutable through this API; updates contain resource metadata and tags only.
 Reads expose the requested inputs alongside the Region the volume was
-provisioned in, provider-observed size, and the standard provisioning and
-health metadata. A Server v2 read also exposes its current desired Volume-keyed
+provisioned in, provider-observed size, the optional timestamp when the current
+attachment was first confirmed, and the standard provisioning and health
+metadata. A Server v2 read also exposes its current desired Volume-keyed
 attachment projection: attachment progress, optional provider-assigned device,
 and a safe message. This is derived status only; it never authorizes provider
 cleanup. The Region handler implements this lifecycle surface.

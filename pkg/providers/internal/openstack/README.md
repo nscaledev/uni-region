@@ -202,8 +202,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
   measured path as a foreign recovery, below — within one monitor period). Or
   the provider server disappears entirely — deleted out-of-band — in which case
-  the monitor's `GetServer` returns not-found and `updateServerStateWithClients`
-  records an absent observation (errored cleared, generation stamped, image
+  the monitor's `Observe` finds no row for it and `projectServerState`'s absent
+  path records an observation (errored cleared, generation stamped, image
   sticky) before surfacing the not-found error — surfaced, not swallowed,
   because the create-retry provisioner's confirmed-gone gate depends on
   `UpdateServerState` returning `ErrResourceNotFound`. The monitor persists the
@@ -367,9 +367,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   exports no VolumeClasses. Selected classes can be enriched with user-facing
   metadata such as optional minimum/maximum capacity bounds, a
   `supportedFlavors` selector, media, maximum performance caps, and encryption
-  signals. Omitted selectors and omitted or empty selector IDs mean unrestricted
-  compatibility; the provider resolves this operator-authored selector to the
-  neutral Flavor ID allowlist and does not infer it from Cinder volume types.
+  signals. Omitted selectors and omitted or empty selector IDs make the class
+  ineligible for Server attachment; the provider resolves this operator-authored
+  selector to the neutral Flavor ID allowlist and does not infer it from Cinder
+  volume types.
   Capacity bounds are
   operator-authored positive whole GiB values; either may be omitted, and when
   both are present the maximum must be at least the minimum. The provider
@@ -400,25 +401,44 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - attach requires both the server and volume; either missing resource maps to
     `ErrResourceNotFound`
   - a Cinder attachment already present on the requested server is successful
-    and returns its observed device without a Nova read
+    only when Cinder reports the Volume `in-use`; it returns that row's observed
+    device without a Nova read. `reserved`, `attaching`, and other transitional
+    states yield for another observation; `error*` states return a terminal
+    provider error
   - an attachment to any other server maps to `ErrConflict`; Region does not
     support multi-attach even when the Cinder volume is multiattach-capable
-  - when Cinder reports no attachment, attach calls Nova create directly; a
-    create `409 Conflict` is followed by one Nova attachment read so concurrent
-    creation of the same desired attachment becomes success, while an
+  - when Cinder reports no attachment, attach requests Nova only after Cinder
+    observes the Volume `available`; transitional states yield. It yields after
+    Nova acceptance. A create `409 Conflict` is followed by one Nova attachment
+    read so a concurrent desired request yields for Cinder `in-use`; an
     unresolved conflict maps to `ErrConflict`
-  - detach calls Nova delete only when Cinder reports an attachment to the
-    requested server; a missing server, volume, requested-server attachment, or
-    Nova delete `404` is success because detached state already holds, including
-    when the volume remains attached only to another server
-  - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
-    are preserved
+  - detach resolves Nova and checks it directly, so an empty Cinder attachment
+    list cannot hide the claimed Nova attachment. Per-Volume finalizers block
+    Server deletion until attachments are removed, so deleting and live Servers
+    use the same active Nova detach path. A Cinder attachment row is a fallback
+    only when its Server ID matches the resolved claimed Nova Server. Foreign or
+    unowned rows are never detached; they conflict or yield until provider state
+    converges
+  - an accepted Nova delete yields immediately because detach is asynchronous.
+    A later reconcile succeeds only when Nova no longer reports the claimed
+    attachment and Cinder reports no attachment with status `available`; a
+    missing backing Volume is idempotent success
+  - a Nova delete `400 Bad Request` yields while the provider attachment state
+    converges; the claim is retained and Region does not reset Cinder state. A
+    `409 Conflict` maps to `ErrConflict`; other provider failures are preserved
   - detach also no-ops when the backing OpenStack identity was never realized,
     matching the provider's other teardown contracts
 
+  Region owns these resources through its API. Detach does not attempt
+  administrative repair of foreign attachments, multiattach, or resources
+  changed directly through Kubernetes or OpenStack.
+
   Attachment intent and observed rows remain on `Server.Spec.Volumes` and
   `Server.Status.Volumes`; this provider slice does not mirror attachments into
-  `Volume.Status`, claim volumes, or reconcile server controllers.
+  `Volume.Status`, claim volumes, or reconcile server controllers. Those
+  belong to the volume provisioner
+  ([../../../provisioners/managers/volume](../../../provisioners/managers/volume/README.md)),
+  which populates `Volume.Status.AttachedAt` and owns claim release.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
@@ -456,8 +476,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   is never destroyed and recreated). The image-rebuild gate does not read this
   latch: it authorizes from Nova `launched_at` read fresh each pass. Alongside it, `setServerMACAddress` records the other monitor-owned
   field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
-  (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
-  extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
+  (the port MAC rides inline in `addresses`, reused from the read the caller
+  already took — no extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
   real NIC MAC asynchronously; the value is only ever written, never cleared.
   `GetServer` resolves by name, which forces a list, and **the list response can omit
   `fault` entirely** on Nova up to 2025.2, so a listed errored server carries no
@@ -469,8 +489,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   without the detail rather than failing anything, because the fault is an
   enrichment and not the reason for the read; healthy servers, and servers
   already known to be errored, never pay the extra call.
-  `setServerObservedStatus` records the monitor's `status.observed` region from the
-  `GetServer` response: `generation` unconditionally, the image via `openstackServerImageID`
+  `setServerObservedStatus` records the monitor's `status.observed` region from
+  whichever read the caller took — `Observe`'s batch for the monitor, `GetServer`
+  for the create path: `generation` unconditionally, the image via `openstackServerImageID`
   (an unreadable ref preserves the previous value rather than clearing it), and
   the neutral `errored` marker when Nova reports `ERROR`. The marker is gated on
   `Status == "ERROR"` and not on `Fault` being populated, because Nova leaves a
@@ -606,21 +627,52 @@ of an eviction is one login.
 It does not share provider *reads*. Collapsing `GetServer` was measured and
 rejected. Nova's name filter is a regular expression, so a filtered read scans the
 project and returns one row; dropping the filter would let concurrent callers
-share one list, but it returns every row in the project to every caller. Against a
-modelled 1538-server estate the unfiltered form cost the sequential monitor cycle
-1m40s where the filtered form costs 35s, which is the difference between fitting
-the one-minute poll period and not, and a bulk create emitted three orders of
-magnitude more instance records because each create retires the sharing anyway.
-Sharing the reads would also have needed a guard against a caller joining a read
-opened before its own create and building a second server.
+share one list, but it returns every row in the project to every caller. A bulk
+create emitted three orders of magnitude more instance records because each
+create retires the sharing anyway, and sharing the reads would have needed a
+guard against a caller joining a read opened before its own create and building
+a second server.
 
-The real saving on the monitor's path is not a shared read but a single read: it
-walks servers one at a time (`pkg/monitor/health/server/check.go`), so one list
-per identity per cycle indexed by name would replace a read per server with a
-read per identity — around two orders of magnitude fewer requests against that
-same estate.
-Observation-only reads are allowed to do that; see the note on projected status in
+The figures that comparison rested on came from a model whose service times were
+plausible rather than measured, and a real deployment contradicted them by two
+orders of magnitude: over a representative estate of around 1500 servers a
+sequential cycle took tens of minutes, where the model put it at 35 seconds. The
+model counted requests and rows; it did not price what a loaded Nova charges for
+a regular expression scan over a project. Do not size anything off the 35s
+figure — neither read form ever fitted the one-minute poll period.
+
+The saving on the monitor's path was never a shared read but a single read, and
+`ObserveServers` is now that: one unfiltered, paginated list of the identity's
+project per cycle, indexed by name, replacing a read per server with a read per
+identity — two orders of magnitude fewer Nova calls against the same estate.
+Observation-only reads are allowed to do this; see the note on projected status in
 [the API package](../../../apis/unikorn/v1alpha1/README.md).
+
+It pages explicitly rather than using `AllPages`, which holds every page as a
+generic map tree and re-marshals the whole thing through JSON to decode it, so
+that overhead scales with the project rather than the page.
+
+Paging bounds the overhead, not the peak: the decoded slice is the whole project
+by construction, and `ObserveServers` retains it for the length of its caller's
+projection. For a project of around 1500 realistic Nova rows that is about 14MiB
+live, or 43MiB of heap arena once the per-page decode churn is counted — against
+roughly 15MiB for a project of 80. That retention is the dominant term. No page size changes that. It is bounded instead by the caller reading one
+project at a time, and by a project being bounded by the region's physical
+footprint. Trimming the retained row to the fields the projection actually uses
+would bound it properly, at the cost of changing a signature the create path also
+depends on.
+
+Because an unfiltered list is walked by marker, a server created between two
+pages can be missed and read as absent for that cycle. Harmless here — the absent
+path stamps an observation and touches no condition, and it self-heals on the next
+poll — but it is a way to reach that path which a filtered read of one name could
+not. Nothing destructive keys off it: the create-retry gate goes through
+`UpdateServerState`'s own fresh read, never the batch.
+
+`UpdateServerState` keeps its own per-server filtered read, and must. An
+observation may only refuse an action, never authorise one, so the create path's
+"is there already a server with exactly this name" question takes a fresh read at
+decision time rather than consulting a batch someone else took.
 
 ## Octavia Load Balancers
 

@@ -39,6 +39,8 @@ import (
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 	"github.com/unikorn-cloud/region/test/api"
+
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -82,7 +84,17 @@ func mustProvisionServerForRebuild() *regionopenapi.ServerV2Read {
 	networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
 	network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
 
-	createReq := api.NewServerPayload(network.Metadata.Id, config.ServerFlavorID, config.ServerImageID).Build()
+	builder := api.NewServerPayload(network.Metadata.Id, config.ServerFlavorID, config.ServerImageID)
+
+	createReq := builder.Build()
+
+	// A host-pinned flavor rejects a create without a host; other flavors
+	// ignore the field, so apply it whenever the environment supplies one. A
+	// pinned server cannot use the identity keypair, so disable SSH injection.
+	if config.ServerInfrastructureRef != "" {
+		createReq.Spec.InfrastructureRef = &config.ServerInfrastructureRef
+		createReq.Spec.SshInjection = ptr.To(regionopenapi.SshInjectionNone)
+	}
 	created, cleanupServer := api.MustCreateServer(regionClient, ctx, createReq)
 	DeferCleanup(cleanupServer)
 
@@ -102,6 +114,30 @@ func EventuallyServerProvisioned(serverID string) *regionopenapi.ServerV2Read {
 		Should(Succeed(), "server should become provisioned")
 
 	return server
+}
+
+// ExpectServerReportsUnsettled asserts that a read taken with the new desired
+// image already present does not claim the previous spec's success. It is the
+// regression guard for the pre-reconcile window: the stored result carries the
+// generation it was evaluated against, and the API reports anything older as
+// provisioning.
+func ExpectServerReportsUnsettled(got *regionopenapi.ServerV2Read) {
+	GinkgoHelper()
+
+	Expect(got.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioning))
+	Expect(got.Metadata.ProvisioningStatusDetail).NotTo(BeNil())
+	Expect(got.Metadata.ProvisioningStatusDetail.Reason).To(Equal(coreapi.ProvisioningStatusReasonProvisioning))
+}
+
+// ImmediatelyServerProvisioning reads the server once, with no retry, and
+// asserts it reports provisioning. Unlike EventuallyServerProvisioning it
+// fails on a read that still says provisioned for the old spec.
+func ImmediatelyServerProvisioning(serverID string) {
+	GinkgoHelper()
+
+	got, err := regionClient.GetServer(ctx, serverID)
+	Expect(err).NotTo(HaveOccurred())
+	ExpectServerReportsUnsettled(got)
 }
 
 // EventuallyServerProvisioning asserts that an accepted rebuild surfaces as
@@ -167,6 +203,10 @@ var _ = Describe("Server rebuild", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(updated.Metadata.Id).To(Equal(serverID))
 				Expect(updated.Spec.ImageId).To(Equal(update.Spec.ImageId))
+
+				By("reporting provisioning from the update response onwards, before any reconcile")
+				ExpectServerReportsUnsettled(updated)
+				ImmediatelyServerProvisioning(serverID)
 
 				By("observing the server leave provisioned while the rebuild is in flight")
 				EventuallyServerProvisioning(serverID)

@@ -15,20 +15,20 @@ limitations under the License.
 */
 
 // This file is the cross-package contract test for the types.Provider
-// UpdateServerState absent-server contract: when the provider server is gone,
-// UpdateServerState must (1) record the absent observation on the resource
-// (errored cleared, generation stamped from metadata.generation, image sticky)
-// and (2) still surface coreerrors.ErrResourceNotFound. Two real consumers
-// depend on it and are exercised here against the same real Provider:
+// absent-server contract: when the provider server is gone, the read must
+// (1) record the absent observation on the resource (errored cleared,
+// generation stamped from metadata.generation, image sticky) and (2) still
+// surface coreerrors.ErrResourceNotFound. Two real consumers depend on it and
+// are exercised here against the same real Provider:
 //   - pkg/provisioners/managers/server deleteFailedProviderServer uses the
-//     sentinel as the create-retry "confirmed gone" gate,
-//   - pkg/monitor/health/server checkServer patches the absent observation and
-//     then propagates the sentinel.
+//     sentinel from UpdateServerState as the create-retry "confirmed gone" gate,
+//   - pkg/monitor/health/server checkServer takes the same sentinel from
+//     ObserveServers' Observe, patches the absent observation and logs it.
 // Their own packages test against mocks of this contract; this file exists so
 // a drift in the real provider cannot stay green there (a livelock regression
-// did exactly that). The provider path here is the full exported
-// UpdateServerState—service-principal client construction included—against
-// a minimal fake OpenStack, not the updateServerStateWithClients core alone.
+// did exactly that). Both paths here are the full exported methods —
+// service-principal client construction included — against a minimal fake
+// OpenStack, not the projectServerState core alone.
 
 package openstack_test
 
@@ -248,9 +248,9 @@ func (s *infoCaptureSink) hasMessage(msg string) bool {
 }
 
 // TestUpdateServerStateNotFoundContractMonitor exercises the monitor leg:
-// checkServer calls the real Provider's UpdateServerState, which records the
-// absent observation and surfaces ErrResourceNotFound; the monitor persists
-// the observation and logs the sentinel-specific message.
+// checkServer projects the real Provider's batched read, whose absent path
+// records the observation and surfaces ErrResourceNotFound; the monitor
+// persists the observation and logs the sentinel message.
 func TestUpdateServerStateNotFoundContractMonitor(t *testing.T) {
 	t.Parallel()
 
@@ -308,7 +308,7 @@ func TestUpdateServerStateNotFoundContractMonitor(t *testing.T) {
 	require.False(t, updated.Status.Observed.Errored)
 	require.Equal(t, int64(10), updated.Status.Observed.Generation)
 	require.Equal(t, &imageID, updated.Status.Observed.Image)
-	require.True(t, sink.hasMessage("server not found in provider, absent observation persisted"),
+	require.True(t, sink.hasMessage("server not found in provider"),
 		"expected sentinel log line; got messages: %v", *sink.messages)
 }
 

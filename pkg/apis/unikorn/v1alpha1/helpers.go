@@ -28,6 +28,7 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -183,9 +184,33 @@ func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Con
 }
 
 // SetProvisioningCondition sets the Available condition with a reason drawn from
-// the provisioning vocabulary.
+// the provisioning vocabulary. The condition records the spec generation it was
+// evaluated against on every outcome, so a reader can tell a result for the
+// current spec from one left over from a previous spec. This is distinct from
+// Status.Observed.Generation, which stamps a provider observation, not a
+// provisioning result.
 func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
+		Type:               string(unikornv1core.ConditionAvailable),
+		Status:             metav1.ConditionStatus(status),
+		ObservedGeneration: c.Generation,
+		Reason:             string(reason),
+		Message:            message,
+	})
+}
+
+// ProvisioningConditionCurrent reports whether the Available condition was
+// evaluated against the current spec generation. A missing condition or an
+// unstamped (zero) generation is not current: it cannot be verified, so it must
+// not be read as a result for this spec. Current says nothing about success;
+// the condition's status and reason carry that.
+func (c *Server) ProvisioningConditionCurrent() bool {
+	condition := meta.FindStatusCondition(c.Status.Conditions, string(unikornv1core.ConditionAvailable))
+	if condition == nil {
+		return false
+	}
+
+	return condition.ObservedGeneration != 0 && condition.ObservedGeneration == c.Generation
 }
 
 // SetHealthCondition sets the Healthy condition with a reason drawn from the
@@ -518,6 +543,17 @@ func (s *FileStorage) OrganizationAndProjectID() (identityids.OrganizationID, id
 	return organizationAndProjectIDFromLabels(s.Labels)
 }
 
+// OrganizationID returns the snapshot's owning organization ID as a typed identifier.
+func (s *FileStorageSnapshot) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(s.Labels)
+}
+
+// OrganizationAndProjectID returns the snapshot's owning organization and
+// project IDs as typed identifiers.
+func (s *FileStorageSnapshot) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(s.Labels)
+}
+
 // OrganizationID returns the identity's owning organization ID as a typed identifier.
 func (c *Identity) OrganizationID() (identityids.OrganizationID, error) {
 	return organizationIDFromLabels(c.Labels)
@@ -540,6 +576,7 @@ var (
 	_ identityids.ProjectScopeReader = (*Volume)(nil)
 	_ identityids.ProjectScopeReader = (*SSHCertificateAuthority)(nil)
 	_ identityids.ProjectScopeReader = (*FileStorage)(nil)
+	_ identityids.ProjectScopeReader = (*FileStorageSnapshot)(nil)
 	_ identityids.ProjectScopeReader = (*Identity)(nil)
 )
 
@@ -562,6 +599,27 @@ func (s *FileStorage) StatusConditionRead(t unikornv1core.ConditionType) (*metav
 // the provisioning vocabulary.
 func (s *FileStorage) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
 	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// Paused implements the ReconcilePauser interface.
+func (s *FileStorageSnapshot) Paused() bool {
+	return s.Spec.Pause
+}
+
+// StatusConditionRead returns a snapshot condition by type.
+func (s *FileStorageSnapshot) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
+	return unikornv1core.GetCondition(s.Status.Conditions, t)
+}
+
+// SetProvisioningCondition updates the snapshot's Available lifecycle condition.
+func (s *FileStorageSnapshot) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// ResourceLabels satisfies the managed resource interface.
+func (s *FileStorageSnapshot) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
 }
 
 // StatusConditionRead lets a snapshot policy status be read through the typed

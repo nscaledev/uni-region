@@ -11,7 +11,7 @@ The package contains three broad kinds of object:
 
 - user-meaningful region resources such as `Region`, `Identity`, `Network`,
   `SecurityGroup`, `LoadBalancer`, `SSHCertificateAuthority`, `Server`, and
-  `Volume`, and `FileStorage`
+  `Volume`, `FileStorage`, and `FileStorageSnapshot`
 - service-internal provider state, primarily `OpenstackIdentity`
 - operational support objects such as `VLANAllocation`, `FileStorageClass`, and
   `FileStorageProvisioner`
@@ -57,8 +57,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   `maximumSizeGiB` as positive whole GiB values. When both are present, the
   maximum must be greater than or equal to the minimum. Metadata may also carry
   a `supportedFlavors` selector whose `ids` are a unique typed Region Flavor
-  allowlist. An omitted selector or omitted/empty IDs means the VolumeClass is
-  compatible with every Flavor. Flavor IDs must use canonical lowercase,
+  allowlist for Server attachment. An omitted selector or omitted/empty IDs
+  means Volumes of that class cannot be attached to Servers; it does not prevent
+  standalone Volume creation. Flavor IDs must use canonical lowercase,
   hyphenated UUID spelling. CRD admission enforces that static UUID shape,
   uniqueness, and the capacity invariants without provider lookups.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
@@ -87,6 +88,15 @@ stored objects rely on for linkage, migration, and operational coordination.
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
   reconciliation contract.
+- `FileStorageSnapshot` is a namespaced CRD for Manual Snapshot intent and
+  observed state.
+- Snapshot `spec.name`, `spec.fileStorageID`, `spec.expirationTime`, and
+  `spec.protectedPath` are immutable. Name admission rejects `.` and `..` and
+  permits letters, digits, underscores, periods, and hyphens up to 63 characters.
+  Protected paths are optional relative paths; omission selects the
+  File Storage root. Pause and tags remain mutable.
+- Snapshot status stores conditions, provider capture time, and absolute
+  protected path. The resource has no phase field or internal observation latch.
 - `FileStorage.Spec.NFS` stores POSIX ACL and atime update interval desired state
   as required, defaulted values. The CRD defaults missing values to `false` and
   `0` before validation. An atime value of `0` means read-driven updates are
@@ -97,14 +107,26 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Volume` does not define a per-network name uniqueness key; its resource ID
   follows the platform's normal UUID v4 identity pattern, while mutable display
   names live in standard metadata labels. `Volume.Spec.ClaimRef` is internal
-  handler-owned state that records the exclusive Server reservation; a nil claim
-  means the volume is available for claiming. `Server` is the current supported
-  claim kind. `Server.Status.Volumes` is the sole persisted projection of
-  attachment progress, optional provider device, and a safe message. Future
-  attachment reconciliation will
-  advance `ObservedGeneration` only after both backing volume and requested
-  attachment state converge, and will report attachment errors through the generic
-  `Available` condition. The Volume controller drives provider create/delete,
+  coordination state that records the exclusive Server reservation. The Server
+  handler creates and compensates claims, while the Volume controller releases
+  them after provider teardown. Its ID must be non-empty, and a nil claim means
+  the Volume is available for claiming. `Server` is the current supported claim
+  kind. `Server.Status.Volumes` projects
+  attachment progress, optional provider device, and a safe message.
+  `Volume.Status.AttachedAt` records when the current attachment was first
+  confirmed; omission means no current attachment is recorded. The attachment
+  finalizer `volumes.region.unikorn-cloud.org/<volume-id>` is stored on the
+  claimed Server. It blocks Server deletion until the Volume controller confirms
+  provider detachment and removes that finalizer. The Volume controller creates
+  this canonical resource reference before provider attachment and removes it
+  before releasing the claim. References for removed intent remain until
+  controller teardown completes. The Volume
+  controller advances
+  `ObservedGeneration`
+  only after both backing Volume and requested attachment state converge,
+  reports attachment errors through the generic `Available` condition, and
+  discovers provider attachments from the Volume before detaching them. The
+  controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
   The Volume controller exclusively owns the generic `Available` provisioning
@@ -120,11 +142,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   server-created volume templates are deliberately excluded from the first
   implementation. `Server.Status.Volumes` is keyed by the same Volume ID and
   reports per-volume attachment reconciliation state and the observed guest
-  device name for later controller and monitor work. The provider layer now
-  supplies a server-owned attach/detach boundary and the OpenStack provider
-  realizes it with Nova, but this package still only owns the persisted shape;
-  reference placement, claim/locking behavior, and controller reconciliation live
-  in later layers/tickets. The v2 Server read projects stored attachment status.
+  device name. The Server handler owns attachment intent and claim
+  creation/compensation. The Volume controller owns reference placement,
+  provider attachment and detachment, status projection, and claim release
+  after teardown. The OpenStack provider realizes the attachment lifecycle
+  through Nova and Cinder. The v2 Server read projects both desired Volume
+  intent and stored attachment status.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;
@@ -141,7 +164,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   schema therefore bounds the stored list to five entries — four user-managed
   policies plus the optional hidden `system-default` baseline — caps policy names
   at 19 characters, and validates the schedule/retention shape so direct CRD
-  writes cannot persist unsupported policy combinations.
+  writes cannot persist unsupported policy combinations. A policy may optionally
+  define `protectedPath`, a canonical relative path within the file storage data
+  hierarchy;
+  the CRD rejects empty, absolute, non-canonical, and traversal-component paths.
+  Provider-specific controllers resolve this path against their backing storage
+  hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
   authoritative for live state.
   A rebuild failure is not attributable: an unrelated host failure on the desired
@@ -202,6 +230,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   liveness is a separate axis needing a signal from inside the guest; treating
   convergence here as proof of a working workload is a misreading this region
   cannot protect against.
+- `Server.SetProvisioningCondition` stamps `metadata.generation` into the
+  `Available` condition's `observedGeneration` on every outcome, distinct from
+  `Status.Observed.Generation`. A zero or mismatched stamp means the result
+  belongs to a previous spec: `Server.ProvisioningConditionCurrent` returns
+  false, and the REST read projects it as `provisioning`. Enforced at the REST
+  boundary only; internal readers still key off the reason.
 
 ## Caveats
 
@@ -219,10 +253,8 @@ stored objects rely on for linkage, migration, and operational coordination.
 - Where possible, OpenStack itself is now the intended source of truth for
   cloud-side state, with local code preferring deterministic lookup over
   mirrored persistence.
-- `ResourceLabels()` exists on several resources to satisfy shared controller
-  interfaces, but currently returns `nil, nil`. That is an implementation
-  contract for generic integration, not proof that these resources already have
-  a meaningful label-tuple identity model defined here.
+- `FileStorage.ResourceLabels()` and `FileStorageSnapshot.ResourceLabels()`
+  currently return `nil, nil` to satisfy shared controller interfaces.
 - `SSHCertificateAuthority` is structurally much lighter than the other major
   resource types. It has no status and behaves more like a stored project-scoped
   OpenSSH user CA record than a long-running provisioned object.

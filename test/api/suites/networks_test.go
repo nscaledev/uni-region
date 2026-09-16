@@ -38,15 +38,23 @@ import (
 )
 
 var _ = Describe("Network Management", func() {
-	Context("When managing the network lifecycle", Ordered, func() {
+	Context("When managing the network lifecycle", Ordered, Label("fake-dc"), func() {
+		var fakeRegionID string
 		var networkID string
 		var networkName string
 		var networkPrefix string
 		var deletedNetworkID string
 
+		BeforeEach(func() {
+			if config.FakeRegionID == "" {
+				Skip("FAKE_TEST_REGION_ID not configured; skipping Fake DC tests")
+			}
+			fakeRegionID = config.FakeRegionID
+		})
+
 		Describe("Given valid organization and project credentials", func() {
 			It("should provision a network with correct metadata and prefix", func() {
-				createReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
+				createReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, fakeRegionID).Build()
 
 				created, err := regionClient.CreateNetwork(ctx, createReq)
 				Expect(err).NotTo(HaveOccurred(), "failed to create network")
@@ -57,7 +65,7 @@ var _ = Describe("Network Management", func() {
 				Expect(created.Metadata.OrganizationId).To(Equal(config.OrgID))
 				Expect(created.Metadata.ProjectId).To(Equal(config.ProjectID))
 				Expect(created.Metadata.ProvisioningStatus).NotTo(BeEmpty())
-				Expect(created.Status.RegionId).To(Equal(config.RegionID))
+				Expect(created.Status.RegionId).To(Equal(fakeRegionID))
 				Expect(created.Status.Prefix).To(Equal(createReq.Spec.Prefix))
 
 				networkID = created.Metadata.Id
@@ -77,7 +85,7 @@ var _ = Describe("Network Management", func() {
 				// List GETs are served from the controller-runtime cache, so a
 				// just-created network can briefly be absent from the list.
 				Eventually(func(g Gomega) {
-					list, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
+					list, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, fakeRegionID)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					var found *regionopenapi.NetworkV2Read
@@ -118,7 +126,7 @@ var _ = Describe("Network Management", func() {
 				Expect(got.Metadata.Name).To(Equal(networkName))
 				Expect(got.Metadata.OrganizationId).To(Equal(config.OrgID))
 				Expect(got.Metadata.ProjectId).To(Equal(config.ProjectID))
-				Expect(got.Status.RegionId).To(Equal(config.RegionID))
+				Expect(got.Status.RegionId).To(Equal(fakeRegionID))
 			})
 
 			It("should reflect updated name and description while preserving the prefix", func() {
@@ -233,15 +241,21 @@ var _ = Describe("Network Management", func() {
 		})
 	})
 
-	Context("When testing cross-organization resource isolation", Ordered, func() {
+	Context("When testing cross-organization resource isolation", Ordered, Label("fake-dc"), func() {
+		var fakeRegionID string
 		var networkID string
 
 		BeforeAll(func() {
+			if config.FakeRegionID == "" {
+				Skip("FAKE_TEST_REGION_ID not configured; skipping Fake DC tests")
+			}
+			fakeRegionID = config.FakeRegionID
+
 			if secondaryClient == nil {
 				Skip("TEST_SECONDARY_ORG_ID and TEST_SECONDARY_AUTH_TOKEN not configured")
 			}
 
-			created, err := regionClient.CreateNetwork(ctx, api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build())
+			created, err := regionClient.CreateNetwork(ctx, api.NewNetworkPayload(config.OrgID, config.ProjectID, fakeRegionID).Build())
 			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
 			networkID = created.Metadata.Id
 			DeferCleanup(func() {

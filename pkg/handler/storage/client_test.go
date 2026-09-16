@@ -20,6 +20,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"testing"
@@ -56,6 +57,43 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+type controllerRaceClient struct {
+	client.Client
+	wroteStatus bool
+}
+
+func (c *controllerRaceClient) Patch(ctx context.Context, object client.Object, patch client.Patch, options ...client.PatchOption) error {
+	current := &regionv1.FileStorage{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(object), current); err != nil {
+		return err
+	}
+
+	current.Status.ObservedGeneration = ptr.To(current.Generation)
+	if err := c.Client.Status().Update(ctx, current); err != nil {
+		return err
+	}
+
+	c.wroteStatus = true
+
+	return c.Client.Patch(ctx, object, patch, options...)
+}
+
+type allocationCommittedMatcher int
+
+func (m allocationCommittedMatcher) Matches(value any) bool {
+	request, ok := value.(identityopenapi.AllocationWrite)
+
+	return ok && len(request.Spec.Allocations) == 1 &&
+		request.Spec.Allocations[0] == (identityopenapi.ResourceAllocation{
+			Kind:      "filestorage",
+			Committed: int(m),
+		})
+}
+
+func (m allocationCommittedMatcher) String() string {
+	return fmt.Sprintf("allocation with %d committed bytes", m)
+}
 
 const (
 	testNamespace                 = "uni-storage-test"
@@ -126,7 +164,12 @@ func newFakeClient(t *testing.T, objects ...client.Object) client.Client {
 	restMapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{regionv1.SchemeGroupVersion})
 	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("FileStorage"), meta.RESTScopeNamespace)
 
-	return fake.NewClientBuilder().WithScheme(scheme).WithRESTMapper(restMapper).WithObjects(objects...).Build()
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRESTMapper(restMapper).
+		WithStatusSubresource(&regionv1.FileStorage{}).
+		WithObjects(objects...).
+		Build()
 }
 
 func newContextWithPermissions(ctx context.Context) context.Context {
@@ -1609,6 +1652,110 @@ func TestUpdateNonEmptySnapshotPoliciesReplacesExistingPolicies(t *testing.T) {
 			ProvisioningStatus: corev1.ResourceProvisioningStatusPending,
 		},
 	}, got.Status.SnapshotPolicies)
+}
+
+func TestUpdateConflictReturnsHTTPConflictAndCompensatesAllocation(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	allocationResponse := &identityopenapi.PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDResponse{
+		HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+		JSON200: &identityopenapi.AllocationResponse{
+			Metadata: corev1.ProjectScopedResourceReadMetadata{Id: testAllocationID},
+		},
+	}
+	gomock.InOrder(
+		mockIdentity.EXPECT().
+			PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(
+				gomock.Any(),
+				identityids.MustParseOrganizationID(testOrganizationID),
+				identityids.MustParseProjectID(testProjectID),
+				identityids.MustParseAllocationID(testAllocationID),
+				allocationCommittedMatcher(20*giB),
+			).
+			Return(allocationResponse, nil),
+		mockIdentity.EXPECT().
+			PutApiV1OrganizationsOrganizationIDProjectsProjectIDAllocationsAllocationIDWithResponse(
+				gomock.Any(),
+				identityids.MustParseOrganizationID(testOrganizationID),
+				identityids.MustParseProjectID(testProjectID),
+				identityids.MustParseAllocationID(testAllocationID),
+				allocationCommittedMatcher(10*giB),
+			).
+			Return(allocationResponse, nil),
+	)
+
+	expectedSpec := regionv1.FileStorageSpec{
+		Size:           *resource.NewQuantity(10*giB, resource.BinarySI),
+		StorageClassID: "sc-1",
+		NFS:            &regionv1.NFS{RootSquash: true},
+	}
+	k8sClient := newFakeClient(t,
+		&regionv1.FileStorageClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "sc-1",
+				Namespace: testNamespace,
+				Labels: map[string]string{
+					constants.RegionLabel: testRegionID,
+				},
+			},
+		},
+		&regionv1.FileStorage{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testFileStorageID,
+				Namespace: testNamespace,
+				Labels: map[string]string{
+					constants.RegionLabel:                    testRegionID,
+					coreconstants.NameLabel:                  "test-filestorage",
+					coreconstants.OrganizationLabel:          testOrganizationID,
+					coreconstants.ProjectLabel:               testProjectID,
+					coreconstants.OrganizationPrincipalLabel: testOrganizationID,
+					coreconstants.ProjectPrincipalLabel:      testProjectID,
+				},
+				Annotations: map[string]string{
+					coreconstants.AllocationAnnotation:       testAllocationID,
+					coreconstants.CreatorAnnotation:          "user-1",
+					coreconstants.CreatorPrincipalAnnotation: "actor@example.com",
+				},
+			},
+			Spec: expectedSpec,
+		},
+	)
+
+	raceClient := &controllerRaceClient{Client: k8sClient}
+	storageClient := New(common.ClientArgs{
+		Client:    raceClient,
+		Identity:  mockIdentity,
+		Namespace: testNamespace,
+	})
+	ctx := identityauth.NewContext(t.Context(), &identityauth.Info{Userinfo: &identityopenapi.Userinfo{Sub: "user-1"}})
+	ctx = principal.NewContext(ctx, &principal.Principal{Actor: "actor@example.com", OrganizationID: testOrganizationID, ProjectID: testProjectID})
+	ctx = rbac.NewContext(ctx, &identityopenapi.Acl{
+		Global: &identityopenapi.AclEndpoints{{
+			Name:       "region:filestorage:v2",
+			Operations: identityopenapi.AclOperations{identityopenapi.Read, identityopenapi.Update},
+		}},
+	})
+
+	_, err := storageClient.Update(ctx, idstest.MustParseFileStorageID(testFileStorageID), &openapi.StorageV2Update{
+		Metadata: corev1.ResourceWriteMetadata{Name: "test-filestorage"},
+		Spec: openapi.StorageV2Spec{
+			SizeGiB: 20,
+			StorageType: openapi.StorageTypeV2Spec{
+				NFS: &openapi.NFSV2Spec{RootSquash: true},
+			},
+		},
+	})
+	require.Error(t, err)
+	require.True(t, servererrors.IsConflict(err), "expected 409 conflict, got: %v", err)
+	require.True(t, raceClient.wroteStatus)
+
+	stored := &regionv1.FileStorage{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: testFileStorageID}, stored))
+	require.Zero(t, expectedSpec.Size.Cmp(stored.Spec.Size))
+	expectedSpec.Size = stored.Spec.Size.DeepCopy()
+	require.Equal(t, expectedSpec, stored.Spec)
 }
 
 func updateStorageV2ForSnapshotPolicyTest(t *testing.T, configure func(*openapi.StorageV2Update)) *openapi.StorageV2Read {

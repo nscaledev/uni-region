@@ -4,27 +4,27 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: volumes.region.unikorn-cloud.org
+  name: filestoragesnapshots.region.unikorn-cloud.org
 spec:
   group: region.unikorn-cloud.org
   names:
     categories:
     - unikorn
-    kind: Volume
-    listKind: VolumeList
-    plural: volumes
-    singular: volume
+    kind: FileStorageSnapshot
+    listKind: FileStorageSnapshotList
+    plural: filestoragesnapshots
+    singular: filestoragesnapshot
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
+    - jsonPath: .metadata.labels['unikorn-cloud\.org/name']
+      name: display name
+      type: string
+    - jsonPath: .spec.fileStorageID
+      name: file storage
+      type: string
     - jsonPath: .status.conditions[?(@.type=="Available")].reason
       name: status
-      type: string
-    - jsonPath: .spec.networkID
-      name: network
-      type: string
-    - jsonPath: .spec.size
-      name: size
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: age
@@ -32,7 +32,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Volume defines a network-anchored block storage volume.
+        description: |-
+          FileStorageSnapshot records customer intent and observed lifecycle state for
+          one manual snapshot of a File Storage.
         properties:
           apiVersion:
             description: |-
@@ -52,49 +54,41 @@ spec:
           metadata:
             type: object
           spec:
-            description: VolumeSpec defines the desired state for a block storage
-              volume.
+            description: FileStorageSnapshotSpec is the capture request plus mutable
+              reconciliation and user metadata.
             properties:
-              claimRef:
+              expirationTime:
                 description: |-
-                  ClaimRef is an internal handler-owned reservation that exclusively binds
-                  this volume attachment to a Server. Unset means the volume is available for
-                  claiming.
-                properties:
-                  id:
-                    description: ID is the Region resource ID of the resource claiming
-                      the volume attachment.
-                    minLength: 1
-                    type: string
-                  kind:
-                    description: Kind is the kind of resource claiming the volume
-                      attachment.
-                    enum:
-                    - Server
-                    type: string
-                required:
-                - id
-                - kind
-                type: object
-              networkID:
-                description: |-
-                  NetworkID is the network that anchors the volume's region, identity,
-                  organization, and project scope.
+                  ExpirationTime optionally requests automatic expiration. Omission means
+                  that the snapshot does not expire automatically.
+                format: date-time
+                type: string
+              fileStorageID:
+                description: FileStorageID identifies the immutable parent File Storage.
+                format: uuid
+                type: string
+              name:
+                description: Name is the immutable, case-sensitive Manual Snapshot
+                  Name.
+                maxLength: 63
+                pattern: ^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$
                 type: string
               pause:
-                description: Pause, if true, will inhibit reconciliation.
+                description: Pause inhibits reconciliation.
                 type: boolean
-              size:
-                anyOf:
-                - type: integer
-                - type: string
-                description: Size is the requested volume capacity.
-                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                x-kubernetes-int-or-string: true
-              tags:
+              protectedPath:
                 description: |-
-                  Tags are an abitrary list of key/value pairs that a client
-                  may populate to store metadata for the resource.
+                  ProtectedPath is the relative path captured by the snapshot.
+                  Omission selects the File Storage root.
+                maxLength: 1024
+                pattern: ^([^/]+/)*[^/]+$
+                type: string
+                x-kubernetes-validations:
+                - message: protectedPath must not contain . or .. path components
+                  rule: self.split('/').all(component, component != '.' && component
+                    != '..')
+              tags:
+                description: Tags are arbitrary user-managed key/value metadata.
                 items:
                   description: Tag is an arbirary key/value.
                   properties:
@@ -109,30 +103,31 @@ spec:
                   - value
                   type: object
                 type: array
-              volumeClassID:
-                description: |-
-                  VolumeClassID is the provider-neutral volume class requested for the
-                  volume. Provider-specific class configuration is defined on Region
-                  separately.
-                type: string
             required:
-            - networkID
-            - size
-            - volumeClassID
+            - fileStorageID
+            - name
             type: object
             x-kubernetes-validations:
-            - message: networkID is immutable
-              rule: self.networkID == oldSelf.networkID
+            - message: name is immutable
+              rule: self.name == oldSelf.name
+            - message: fileStorageID is immutable
+              rule: self.fileStorageID == oldSelf.fileStorageID
+            - message: expirationTime is immutable
+              rule: has(self.expirationTime) == has(oldSelf.expirationTime) && (!has(self.expirationTime)
+                || self.expirationTime == oldSelf.expirationTime)
+            - message: protectedPath is immutable
+              rule: has(self.protectedPath) == has(oldSelf.protectedPath) && (!has(self.protectedPath)
+                || self.protectedPath == oldSelf.protectedPath)
           status:
             properties:
-              attachedAt:
+              absoluteProtectedPath:
                 description: |-
-                  AttachedAt is when the current attachment was first confirmed.
-                  Unset means no current attachment is recorded.
-                format: date-time
+                  AbsoluteProtectedPath is the exact path returned by the provider. Writers
+                  must preserve it byte-for-byte and must not clear a known value on an
+                  incomplete or failed observation.
                 type: string
               conditions:
-                description: Current service state of a volume.
+                description: Conditions are the sanitized lifecycle and health state.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -188,27 +183,13 @@ spec:
                   - type
                   type: object
                 type: array
-              observedGeneration:
-                description: ObservedGeneration is the most recent generation observed
-                  by the controller.
-                format: int64
-                type: integer
-              provisionedAt:
-                description: |-
-                  ProvisionedAt records the first successful discovery of backing storage.
-                  It is never cleared, because a missing provider volume must not be recreated
-                  under the same Region Volume ID.
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              snapshotTime:
+                description: SnapshotTime is the provider-observed capture time.
                 format: date-time
                 type: string
-              size:
-                anyOf:
-                - type: integer
-                - type: string
-                description: |-
-                  Size is the currently provisioned/observed size of the volume.
-                  (May differ from spec.size while provisioning.)
-                pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                x-kubernetes-int-or-string: true
             type: object
         required:
         - spec

@@ -17,12 +17,21 @@ limitations under the License.
 package openapi_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
+
+func TestVolumeAttachedAtOmittedWhenUnset(t *testing.T) {
+	t.Parallel()
+
+	data, err := json.Marshal(openapi.VolumeV2Status{})
+	require.NoError(t, err)
+	require.NotContains(t, string(data), `"attachedAt"`)
+}
 
 func TestVolumeLifecycleContract(t *testing.T) {
 	t.Parallel()
@@ -73,6 +82,9 @@ func TestVolumeLifecycleContract(t *testing.T) {
 	require.Equal(t, []string{"regionId"}, status.Required)
 	require.NotContains(t, status.Properties, "attachedServerIds")
 	require.NotContains(t, status.Properties, "attachment")
+	attachedAt := schemaProperty(t, status, "attachedAt")
+	require.True(t, attachedAt.Type.Is("string"))
+	require.Equal(t, "date-time", attachedAt.Format)
 	require.Contains(t, status.Properties, "sizeGiB")
 	require.NotContains(t, status.Properties, "phase")
 	require.NotContains(t, swagger.Components.Schemas, "volumeV2Phase")
@@ -93,4 +105,16 @@ func TestServerVolumeAttachmentStatusContract(t *testing.T) {
 	require.Equal(t, "#/components/schemas/volumeId", schemaProperty(t, status, "id").AllOf[0].Ref)
 	requireSchemaPropertyRef(t, status, "provisioningStatus", "#/components/schemas/unikorn-cloud_core_v1.17.1_pkg_openapi_common_resourceProvisioningStatus")
 	requireSchemaPropertyRef(t, componentSchema(t, swagger, "serverV2Status"), "volumes", "#/components/schemas/serverV2VolumeStatusList")
+}
+
+func TestServerV2UpdateContractDeclaresConflicts(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	resource := swagger.Paths.Find("/api/v2/servers/{serverID}")
+	require.NotNil(t, resource)
+	require.NotNil(t, resource.Put)
+	require.NotNil(t, resource.Put.Responses.Value("409"))
 }

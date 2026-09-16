@@ -102,6 +102,10 @@ accounting meet.
   hidden `system-default` baseline, which never counts against the caller maximum.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
+- Update uses optimistic locking. If a controller or another request modifies the
+  File Storage after it is read, PUT returns `409 Conflict` and compensates any
+  completed quota allocation change. Callers must re-read the resource before
+  retrying.
 - `posixAcl` and `atimeUpdateIntervalSeconds` are optional and nullable on create
   and update. The handler resolves omission or explicit null to `false` and `0`
   before persistence.
