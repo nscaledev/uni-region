@@ -1393,6 +1393,32 @@ func TestServerUpdateV2RejectsVolumeClaimedByAnotherServer(t *testing.T) {
 	require.EqualError(t, err, "volume is already claimed by another server")
 }
 
+func TestServerUpdateV2RejectsConcurrentClaimForNewIntent(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	volume := testSrvVolume()
+	volume.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), testSrvRegion(), resource, volume).Build()
+	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+	request := &openapi.ServerV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: resource.Name},
+		Spec: openapi.ServerV2Spec{
+			FlavorId: resource.Spec.FlavorID,
+			ImageId:  resource.Spec.Image.ID,
+			Volumes:  &openapi.ServerV2VolumeList{idstest.MustParseVolumeID(volume.Name)},
+		},
+	}
+
+	_, err := c.UpdateV2(withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate())), idstest.MustParseServerID(resource.Name), request)
+
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(resource), resource))
+	require.Empty(t, resource.Spec.Volumes)
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(volume), volume))
+	require.Equal(t, &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: resource.Name}, volume.Spec.ClaimRef)
+}
+
 func TestServerUpdateV2SagaReturnsPersistenceError(t *testing.T) {
 	t.Parallel()
 

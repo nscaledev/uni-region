@@ -60,12 +60,14 @@ related dependencies rather than from nested path scope.
   complete desired existing-Volume set; create omission means no attachments,
   update omission preserves it, and explicit update replacement (including an
   empty list) changes it. A Volume claimed by another Server is rejected with
-  HTTP 422 until detached. The handler validates duplicate, deletion, claim,
-  scope, and VolumeClass/Flavor compatibility before it claims Volumes. A
-  VolumeClass must define a non-empty supported-flavor list that contains the
-  Server flavor. The handler returns HTTP 422 when the class is missing, the
-  list is unset or empty, or the flavor does not match. The handler never calls
-  a provider.
+  HTTP 422 until detached. A same-Server claim is accepted only for Volume intent
+  already persisted on that Server; otherwise it returns HTTP 409 so concurrent
+  updates cannot share and then compensate the same claim. The handler validates
+  duplicate, deletion, claim, scope, and VolumeClass/Flavor compatibility before
+  it claims Volumes. A VolumeClass must define a non-empty supported-flavor list
+  that contains the Server flavor. The handler returns HTTP 422 when the class
+  is missing, the list is unset or empty, or the flavor does not match. The
+  handler never calls a provider.
 - create accepts an explicit SSH injection mode: `ca`, `identityKeypair`, or
   `none`. Omitted values preserve the legacy contract: requests with
   `sshCertificateAuthorityId` resolve to `ca`, all other requests resolve to

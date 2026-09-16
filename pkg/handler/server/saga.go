@@ -78,7 +78,7 @@ func (s *createV2Saga) validate(ctx context.Context) error {
 		return err
 	}
 
-	volumes, err := validateVolumes(ctx, s.client, s.network, s.request.Spec.FlavorId.String(), s.request.Spec.Volumes, "")
+	volumes, err := validateVolumes(ctx, s.client, s.network, s.request.Spec.FlavorId.String(), s.request.Spec.Volumes, nil)
 	if err != nil {
 		return err
 	}
@@ -204,7 +204,7 @@ func (s *updateV2Saga) validate(ctx context.Context) error {
 		return nil
 	}
 
-	volumes, err := validateVolumes(ctx, s.client, s.network, s.request.Spec.FlavorId.String(), s.request.Spec.Volumes, s.current.Name)
+	volumes, err := validateVolumes(ctx, s.client, s.network, s.request.Spec.FlavorId.String(), s.request.Spec.Volumes, s.current)
 	if err != nil {
 		return err
 	}
@@ -303,7 +303,7 @@ func volumeIDs(volumes []regionv1.ServerVolumeSpec) []string {
 	return ids
 }
 
-func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network, flavorID string, requested *openapi.ServerV2VolumeList, serverID string) (map[string]*regionv1.Volume, error) {
+func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network, flavorID string, requested *openapi.ServerV2VolumeList, current *regionv1.Server) (map[string]*regionv1.Volume, error) {
 	volumes := map[string]*regionv1.Volume{}
 
 	if requested == nil || len(*requested) == 0 {
@@ -322,7 +322,7 @@ func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network
 			return nil, errors.HTTPUnprocessableContent("volumes must not contain duplicate IDs")
 		}
 
-		volume, err := validateVolume(ctx, c, network, region, flavorID, key, serverID)
+		volume, err := validateVolume(ctx, c, network, region, flavorID, key, current)
 		if err != nil {
 			return nil, err
 		}
@@ -333,7 +333,7 @@ func validateVolumes(ctx context.Context, c *ClientV2, network *regionv1.Network
 	return volumes, nil
 }
 
-func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network, region *regionv1.Region, flavorID, volumeID, serverID string) (*regionv1.Volume, error) {
+func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network, region *regionv1.Region, flavorID, volumeID string, current *regionv1.Server) (*regionv1.Volume, error) {
 	resource, err := volume.New(c.Client.ClientArgs).GetV2Raw(ctx, volumeID)
 	if err != nil {
 		return nil, err
@@ -349,8 +349,16 @@ func validateVolume(ctx context.Context, c *ClientV2, network *regionv1.Network,
 		}
 	}
 
-	if claim := resource.Spec.ClaimRef; claim != nil && claim.ID != serverID {
-		return nil, errors.HTTPUnprocessableContent("volume is already claimed by another server")
+	if claim := resource.Spec.ClaimRef; claim != nil {
+		if current == nil || claim.ID != current.Name {
+			return nil, errors.HTTPUnprocessableContent("volume is already claimed by another server")
+		}
+
+		// A same-Server claim without persisted intent belongs to another update.
+		// Do not let this request compensate a claim it did not acquire.
+		if !slices.Contains(volumeIDs(current.Spec.Volumes), volumeID) {
+			return nil, errors.HTTPConflict()
+		}
 	}
 
 	if err := validateVolumeClassFlavor(region, resource.Spec.VolumeClassID, flavorID); err != nil {
