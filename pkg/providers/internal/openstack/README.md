@@ -367,9 +367,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   exports no VolumeClasses. Selected classes can be enriched with user-facing
   metadata such as optional minimum/maximum capacity bounds, a
   `supportedFlavors` selector, media, maximum performance caps, and encryption
-  signals. Omitted selectors and omitted or empty selector IDs mean unrestricted
-  compatibility; the provider resolves this operator-authored selector to the
-  neutral Flavor ID allowlist and does not infer it from Cinder volume types.
+  signals. Omitted selectors and omitted or empty selector IDs make the class
+  ineligible for Server attachment; the provider resolves this operator-authored
+  selector to the neutral Flavor ID allowlist and does not infer it from Cinder
+  volume types.
   Capacity bounds are
   operator-authored positive whole GiB values; either may be omitted, and when
   both are present the maximum must be at least the minimum. The provider
@@ -400,25 +401,44 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - attach requires both the server and volume; either missing resource maps to
     `ErrResourceNotFound`
   - a Cinder attachment already present on the requested server is successful
-    and returns its observed device without a Nova read
+    only when Cinder reports the Volume `in-use`; it returns that row's observed
+    device without a Nova read. `reserved`, `attaching`, and other transitional
+    states yield for another observation; `error*` states return a terminal
+    provider error
   - an attachment to any other server maps to `ErrConflict`; Region does not
     support multi-attach even when the Cinder volume is multiattach-capable
-  - when Cinder reports no attachment, attach calls Nova create directly; a
-    create `409 Conflict` is followed by one Nova attachment read so concurrent
-    creation of the same desired attachment becomes success, while an
+  - when Cinder reports no attachment, attach requests Nova only after Cinder
+    observes the Volume `available`; transitional states yield. It yields after
+    Nova acceptance. A create `409 Conflict` is followed by one Nova attachment
+    read so a concurrent desired request yields for Cinder `in-use`; an
     unresolved conflict maps to `ErrConflict`
-  - detach calls Nova delete only when Cinder reports an attachment to the
-    requested server; a missing server, volume, requested-server attachment, or
-    Nova delete `404` is success because detached state already holds, including
-    when the volume remains attached only to another server
-  - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
-    are preserved
+  - detach resolves Nova and checks it directly, so an empty Cinder attachment
+    list cannot hide the claimed Nova attachment. Per-Volume finalizers block
+    Server deletion until attachments are removed, so deleting and live Servers
+    use the same active Nova detach path. A Cinder attachment row is a fallback
+    only when its Server ID matches the resolved claimed Nova Server. Foreign or
+    unowned rows are never detached; they conflict or yield until provider state
+    converges
+  - an accepted Nova delete yields immediately because detach is asynchronous.
+    A later reconcile succeeds only when Nova no longer reports the claimed
+    attachment and Cinder reports no attachment with status `available`; a
+    missing backing Volume is idempotent success
+  - a Nova delete `400 Bad Request` yields while the provider attachment state
+    converges; the claim is retained and Region does not reset Cinder state. A
+    `409 Conflict` maps to `ErrConflict`; other provider failures are preserved
   - detach also no-ops when the backing OpenStack identity was never realized,
     matching the provider's other teardown contracts
 
+  Region owns these resources through its API. Detach does not attempt
+  administrative repair of foreign attachments, multiattach, or resources
+  changed directly through Kubernetes or OpenStack.
+
   Attachment intent and observed rows remain on `Server.Spec.Volumes` and
   `Server.Status.Volumes`; this provider slice does not mirror attachments into
-  `Volume.Status`, claim volumes, or reconcile server controllers.
+  `Volume.Status`, claim volumes, or reconcile server controllers. Those
+  belong to the volume provisioner
+  ([../../../provisioners/managers/volume](../../../provisioners/managers/volume/README.md)),
+  which populates `Volume.Status.AttachedAt` and owns claim release.
 - Image handling is a first-class contract surface here:
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
