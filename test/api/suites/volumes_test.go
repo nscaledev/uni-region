@@ -34,18 +34,17 @@ import (
 )
 
 const (
-	fakeDCVolumeClassID  = "b74ca25f-1a74-41e7-8d2a-c58b7fa03516"
-	fakeDCServerFlavorID = "46c5dee8-eea7-5c10-b3bf-442a0419b1fb"
-	fakeDCServerImageID  = "728aae25-bc44-4e4a-8004-c71de9497cf5"
-	fakeDCVolumeSizeGiB  = int64(1)
+	fakeDCVolumeClassID = "b74ca25f-1a74-41e7-8d2a-c58b7fa03516"
+	fakeDCVolumeSizeGiB = int64(1)
 )
 
 var _ = Describe("Block storage volume", func() {
 	Context("When using the Fake Data Center", func() {
 		Describe("Given an attachable volume class and an existing network", func() {
 			It("provisions a volume and attaches it to a running server", Label("slow", "fake-dc"), func() {
-				if config.FakeRegionID == "" || config.FakeNetworkID == "" {
-					Skip("FAKE_TEST_REGION_ID and FAKE_TEST_NETWORK_ID are required")
+				if config.FakeRegionID == "" || config.FakeNetworkID == "" ||
+					config.FakeServerFlavorID == "" || config.FakeServerImageID == "" {
+					Skip("Fake DC region, network, server flavor, and server image configuration are required")
 				}
 				api.SkipUnlessInternalAPIConfigured(regionClient)
 
@@ -58,7 +57,7 @@ var _ = Describe("Block storage volume", func() {
 				})
 				Expect(classIndex).To(BeNumerically(">=", 0), "expected Fake DC volume class was not advertised")
 				Expect(volumeClasses[classIndex].Spec.SupportedFlavorIds).NotTo(BeNil())
-				Expect(*volumeClasses[classIndex].Spec.SupportedFlavorIds).To(ContainElement(idstest.MustParseFlavorID(fakeDCServerFlavorID)))
+				Expect(*volumeClasses[classIndex].Spec.SupportedFlavorIds).To(ContainElement(idstest.MustParseFlavorID(config.FakeServerFlavorID)))
 
 				By("creating and provisioning a block storage volume")
 				volumeReq := api.NewVolumePayload(config.FakeNetworkID, fakeDCVolumeClassID).Build()
@@ -83,7 +82,7 @@ var _ = Describe("Block storage volume", func() {
 					Should(Succeed(), "volume should become available before attachment")
 
 				By("creating a server that requests the volume")
-				serverReq := api.NewServerPayload(config.FakeNetworkID, fakeDCServerFlavorID, fakeDCServerImageID).
+				serverReq := api.NewServerPayload(config.FakeNetworkID, config.FakeServerFlavorID, config.FakeServerImageID).
 					WithSSHInjection(regionopenapi.SshInjectionNone).
 					WithVolumes(volume.Metadata.Id).
 					Build()
