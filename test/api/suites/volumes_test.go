@@ -91,7 +91,7 @@ var _ = Describe("Block storage volume", func() {
 				DeferCleanup(cleanupServer)
 
 				Expect(server.Spec.Volumes).NotTo(BeNil())
-				Expect(*server.Spec.Volumes).To(ConsistOf(idstest.MustParseVolumeID(volume.Metadata.Id)))
+				Expect(*server.Spec.Volumes).To(ConsistOf(Equal(idstest.MustParseVolumeID(volume.Metadata.Id))))
 
 				By("waiting for the server and volume attachment to converge")
 				Eventually(func(g Gomega) {
