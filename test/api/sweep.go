@@ -34,8 +34,8 @@ import (
 // ever removes orphans left behind by a previously killed runner.
 const StaleTestResourceTTL = 6 * time.Hour
 
-// SweepStaleTestResources deletes test-prefixed servers, file storage, and
-// networks in the configured org/project/region that are older than
+// SweepStaleTestResources deletes test-prefixed servers, volumes, file storage,
+// and networks in the configured org/project/region that are older than
 // StaleTestResourceTTL.
 //
 // A killed CI runner (timeout/OOM/SIGKILL) never runs in-process cleanup, so the
@@ -48,18 +48,8 @@ const StaleTestResourceTTL = 6 * time.Hour
 // intentionally fail BeforeSuite: starting a new run while stale resources still
 // hold VLANs would compound the leak.
 func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConfig) {
-	if c.InternalAPIConfigured() {
-		servers, err := c.ListServers(ctx, config.OrgID, config.ProjectID, config.RegionID, "")
-		Expect(err).NotTo(HaveOccurred(), "sweep should list servers")
-
-		for i := range servers {
-			server := &servers[i]
-			sweepStaleTestResource("server", server.Metadata.Id, server.Metadata.Name,
-				server.Metadata.CreationTime, server.Metadata.DeletionTime,
-				func() error { return c.DeleteServer(ctx, server.Metadata.Id) },
-				func() { WaitForServerGone(c, ctx, server.Metadata.Id) })
-		}
-	}
+	sweepStaleServers(c, ctx, config, config.RegionID)
+	sweepStaleVolumes(c, ctx, config, config.RegionID)
 
 	fileStorage, err := c.ListFileStorage(ctx, config.OrgID, config.ProjectID, config.RegionID)
 	Expect(err).NotTo(HaveOccurred(), "sweep should list file storage")
@@ -75,13 +65,15 @@ func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConf
 	sweepStaleNetworks(c, ctx, config, config.RegionID)
 }
 
-// SweepStaleFakeDataCenterResources removes stale Fake DC security group and
-// network fixtures. Security groups are swept first because they reference and
-// can block deletion of their network.
+// SweepStaleFakeDataCenterResources removes stale Fake DC server, volume,
+// security group, and network fixtures in dependency order.
 func SweepStaleFakeDataCenterResources(c *APIClient, ctx context.Context, config *TestConfig) {
 	if config.FakeRegionID == "" {
 		return
 	}
+
+	sweepStaleServers(c, ctx, config, config.FakeRegionID)
+	sweepStaleVolumes(c, ctx, config, config.FakeRegionID)
 
 	securityGroups, err := c.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, config.FakeRegionID)
 	Expect(err).NotTo(HaveOccurred(), "sweep should list Fake DC security groups")
@@ -95,6 +87,36 @@ func SweepStaleFakeDataCenterResources(c *APIClient, ctx context.Context, config
 	}
 
 	sweepStaleNetworks(c, ctx, config, config.FakeRegionID)
+}
+
+func sweepStaleServers(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	if !c.InternalAPIConfigured() {
+		return
+	}
+
+	servers, err := c.ListServers(ctx, config.OrgID, config.ProjectID, regionID, "")
+	Expect(err).NotTo(HaveOccurred(), "sweep should list servers")
+
+	for i := range servers {
+		server := &servers[i]
+		sweepStaleTestResource("server", server.Metadata.Id, server.Metadata.Name,
+			server.Metadata.CreationTime, server.Metadata.DeletionTime,
+			func() error { return c.DeleteServer(ctx, server.Metadata.Id) },
+			func() { WaitForServerGone(c, ctx, server.Metadata.Id) })
+	}
+}
+
+func sweepStaleVolumes(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	volumes, err := c.ListVolumes(ctx, config.OrgID, config.ProjectID, regionID, "")
+	Expect(err).NotTo(HaveOccurred(), "sweep should list volumes")
+
+	for i := range volumes {
+		volume := &volumes[i]
+		sweepStaleTestResource("volume", volume.Metadata.Id, volume.Metadata.Name,
+			volume.Metadata.CreationTime, volume.Metadata.DeletionTime,
+			func() error { return c.DeleteVolume(ctx, volume.Metadata.Id) },
+			func() { WaitForVolumeGone(c, ctx, volume.Metadata.Id) })
+	}
 }
 
 func sweepStaleNetworks(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {

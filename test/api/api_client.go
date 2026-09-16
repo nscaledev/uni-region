@@ -603,6 +603,106 @@ func (c *APIClient) ListFileStorageClasses(ctx context.Context, regionID string)
 	)
 }
 
+// ListVolumeClasses lists block storage volume classes available in a region.
+func (c *APIClient) ListVolumeClasses(ctx context.Context, regionID string) (regionopenapi.VolumeClassListV2Read, error) {
+	path := c.endpoints.ListVolumeClasses(regionID)
+
+	return coreclient.ListResource[regionopenapi.VolumeClassV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "volumeclasses",
+			ResourceID:     regionID,
+			ResourceIDType: "region",
+		},
+	)
+}
+
+// ListVolumes lists block storage volumes for a project in a region.
+func (c *APIClient) ListVolumes(ctx context.Context, orgID, projectID, regionID, networkID string) (regionopenapi.VolumesV2Read, error) {
+	path := c.endpoints.ListVolumes(orgID, projectID, regionID, networkID)
+
+	return coreclient.ListResource[regionopenapi.VolumeV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "volumes",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateVolume creates a block storage volume.
+func (c *APIClient) CreateVolume(ctx context.Context, request regionopenapi.VolumeV2Create) (*regionopenapi.VolumeV2Read, error) {
+	path := c.endpoints.CreateVolume()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling volume request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("creating volume: %w", err)
+	}
+
+	var volume regionopenapi.VolumeV2Read
+	if err := json.Unmarshal(respBody, &volume); err != nil {
+		return nil, fmt.Errorf("unmarshaling volume: %w", err)
+	}
+
+	return &volume, nil
+}
+
+// GetVolume gets a specific block storage volume by ID.
+func (c *APIClient) GetVolume(ctx context.Context, volumeID string) (*regionopenapi.VolumeV2Read, error) {
+	path := c.endpoints.GetVolume(volumeID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting volume: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var volume regionopenapi.VolumeV2Read
+		if err := json.Unmarshal(respBody, &volume); err != nil {
+			return nil, fmt.Errorf("unmarshaling volume: %w", err)
+		}
+
+		return &volume, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("volume '%s': %w", volumeID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting volume: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// DeleteVolume deletes a block storage volume.
+func (c *APIClient) DeleteVolume(ctx context.Context, volumeID string) error {
+	path := c.endpoints.DeleteVolume(volumeID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting volume: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("volume '%s': %w", volumeID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting volume: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
 // ListNetworks lists all networks for a project in a region.
 func (c *APIClient) ListNetworks(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.NetworksV2Read, error) {
 	path := c.endpoints.ListNetworks(orgID, projectID, regionID)

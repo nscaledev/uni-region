@@ -493,9 +493,54 @@ func (b *ServerPayloadBuilder) WithProviderCreateGate(conditionType string) *Ser
 	return b
 }
 
+// WithVolumes attaches existing block storage volumes to the server.
+func (b *ServerPayloadBuilder) WithVolumes(volumeIDs ...string) *ServerPayloadBuilder {
+	volumes := make(regionopenapi.ServerV2VolumeList, len(volumeIDs))
+	for i := range volumeIDs {
+		volumes[i] = idstest.MustParseVolumeID(volumeIDs[i])
+	}
+
+	b.server.Spec.Volumes = &volumes
+
+	return b
+}
+
+// WithSSHInjection selects how SSH access material is injected into the server.
+func (b *ServerPayloadBuilder) WithSSHInjection(injection regionopenapi.SshInjection) *ServerPayloadBuilder {
+	b.server.Spec.SshInjection = ptr.To(injection)
+
+	return b
+}
+
 // Build returns the typed ServerV2Create struct.
 func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
 	return b.server
+}
+
+// VolumePayloadBuilder builds VolumeV2Create payloads for testing.
+type VolumePayloadBuilder struct {
+	volume regionopenapi.VolumeV2Create
+}
+
+// NewVolumePayload creates a builder for a block storage volume anchored to a network.
+func NewVolumePayload(networkID, volumeClassID string) *VolumePayloadBuilder {
+	return &VolumePayloadBuilder{
+		volume: regionopenapi.VolumeV2Create{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: UniqueName("volume"),
+			},
+			Spec: regionopenapi.VolumeV2Spec{
+				NetworkId:     idstest.MustParseNetworkID(networkID),
+				SizeGiB:       1,
+				VolumeClassId: volumeClassID,
+			},
+		},
+	}
+}
+
+// Build returns the typed VolumeV2Create struct.
+func (b *VolumePayloadBuilder) Build() regionopenapi.VolumeV2Create {
+	return b.volume
 }
 
 // ServerUpdatePayloadBuilder builds ServerV2Update payloads for testing.
@@ -703,6 +748,14 @@ func WaitForFileStorageGone(c *APIClient, ctx context.Context, filestorageID str
 	})
 }
 
+// WaitForVolumeGone polls until the volume has been deleted.
+func WaitForVolumeGone(c *APIClient, ctx context.Context, volumeID string) {
+	waitForResourceGone("volume", volumeID, func() error {
+		_, err := c.GetVolume(ctx, volumeID)
+		return err
+	})
+}
+
 // WaitForSecurityGroupGone polls until the security group has been deleted.
 func WaitForSecurityGroupGone(c *APIClient, ctx context.Context, securityGroupID string) {
 	waitForResourceGone("security group", securityGroupID, func() error {
@@ -811,6 +864,10 @@ func MustCreateServer(c *APIClient, ctx context.Context, createReq regionopenapi
 // MustDeleteServer deletes the server and waits for it to disappear. A missing server is
 // treated as already deleted.
 func MustDeleteServer(c *APIClient, ctx context.Context, serverID string) {
+	if serverID == "" {
+		return
+	}
+
 	err := c.DeleteServer(ctx, serverID)
 
 	switch {
@@ -820,5 +877,39 @@ func MustDeleteServer(c *APIClient, ctx context.Context, serverID string) {
 		// Already gone; nothing to wait for.
 	default:
 		Expect(err).NotTo(HaveOccurred(), "cleanup delete server %s", serverID)
+	}
+}
+
+// MustCreateVolume creates a volume and returns it with a cleanup function the caller
+// should register immediately. It does not wait for provider provisioning.
+func MustCreateVolume(c *APIClient, ctx context.Context, createReq regionopenapi.VolumeV2Create) (*regionopenapi.VolumeV2Read, func()) {
+	created, err := c.CreateVolume(ctx, createReq)
+	Expect(err).NotTo(HaveOccurred(), "failed to create volume")
+	Expect(created).NotTo(BeNil())
+	Expect(created.Metadata.Id).NotTo(BeEmpty())
+
+	cleanup := func() {
+		MustDeleteVolume(c, ctx, created.Metadata.Id)
+	}
+
+	return created, cleanup
+}
+
+// MustDeleteVolume deletes the volume and waits for it to disappear. A missing volume
+// is treated as already deleted.
+func MustDeleteVolume(c *APIClient, ctx context.Context, volumeID string) {
+	if volumeID == "" {
+		return
+	}
+
+	err := c.DeleteVolume(ctx, volumeID)
+
+	switch {
+	case err == nil:
+		WaitForVolumeGone(c, ctx, volumeID)
+	case errors.Is(err, coreclient.ErrResourceNotFound):
+		// Already gone; nothing to wait for.
+	default:
+		Expect(err).NotTo(HaveOccurred(), "cleanup delete volume %s", volumeID)
 	}
 }
