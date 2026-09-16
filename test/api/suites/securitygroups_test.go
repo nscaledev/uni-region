@@ -45,7 +45,9 @@ var _ = Describe("SecurityGroup", func() {
 		var createReq regionopenapi.SecurityGroupV2Create
 
 		BeforeAll(func() {
-			Expect(config.FakeRegionID).NotTo(BeEmpty(), "FAKE_TEST_REGION_ID must be configured for Fake DC tests")
+			if config.FakeRegionID == "" {
+				Skip("FAKE_TEST_REGION_ID not configured; skipping Fake DC tests")
+			}
 			fakeRegionID = config.FakeRegionID
 
 			network, err := regionClient.CreateNetwork(ctx, api.NewNetworkPayload(config.OrgID, config.ProjectID, fakeRegionID).Build())
