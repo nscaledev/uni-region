@@ -1,5 +1,5 @@
-//go:build e2e
-// +build e2e
+//go:build integration
+// +build integration
 
 /*
 Copyright 2026 Nscale.
@@ -33,18 +33,15 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
-const (
-	fakeDCVolumeClassID = "b74ca25f-1a74-41e7-8d2a-c58b7fa03516"
-	fakeDCVolumeSizeGiB = int64(1)
-)
+const fakeDCVolumeSizeGiB = int64(1)
 
-var _ = Describe("Block storage volume", func() {
+var _ = Describe("Block Storage", func() {
 	Context("When using the Fake Data Center", func() {
 		Describe("Given an attachable volume class and an existing network", func() {
-			It("provisions a volume and attaches it to a running server", Label("slow", "fake-dc"), func() {
-				if config.FakeRegionID == "" || config.FakeNetworkID == "" ||
+			It("provisions a volume and attaches it to a running server", Label("fake-dc"), func() {
+				if config.FakeRegionID == "" || config.FakeNetworkID == "" || config.FakeVolumeClassID == "" ||
 					config.FakeServerFlavorID == "" || config.FakeServerImageID == "" {
-					Skip("Fake DC region, network, server flavor, and server image configuration are required")
+					Skip("Fake DC region, network, volume class, server flavor, and server image configuration are required")
 				}
 				api.SkipUnlessInternalAPIConfigured(regionClient)
 
@@ -53,14 +50,14 @@ var _ = Describe("Block storage volume", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				classIndex := slices.IndexFunc(volumeClasses, func(class regionopenapi.VolumeClassV2Read) bool {
-					return class.Metadata.Id == fakeDCVolumeClassID
+					return class.Metadata.Id == config.FakeVolumeClassID
 				})
 				Expect(classIndex).To(BeNumerically(">=", 0), "expected Fake DC volume class was not advertised")
 				Expect(volumeClasses[classIndex].Spec.SupportedFlavorIds).NotTo(BeNil())
 				Expect(*volumeClasses[classIndex].Spec.SupportedFlavorIds).To(ContainElement(idstest.MustParseFlavorID(config.FakeServerFlavorID)))
 
 				By("creating and provisioning a block storage volume")
-				volumeReq := api.NewVolumePayload(config.FakeNetworkID, fakeDCVolumeClassID).Build()
+				volumeReq := api.NewVolumePayload(config.FakeNetworkID, config.FakeVolumeClassID).Build()
 				volume, cleanupVolume := api.MustCreateVolume(regionClient, ctx, volumeReq)
 				DeferCleanup(cleanupVolume)
 

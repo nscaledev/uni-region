@@ -159,12 +159,6 @@ Server lifecycle tests also require `TEST_SERVER_FLAVOR_ID` and
 target region. The tests skip rather than selecting arbitrary inventory when
 those values are absent.
 
-Fake Data Center volume attachment coverage uses its own
-`FAKE_TEST_SERVER_FLAVOR_ID` and `FAKE_TEST_SERVER_IMAGE_ID` pair. The flavor
-must be a virtual-machine flavor supported by the advertised VolumeClass;
-Ironic bare-metal flavors without Cinder storage connectors cannot attach the
-test volume.
-
 The infrastructure placement test additionally requires
 `TEST_SERVER_INFRASTRUCTURE_REF`. For local OpenStack or DevStack runs, use
 `hack/openstack/configure-server` to create or reuse a fake baremetal node and

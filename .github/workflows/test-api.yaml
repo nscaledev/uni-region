@@ -36,6 +36,7 @@ on:
           - 'Image Discovery'
           - 'External Network Discovery'
           - 'File Storage Management'
+          - 'Block Storage'
           - 'Network Management'
           - 'SecurityGroup'
           - 'LoadBalancer'
@@ -117,6 +118,9 @@ jobs:
       TEST_NETWORK_ID: ${{ vars.DEV_TEST_NETWORK_ID }}
       FAKE_TEST_REGION_ID: ${{ vars.DEV_FAKE_TEST_REGION_ID }}
       FAKE_TEST_NETWORK_ID: ${{ vars.DEV_FAKE_TEST_NETWORK_ID }}
+      FAKE_TEST_VOLUME_CLASS_ID: ${{ vars.DEV_FAKE_TEST_VOLUME_CLASS_ID }}
+      FAKE_TEST_SERVER_FLAVOR_ID: ${{ vars.DEV_FAKE_TEST_SERVER_FLAVOR_ID }}
+      FAKE_TEST_SERVER_IMAGE_ID: ${{ vars.DEV_FAKE_TEST_SERVER_IMAGE_ID }}
       TEST_PRIVATE_REGION_ID: ${{ vars.DEV_TEST_PRIVATE_REGION_ID }}
       TEST_SECONDARY_ORG_ID: ${{ vars.DEV_TEST_SECONDARY_ORG_ID }}
       TEST_SECONDARY_PROJECT_ID: ${{ vars.DEV_TEST_SECONDARY_PROJECT_ID }}
@@ -240,6 +244,9 @@ jobs:
       TEST_NETWORK_ID: ${{ vars.UAT_TEST_NETWORK_ID }}
       FAKE_TEST_REGION_ID: ${{ vars.UAT_FAKE_TEST_REGION_ID }}
       FAKE_TEST_NETWORK_ID: ${{ vars.UAT_FAKE_TEST_NETWORK_ID }}
+      FAKE_TEST_VOLUME_CLASS_ID: ${{ vars.UAT_FAKE_TEST_VOLUME_CLASS_ID }}
+      FAKE_TEST_SERVER_FLAVOR_ID: ${{ vars.UAT_FAKE_TEST_SERVER_FLAVOR_ID }}
+      FAKE_TEST_SERVER_IMAGE_ID: ${{ vars.UAT_FAKE_TEST_SERVER_IMAGE_ID }}
       TEST_PRIVATE_REGION_ID: ${{ vars.UAT_TEST_PRIVATE_REGION_ID }}
       TEST_SECONDARY_ORG_ID: ${{ vars.UAT_TEST_SECONDARY_ORG_ID }}
       TEST_SECONDARY_PROJECT_ID: ${{ vars.UAT_TEST_SECONDARY_PROJECT_ID }}
@@ -259,6 +266,34 @@ jobs:
 
     - name: Touch
       run: make touch
+
+    - name: Import internal API credentials from Vault
+      # Pinned SHA matches hashicorp/vault-action v4.0.0.
+      uses: hashicorp/vault-action@892a26828f195e65540a40b4768ae4571f51ebfc
+      with:
+        url: https://vault.nscale.com
+        method: jwt
+        path: jwt-github-actions
+        role: uni-region-e2e
+        jwtGithubAudience: https://vault.nscale.com
+        secrets: >-
+          cloud-native/data/europe-west2/nks-stg/e2e/uat-test-runner/client-tls cert | UAT_INTERNAL_API_CLIENT_CERT ;
+          cloud-native/data/europe-west2/nks-stg/e2e/uat-test-runner/client-tls key | UAT_INTERNAL_API_CLIENT_KEY
+
+    - name: Write internal API credentials
+      run: |
+        : "${UAT_INTERNAL_API_CLIENT_CERT:?UAT_INTERNAL_API_CLIENT_CERT is required}"
+        : "${UAT_INTERNAL_API_CLIENT_KEY:?UAT_INTERNAL_API_CLIENT_KEY is required}"
+
+        cert_path="${RUNNER_TEMP}/uat-internal-api-client.crt"
+        key_path="${RUNNER_TEMP}/uat-internal-api-client.key"
+
+        printf '%s\n' "$UAT_INTERNAL_API_CLIENT_CERT" > "$cert_path"
+        printf '%s\n' "$UAT_INTERNAL_API_CLIENT_KEY" > "$key_path"
+        chmod 600 "$cert_path" "$key_path"
+
+        echo "INTERNAL_API_CLIENT_CERT=$cert_path" >> "$GITHUB_ENV"
+        echo "INTERNAL_API_CLIENT_KEY=$key_path" >> "$GITHUB_ENV"
 
     - name: Run API Tests
       if: github.event.inputs.focus == '' || github.event.inputs.focus == 'All'
