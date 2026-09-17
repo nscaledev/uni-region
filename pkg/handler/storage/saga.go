@@ -249,6 +249,10 @@ func (s *updateSaga) validateRequest(ctx context.Context) error {
 		if err := validateSnapshotPolicyList(s.request.Spec.SnapshotPolicies); err != nil {
 			return err
 		}
+
+		if err := validateSnapshotPolicyProtectedPaths(s.current.Spec.SnapshotPolicies, s.request.Spec.SnapshotPolicies); err != nil {
+			return err
+		}
 	}
 
 	return nil

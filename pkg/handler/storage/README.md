@@ -70,7 +70,9 @@ accounting meet.
 - Snapshot policy `name` is the stable identity key for user-managed policies.
   Create requests with omitted or empty `snapshotPolicies` store no
   user-managed policies, and non-empty create lists store exactly the caller
-  list.
+  list. `protectedPath` is an optional canonical relative path; omission protects
+  the File Storage root. It is immutable while a policy retains its name, though
+  its schedule and retention remain mutable.
 - `defaultSnapshotProtectionEnabled` controls the hidden platform-managed
   baseline. It defaults to enabled when omitted on create, is preserved when
   omitted on update, rejects null, and is the authoritative public desired state.
@@ -87,17 +89,19 @@ accounting meet.
   default protection is enabled.
 - Parent File Storage update preserves existing user-managed snapshot policies
   when `snapshotPolicies` is omitted, clears them when the list is
-  empty, and replaces them when the list is non-empty.
+  empty, and replaces them when the list is non-empty. A replacement entry whose
+  name already exists must retain its `protectedPath`; attempting to add, remove,
+  or change that path is rejected with `422 Unprocessable Content`.
 - Snapshot policy mutations use File Storage authorization, are blocked while
   the parent File Storage object is deleting, and mutate only the parent inline
   desired-state list.
 - Snapshot policy primitive constraints (name pattern and the provider-safe
-  19-character limit, the four-policy caller maximum, retention, and per-field
-  schedule values) are enforced by the OpenAPI schema through the
-  request-validation middleware before the handler runs. The handler validates
-  only the rules the schema cannot express: rejecting duplicate policy names, the
-  reserved `system-default` name, and invalid schedule shapes (the interval/field
-  combinations). The four-policy limit
+  19-character limit, the four-policy caller maximum, optional protected-path
+  shape, retention, and per-field schedule values) are enforced by the OpenAPI
+  schema through the request-validation middleware before the handler runs. The
+  handler validates rules the schema cannot express: rejecting protected-path
+  traversal components, duplicate policy names, the reserved `system-default`
+  name, and invalid schedule shapes (the interval/field combinations). The four-policy limit
   is caller-facing; the stored CRD list allows a fifth entry for the materialized
   hidden `system-default` baseline, which never counts against the caller maximum.
 - Update preserves the existing allocation annotation while mutating the storage
