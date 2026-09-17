@@ -73,6 +73,13 @@ continue to be passed directly through many provider interface methods.
 - `UpdateVolumeState` distinguishes absence, failed reads, and observed lifecycle
   truth. Providers own status mapping and missing-volume semantics; read and
   validation failures are returned so monitors preserve the last state.
+- `ServerObserver` is the batched half of server observation. `ObserveServers`
+  takes one provider read of an identity's whole project and returns an observer
+  whose `Observe` projects it onto individual servers, so a caller with many
+  servers to observe pays one read rather than one per server. It is observation
+  only: an observation may refuse an action but never authorise one, so an
+  actuation decision keeps `UpdateServerState`, which takes its own fresh
+  per-server read at decision time. Both reach the same projection.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by

@@ -513,6 +513,10 @@ func (p *Provider) UpdateServerState(_ context.Context, _ *unikornv1.Identity, _
 	return unsupported("UpdateServerState")
 }
 
+func (p *Provider) ObserveServers(_ context.Context, _ *unikornv1.Identity) (types.ServerObserver, error) {
+	return nil, unsupported("ObserveServers")
+}
+
 func (p *Provider) CreateConsoleSession(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) (string, error) {
 	return "", unsupported("CreateConsoleSession")
 }
