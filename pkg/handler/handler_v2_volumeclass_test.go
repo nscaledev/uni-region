@@ -33,6 +33,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	regionhandler "github.com/unikorn-cloud/region/pkg/handler/region"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -198,7 +199,7 @@ func TestVolumeClassV2ReturnsEmptyListWithoutRegions(t *testing.T) {
 	}
 }
 
-func TestVolumeClassV2ReturnsServerErrorForProviderFailures(t *testing.T) {
+func TestVolumeClassV2ReturnsServerErrorForFilteredProviderFailures(t *testing.T) {
 	t.Parallel()
 
 	const regionID = "88888888-8888-4888-a888-888888888888"
@@ -228,12 +229,97 @@ func TestVolumeClassV2ReturnsServerErrorForProviderFailures(t *testing.T) {
 			fixture := newVolumeClassV2TestFixture(t, newVolumeClassTestRegion(regionID, nil))
 			test.setup(fixture)
 
-			response := fixture.get(volumeClassReadContext(t.Context()), openapi.GetApiV2VolumeclassesParams{})
+			params := openapi.GetApiV2VolumeclassesParams{
+				RegionID: ptr.To(openapi.RegionIDQueryParameter{regionID}),
+			}
+			response := fixture.get(volumeClassReadContext(t.Context()), params)
 			result := requireVolumeClassErrorResponse(t, response)
 
 			require.Equal(t, coreapi.ServerError, result.Error)
 		})
 	}
+}
+
+func TestVolumeClassV2SkipsProviderFailuresWithoutRegionFilters(t *testing.T) {
+	t.Parallel()
+
+	const (
+		failedRegionID  = "88888888-8888-4888-a888-888888888888"
+		healthyRegionID = "99999999-9999-4999-a999-999999999999"
+		volumeClassID   = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+	)
+
+	tests := []struct {
+		name  string
+		setup func(*volumeClassV2TestFixture)
+	}{
+		{
+			name: "provider lookup fails",
+			setup: func(fixture *volumeClassV2TestFixture) {
+				fixture.expectProviderLookupError(failedRegionID, errVolumeClassProvider)
+			},
+		},
+		{
+			name: "provider inventory fails",
+			setup: func(fixture *volumeClassV2TestFixture) {
+				fixture.expectVolumeClasses(failedRegionID, nil, errVolumeClassProvider)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newVolumeClassV2TestFixture(
+				t,
+				newVolumeClassTestRegion(failedRegionID, nil),
+				newVolumeClassTestRegion(healthyRegionID, nil),
+			)
+			test.setup(fixture)
+			fixture.expectVolumeClasses(healthyRegionID, types.VolumeClassList{
+				{ID: volumeClassID, Name: "available-class"},
+			}, nil)
+
+			response := fixture.get(volumeClassReadContext(t.Context()), openapi.GetApiV2VolumeclassesParams{})
+			result := requireVolumeClassListResponse(t, response)
+
+			require.Len(t, result, 1)
+			require.Equal(t, volumeClassID, result[0].Metadata.Id)
+			require.Equal(t, healthyRegionID, result[0].Spec.RegionId.String())
+		})
+	}
+}
+
+func TestVolumeClassV2PropagatesCancellationWithoutRegionFilters(t *testing.T) {
+	t.Parallel()
+
+	const (
+		cancelledRegionID = "88888888-8888-4888-a888-888888888888"
+		remainingRegionID = "99999999-9999-4999-a999-999999999999"
+	)
+
+	fixture := newVolumeClassV2TestFixture(
+		t,
+		newVolumeClassTestRegion(cancelledRegionID, nil),
+		newVolumeClassTestRegion(remainingRegionID, nil),
+	)
+	ctx, cancel := context.WithCancel(volumeClassReadContext(t.Context()))
+	provider := mockprovider.NewMockCommonProvider(fixture.ctrl)
+	provider.EXPECT().VolumeClasses(gomock.Any()).DoAndReturn(func(context.Context) (types.VolumeClassList, error) {
+		cancel()
+
+		return nil, context.Canceled
+	})
+	fixture.providers.EXPECT().LookupCommon(cancelledRegionID).Return(provider, nil)
+	fixture.providers.EXPECT().LookupCommon(remainingRegionID).Times(0)
+
+	_, err := regionhandler.NewClient(fixture.handler.ClientArgs).ListVolumeClasses(
+		ctx,
+		openapi.GetApiV2VolumeclassesParams{},
+	)
+
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestVolumeClassV2MapsProviderInventory(t *testing.T) {
