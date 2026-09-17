@@ -39,6 +39,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -212,6 +213,20 @@ func hasVolumeClassReadAccess(ctx context.Context) bool {
 	return false
 }
 
+func (c *Client) listRegionVolumeClasses(ctx context.Context, regionID string) (types.VolumeClassList, error) {
+	provider, err := c.Providers.LookupCommon(regionID)
+	if err != nil {
+		return nil, providers.ProviderToServerError(err)
+	}
+
+	volumeClasses, err := provider.VolumeClasses(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to list volume classes", err)
+	}
+
+	return volumeClasses, nil
+}
+
 func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2VolumeclassesParams) (openapi.VolumeClassListV2Read, error) {
 	regions, err := c.listRegions(ctx)
 	if err != nil {
@@ -232,14 +247,19 @@ func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2V
 			continue
 		}
 
-		provider, err := c.Providers.LookupCommon(region.Name)
+		volumeClasses, err := c.listRegionVolumeClasses(ctx, region.Name)
 		if err != nil {
-			return nil, providers.ProviderToServerError(err)
-		}
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 
-		volumeClasses, err := provider.VolumeClasses(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("%w: failed to list volume classes", err)
+			if params.RegionID == nil {
+				log.FromContext(ctx).Error(err, "volume class discovery failed, skipping region", "region", region.Name)
+
+				continue
+			}
+
+			return nil, err
 		}
 
 		regionID, err := regionids.ParseRegionID(region.Name)

@@ -67,7 +67,9 @@ when the Region publishes them. Optional minimum and maximum size bounds are
 returned in whole GiB only when configured by the Region operator. A non-empty
 `supportedFlavorIds` value is a typed Region Flavor compatibility allowlist;
 omitted or empty means Volumes of that class cannot be attached to Servers but
-does not prevent standalone Volume creation. The public contract deliberately
+does not prevent standalone Volume creation. Unfiltered discovery omits and
+logs Regions whose provider inventory is unavailable, while explicitly
+selected Region failures fail the request. The public contract deliberately
 contains no Cinder, storage-pool, or other provider-specific fields.
 
 `/api/v2/volumes` is the published lifecycle contract for project-scoped block
