@@ -1751,8 +1751,9 @@ paths:
         Update this storage. Snapshot Policies are managed as inline parent File Storage
         desired state. Omitted spec.snapshotPolicies preserves existing user-managed
         policies, an empty list clears all user-managed policies, and a non-empty list
-        replaces the full user-managed policy list. Default Snapshot Protection is
-        controlled separately by spec.defaultSnapshotProtectionEnabled.
+        replaces the full user-managed policy list. For an existing policy name,
+        protectedPath is immutable; schedule and retention may change. Default Snapshot
+        Protection is controlled separately by spec.defaultSnapshotProtectionEnabled.
       summary: Update file storage
       tags:
       - File storage
@@ -3929,6 +3930,11 @@ components:
           type: string
           maxLength: 19
           pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+        protectedPath:
+          description: Optional relative path protected by this policy. Omission protects the File Storage root. It is immutable for an existing policy name.
+          type: string
+          maxLength: 1024
+          pattern: '^([^/]+/)*[^/]+$'
         schedule:
           $ref: '#/components/schemas/storageSnapshotScheduleV2Spec'
         retention:
