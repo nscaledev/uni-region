@@ -96,6 +96,41 @@ func (e *Endpoints) ListFileStorageClasses(regionID string) string {
 		url.QueryEscape(regionID))
 }
 
+// ListVolumeClasses returns the endpoint for listing block storage volume classes.
+func (e *Endpoints) ListVolumeClasses(regionID string) string {
+	return fmt.Sprintf("/api/v2/volumeclasses?regionID=%s",
+		url.QueryEscape(regionID))
+}
+
+// ListVolumes returns the endpoint for listing block storage volumes.
+func (e *Endpoints) ListVolumes(orgID, projectID, regionID, networkID string) string {
+	values := url.Values{}
+	values.Set("organizationID", orgID)
+	values.Set("projectID", projectID)
+	values.Set("regionID", regionID)
+
+	if networkID != "" {
+		values.Set("networkID", networkID)
+	}
+
+	return fmt.Sprintf("/api/v2/volumes?%s", values.Encode())
+}
+
+// CreateVolume returns the endpoint for creating a block storage volume.
+func (e *Endpoints) CreateVolume() string {
+	return "/api/v2/volumes"
+}
+
+// GetVolume returns the endpoint for getting a specific block storage volume.
+func (e *Endpoints) GetVolume(volumeID string) string {
+	return fmt.Sprintf("/api/v2/volumes/%s", url.PathEscape(volumeID))
+}
+
+// DeleteVolume returns the endpoint for deleting a specific block storage volume.
+func (e *Endpoints) DeleteVolume(volumeID string) string {
+	return fmt.Sprintf("/api/v2/volumes/%s", url.PathEscape(volumeID))
+}
+
 // ListNetworks returns the endpoint for listing networks in a project.
 func (e *Endpoints) ListNetworks(orgID, projectID, regionID string) string {
 	return fmt.Sprintf("/api/v2/networks?organizationID=%s&projectID=%s&regionID=%s",

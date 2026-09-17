@@ -33,6 +33,9 @@ type TestConfig struct {
 	RegionID                string
 	FakeRegionID            string
 	FakeNetworkID           string
+	FakeVolumeClassID       string
+	FakeServerFlavorID      string
+	FakeServerImageID       string
 	PrivateRegionID         string
 	SecondaryOrgID          string
 	SecondaryProjectID      string
@@ -99,6 +102,9 @@ func LoadTestConfig() (*TestConfig, error) {
 		RegionID:                v.GetString("TEST_REGION_ID"),
 		FakeRegionID:            v.GetString("FAKE_TEST_REGION_ID"),
 		FakeNetworkID:           v.GetString("FAKE_TEST_NETWORK_ID"),
+		FakeVolumeClassID:       v.GetString("FAKE_TEST_VOLUME_CLASS_ID"),
+		FakeServerFlavorID:      v.GetString("FAKE_TEST_SERVER_FLAVOR_ID"),
+		FakeServerImageID:       v.GetString("FAKE_TEST_SERVER_IMAGE_ID"),
 		PrivateRegionID:         v.GetString("TEST_PRIVATE_REGION_ID"),
 		SecondaryOrgID:          v.GetString("TEST_SECONDARY_ORG_ID"),
 		SecondaryProjectID:      v.GetString("TEST_SECONDARY_PROJECT_ID"),

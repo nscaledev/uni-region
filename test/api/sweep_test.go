@@ -39,6 +39,9 @@ var _ = Describe("Stale test resource sweep", func() {
 					serverID      = "server-1"
 					fileStorageID = "filestorage-1"
 					networkID     = "network-1"
+					orgID         = "org-1"
+					projectID     = "project-1"
+					regionID      = "region-1"
 				)
 
 				var serverDeleted atomic.Bool
@@ -46,11 +49,12 @@ var _ = Describe("Stale test resource sweep", func() {
 				var networkDeleteCalls atomic.Int32
 
 				created := time.Now().Add(-StaleTestResourceTTL - time.Hour).UTC()
+				endpoints := NewEndpoints()
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					defer GinkgoRecover()
 
 					switch {
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/servers":
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListServers(orgID, projectID, regionID, ""):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{{
 							"metadata": map[string]any{
 								"id":           serverID,
@@ -58,13 +62,13 @@ var _ = Describe("Stale test resource sweep", func() {
 								"creationTime": created,
 							},
 						}})).To(Succeed())
-					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/servers/"+serverID:
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteServer(serverID):
 						serverDeleted.Store(true)
 						w.WriteHeader(http.StatusAccepted)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/servers/"+serverID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetServer(serverID):
 						Expect(serverDeleted.Load()).To(BeTrue())
 						w.WriteHeader(http.StatusNotFound)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/filestorage":
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListFileStorage(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{{
 							"metadata": map[string]any{
 								"id":           fileStorageID,
@@ -72,14 +76,16 @@ var _ = Describe("Stale test resource sweep", func() {
 								"creationTime": created,
 							},
 						}})).To(Succeed())
-					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/filestorage/"+fileStorageID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListVolumes(orgID, projectID, regionID, ""):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteFileStorage(fileStorageID):
 						Expect(serverDeleted.Load()).To(BeTrue())
 						fileStorageDeleted.Store(true)
 						w.WriteHeader(http.StatusAccepted)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/filestorage/"+fileStorageID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetFileStorage(fileStorageID):
 						Expect(fileStorageDeleted.Load()).To(BeTrue())
 						w.WriteHeader(http.StatusNotFound)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks":
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{{
 							"metadata": map[string]any{
 								"id":           networkID,
@@ -87,14 +93,14 @@ var _ = Describe("Stale test resource sweep", func() {
 								"creationTime": created,
 							},
 						}})).To(Succeed())
-					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/networks/"+networkID:
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteNetwork(networkID):
 						networkDeleteCalls.Add(1)
 						if !fileStorageDeleted.Load() {
 							w.WriteHeader(http.StatusForbidden)
 							return
 						}
 						w.WriteHeader(http.StatusAccepted)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks/"+networkID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetNetwork(networkID):
 						w.WriteHeader(http.StatusNotFound)
 					default:
 						w.WriteHeader(http.StatusNotFound)
@@ -108,9 +114,9 @@ var _ = Describe("Stale test resource sweep", func() {
 						RequestTimeout: time.Second,
 					},
 					RegionBaseURL:   server.URL,
-					OrgID:           "org-1",
-					ProjectID:       "project-1",
-					RegionID:        "region-1",
+					OrgID:           orgID,
+					ProjectID:       projectID,
+					RegionID:        regionID,
 					InternalAPICert: "configured",
 					InternalAPIKey:  "configured",
 				})
@@ -128,16 +134,22 @@ var _ = Describe("Stale test resource sweep", func() {
 	Context("When another sweep deletes a listed resource first", func() {
 		Describe("Given the stale resource no longer exists at deletion time", func() {
 			It("treats the concurrent deletion as successful", func() {
-				const fileStorageID = "filestorage-1"
+				const (
+					fileStorageID = "filestorage-1"
+					orgID         = "org-1"
+					projectID     = "project-1"
+					regionID      = "region-1"
+				)
 
 				var deleteCalls atomic.Int32
 
 				created := time.Now().Add(-StaleTestResourceTTL - time.Hour).UTC()
+				endpoints := NewEndpoints()
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					defer GinkgoRecover()
 
 					switch {
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/filestorage":
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListFileStorage(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{{
 							"metadata": map[string]any{
 								"id":           fileStorageID,
@@ -145,12 +157,14 @@ var _ = Describe("Stale test resource sweep", func() {
 								"creationTime": created,
 							},
 						}})).To(Succeed())
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks":
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
-					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/filestorage/"+fileStorageID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListVolumes(orgID, projectID, regionID, ""):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteFileStorage(fileStorageID):
 						deleteCalls.Add(1)
 						w.WriteHeader(http.StatusNotFound)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/filestorage/"+fileStorageID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetFileStorage(fileStorageID):
 						w.WriteHeader(http.StatusNotFound)
 					default:
 						w.WriteHeader(http.StatusNotFound)
@@ -164,9 +178,9 @@ var _ = Describe("Stale test resource sweep", func() {
 						RequestTimeout: time.Second,
 					},
 					RegionBaseURL: server.URL,
-					OrgID:         "org-1",
-					ProjectID:     "project-1",
-					RegionID:      "region-1",
+					OrgID:         orgID,
+					ProjectID:     projectID,
+					RegionID:      regionID,
 				})
 
 				SweepStaleTestResources(client, context.Background(), client.config)
@@ -175,25 +189,60 @@ var _ = Describe("Stale test resource sweep", func() {
 		})
 	})
 
-	Context("When Fake DC security group and network fixtures are stale", func() {
+	Context("When Fake DC resources are stale", func() {
 		Describe("Given a Fake DC region is configured", func() {
-			It("deletes the security group before its network in the Fake DC region", func() {
+			It("deletes dependents before their network in the Fake DC region", func() {
 				const (
 					fakeRegionID    = "fake-region-1"
+					serverID        = "server-1"
+					volumeID        = "volume-1"
 					securityGroupID = "security-group-1"
 					networkID       = "network-1"
+					orgID           = "org-1"
+					projectID       = "project-1"
 				)
 
+				var serverDeleted atomic.Bool
+				var volumeDeleted atomic.Bool
 				var securityGroupDeleted atomic.Bool
 				var networkDeleted atomic.Bool
 
 				created := time.Now().Add(-StaleTestResourceTTL - time.Hour).UTC()
+				endpoints := NewEndpoints()
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					defer GinkgoRecover()
 
 					switch {
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks":
-						Expect(r.URL.Query().Get("regionID")).To(Equal(fakeRegionID))
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListServers(orgID, projectID, fakeRegionID, ""):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{
+								"id":           serverID,
+								"name":         "ginkgo-test-server-12345678",
+								"creationTime": created,
+							},
+						}})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteServer(serverID):
+						serverDeleted.Store(true)
+						w.WriteHeader(http.StatusAccepted)
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetServer(serverID):
+						Expect(serverDeleted.Load()).To(BeTrue())
+						w.WriteHeader(http.StatusNotFound)
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListVolumes(orgID, projectID, fakeRegionID, ""):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{
+								"id":           volumeID,
+								"name":         "ginkgo-test-volume-12345678",
+								"creationTime": created,
+							},
+						}})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteVolume(volumeID):
+						Expect(serverDeleted.Load()).To(BeTrue())
+						volumeDeleted.Store(true)
+						w.WriteHeader(http.StatusAccepted)
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetVolume(volumeID):
+						Expect(volumeDeleted.Load()).To(BeTrue())
+						w.WriteHeader(http.StatusNotFound)
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, fakeRegionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{{
 							"metadata": map[string]any{
 								"id":           networkID,
@@ -201,8 +250,7 @@ var _ = Describe("Stale test resource sweep", func() {
 								"creationTime": created,
 							},
 						}})).To(Succeed())
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/securitygroups":
-						Expect(r.URL.Query().Get("regionID")).To(Equal(fakeRegionID))
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListSecurityGroups(orgID, projectID, fakeRegionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{{
 							"metadata": map[string]any{
 								"id":           securityGroupID,
@@ -210,21 +258,22 @@ var _ = Describe("Stale test resource sweep", func() {
 								"creationTime": created,
 							},
 						}})).To(Succeed())
-					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/securitygroups/"+securityGroupID:
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteSecurityGroup(securityGroupID):
+						Expect(volumeDeleted.Load()).To(BeTrue())
 						securityGroupDeleted.Store(true)
 						w.WriteHeader(http.StatusAccepted)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/securitygroups/"+securityGroupID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetSecurityGroup(securityGroupID):
 						Expect(securityGroupDeleted.Load()).To(BeTrue())
 						w.WriteHeader(http.StatusNotFound)
-					case r.Method == http.MethodDelete && r.URL.Path == "/api/v2/networks/"+networkID:
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteNetwork(networkID):
 						Expect(securityGroupDeleted.Load()).To(BeTrue())
 						networkDeleted.Store(true)
 						w.WriteHeader(http.StatusAccepted)
-					case r.Method == http.MethodGet && r.URL.Path == "/api/v2/networks/"+networkID:
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetNetwork(networkID):
 						Expect(networkDeleted.Load()).To(BeTrue())
 						w.WriteHeader(http.StatusNotFound)
 					default:
-						Fail("Fake DC sweep must only request security group and network endpoints")
+						Fail("Fake DC sweep requested an unexpected endpoint")
 					}
 				}))
 				DeferCleanup(server.Close)
@@ -234,14 +283,19 @@ var _ = Describe("Stale test resource sweep", func() {
 						BaseURL:        server.URL,
 						RequestTimeout: time.Second,
 					},
-					RegionBaseURL: server.URL,
-					OrgID:         "org-1",
-					ProjectID:     "project-1",
-					RegionID:      "normal-region-1",
-					FakeRegionID:  fakeRegionID,
+					RegionBaseURL:   server.URL,
+					OrgID:           orgID,
+					ProjectID:       projectID,
+					RegionID:        "normal-region-1",
+					FakeRegionID:    fakeRegionID,
+					InternalAPICert: "configured",
+					InternalAPIKey:  "configured",
 				})
+				client.internalRegionHTTPClient = server.Client()
 
 				SweepStaleFakeDataCenterResources(client, context.Background(), client.config)
+				Expect(serverDeleted.Load()).To(BeTrue())
+				Expect(volumeDeleted.Load()).To(BeTrue())
 				Expect(securityGroupDeleted.Load()).To(BeTrue())
 				Expect(networkDeleted.Load()).To(BeTrue())
 			})
