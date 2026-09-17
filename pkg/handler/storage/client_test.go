@@ -2201,7 +2201,8 @@ func TestGetRoundTripsStoredSnapshotPolicies(t *testing.T) {
 			},
 			SnapshotPolicies: []regionv1.FileStorageSnapshotPolicy{
 				{
-					Name: "hourly",
+					Name:          "hourly",
+					ProtectedPath: "applications/data",
 					Schedule: regionv1.FileStorageSnapshotPolicySchedule{
 						Interval: regionv1.FileStorageSnapshotPolicyIntervalHourly,
 					},
@@ -2219,7 +2220,8 @@ func TestGetRoundTripsStoredSnapshotPolicies(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, &openapi.StorageSnapshotPolicyListV2Spec{
 		{
-			Name: "hourly",
+			Name:          "hourly",
+			ProtectedPath: ptr.To("applications/data"),
 			Schedule: openapi.StorageSnapshotScheduleV2Spec{
 				Interval: openapi.StorageSnapshotScheduleIntervalV2Hourly,
 			},
