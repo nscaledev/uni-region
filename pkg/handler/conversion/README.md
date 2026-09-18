@@ -35,6 +35,17 @@ Flavor, leaves the required creation timestamp at its zero value because the
 provider-neutral inventory has no creation-time source. Nil capacity bounds and
 empty Flavor allowlists remain absent from JSON responses.
 
+Flavor conversion also carries optional InfiniBand metadata, following the same
+operator-authored augmentation pattern as GPU: when a flavor's
+`types.Flavor.InfiniBand` is set the mapping exposes it as
+`openapi.Flavor.Spec.InfiniBand`, so consumers can see how many InfiniBand ports
+the flavor offers (ports, not host channel adapters — one HCA can present one or
+two ports). Operators populate it per flavor under
+`Region.Spec.Openstack.Compute.Flavors.Metadata[].infiniBand.portCount`, which
+must be at least 1 (enforced by both the CRD and the published schema); a nil
+`InfiniBand` omits `infiniBand` from the response and leaves the pre-existing
+flavor shape unchanged.
+
 That is why the package may look under-populated at first glance: the
 abstraction line is broader than the current amount of code, but the shape is
 coherent.
