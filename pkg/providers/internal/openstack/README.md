@@ -290,10 +290,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - Cinder volumes use `volume-{Region Volume UUID}` inside the service
     principal's project; create, delete, observation, attach, and detach
     rediscover that exact name
-  - server metadata is written deliberately as both a control-plane lookup aid
+  - server metadata uses namespaced keys as both a control-plane lookup aid
     and an in-guest linkage surface exposed through the metadata service
-  - legacy camelCase server metadata keys remain frozen for backwards
-    compatibility while newer namespaced keys provide the upgrade path
 - Cinder Volume create/delete and observation are project-scoped lifecycle
   operations:
   - the Region Volume controller resolves the full cloud provider and drives
