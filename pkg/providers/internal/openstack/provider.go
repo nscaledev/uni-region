@@ -2710,17 +2710,65 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		return port, nil
 	}
 
-	// TODO: we should only do this when the security groups or address pairs differ.
-	log.V(1).Info("updating port")
+	if serverPortRequiresUpdate(port, securityGroupIDs, addressPairs) {
+		log.V(1).Info("updating port")
 
-	port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
-	if err != nil {
-		return nil, err
+		port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
 
 	return port, nil
+}
+
+func sliceSetsEqual[T comparable](a, b []T) bool {
+	aSet := make(map[T]struct{}, len(a))
+	for _, value := range a {
+		aSet[value] = struct{}{}
+	}
+
+	bSet := make(map[T]struct{}, len(b))
+	for _, value := range b {
+		bSet[value] = struct{}{}
+	}
+
+	return maps.Equal(aSet, bSet)
+}
+
+func allowedAddressPairSetsEqual(portMAC string, a, b []ports.AddressPair) bool {
+	normalize := func(pairs []ports.AddressPair) map[ports.AddressPair]struct{} {
+		result := make(map[ports.AddressPair]struct{}, len(pairs))
+
+		for _, pair := range pairs {
+			// Neutron fills an omitted allowed-address-pair MAC with the
+			// port's MAC in its response, so compare the effective value.
+			if pair.MACAddress == "" {
+				pair.MACAddress = portMAC
+			}
+
+			// Neutron returns MAC addresses in canonical lowercase form even
+			// when the request used another valid representation. Normalize both
+			// observed and desired values with net.ParseMAC(...).String() before
+			// comparing so equivalent representations do not trigger updates.
+			if macAddress, err := net.ParseMAC(pair.MACAddress); err == nil {
+				pair.MACAddress = macAddress.String()
+			}
+
+			result[pair] = struct{}{}
+		}
+
+		return result
+	}
+
+	return maps.Equal(normalize(a), normalize(b))
+}
+
+func serverPortRequiresUpdate(port *ports.Port, securityGroupIDs []string, addressPairs []ports.AddressPair) bool {
+	return !sliceSetsEqual(port.SecurityGroups, securityGroupIDs) ||
+		!allowedAddressPairSetsEqual(port.MACAddress, port.AllowedAddressPairs, addressPairs)
 }
 
 func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
