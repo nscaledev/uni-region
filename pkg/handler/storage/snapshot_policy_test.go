@@ -137,12 +137,119 @@ func TestValidateSnapshotPolicyListSemanticRules(t *testing.T) {
 			})},
 			wantError: true,
 		},
+		{
+			name: "protected path rejects traversal components",
+			policies: openapi.StorageSnapshotPolicyListV2Spec{daily(func(p *openapi.StorageSnapshotPolicyV2Spec) {
+				p.ProtectedPath = ptr.To("applications/../data")
+			})},
+			wantError: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
 			err := validateSnapshotPolicyList(&tt.policies)
 
+			if tt.wantError {
+				require.Error(t, err)
+				require.True(t, servererrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
+
+				return
+			}
+
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestValidateSnapshotPolicyProtectedPaths(t *testing.T) {
+	t.Parallel()
+
+	current := []regionv1.FileStorageSnapshotPolicy{
+		{
+			Name:          "root",
+			ProtectedPath: "",
+		},
+		{
+			Name:          "applications",
+			ProtectedPath: "applications/data",
+		},
+		{
+			Name:          systemDefaultSnapshotPolicyName,
+			ProtectedPath: "platform-managed",
+		},
+	}
+
+	for _, tt := range []struct {
+		name      string
+		requested *openapi.StorageSnapshotPolicyListV2Spec
+		wantError bool
+	}{
+		{
+			name: "omitted policies preserve the current paths",
+		},
+		{
+			name: "unchanged root path is allowed",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{
+				{Name: "root"},
+			},
+		},
+		{
+			name: "unchanged protected path is allowed",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{
+				{Name: "applications", ProtectedPath: ptr.To("applications/data")},
+			},
+		},
+		{
+			name: "schedule and retention updates retain the path",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{
+				{
+					Name:          "applications",
+					ProtectedPath: ptr.To("applications/data"),
+					Schedule: openapi.StorageSnapshotScheduleV2Spec{
+						Interval:  openapi.StorageSnapshotScheduleIntervalV2Daily,
+						TimeOfDay: ptr.To("05:00Z"),
+					},
+					Retention: openapi.StorageSnapshotRetentionV2Spec{Keep: 14},
+				},
+			},
+		},
+		{
+			name: "changing an existing protected path is rejected",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{
+				{Name: "applications", ProtectedPath: ptr.To("applications/releases")},
+			},
+			wantError: true,
+		},
+		{
+			name: "removing an existing protected path is rejected",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{
+				{Name: "applications"},
+			},
+			wantError: true,
+		},
+		{
+			name: "adding a path to an existing root policy is rejected",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{
+				{Name: "root", ProtectedPath: ptr.To("applications")},
+			},
+			wantError: true,
+		},
+		{
+			name: "new policy may choose a protected path",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{
+				{Name: "new-policy", ProtectedPath: ptr.To("releases/v1.2")},
+			},
+		},
+		{
+			name:      "removed policies may be absent from the replacement list",
+			requested: &openapi.StorageSnapshotPolicyListV2Spec{},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateSnapshotPolicyProtectedPaths(current, tt.requested)
 			if tt.wantError {
 				require.Error(t, err)
 				require.True(t, servererrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
@@ -229,7 +336,8 @@ func TestGenerateSnapshotPolicies(t *testing.T) {
 
 	policies := openapi.StorageSnapshotPolicyListV2Spec{
 		{
-			Name: "weekly",
+			Name:          "weekly",
+			ProtectedPath: ptr.To("applications/data"),
 			Schedule: openapi.StorageSnapshotScheduleV2Spec{
 				Interval:  openapi.StorageSnapshotScheduleIntervalV2Weekly,
 				TimeOfDay: ptr.To("02:30Z"),
@@ -243,7 +351,8 @@ func TestGenerateSnapshotPolicies(t *testing.T) {
 	require.Nil(t, generateSnapshotPolicies(&openapi.StorageSnapshotPolicyListV2Spec{}))
 	require.Equal(t, []regionv1.FileStorageSnapshotPolicy{
 		{
-			Name: "weekly",
+			Name:          "weekly",
+			ProtectedPath: "applications/data",
 			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
 				Interval:  regionv1.FileStorageSnapshotPolicyIntervalWeekly,
 				TimeOfDay: ptr.To("02:30Z"),
@@ -259,7 +368,8 @@ func TestConvertSnapshotPolicies(t *testing.T) {
 
 	require.Equal(t, openapi.StorageSnapshotPolicyListV2Spec{
 		{
-			Name: "monthly",
+			Name:          "monthly",
+			ProtectedPath: ptr.To("releases/v1.2"),
 			Schedule: openapi.StorageSnapshotScheduleV2Spec{
 				Interval:   openapi.StorageSnapshotScheduleIntervalV2Monthly,
 				TimeOfDay:  ptr.To("05:00Z"),
@@ -269,7 +379,8 @@ func TestConvertSnapshotPolicies(t *testing.T) {
 		},
 	}, convertSnapshotPolicies([]regionv1.FileStorageSnapshotPolicy{
 		{
-			Name: "monthly",
+			Name:          "monthly",
+			ProtectedPath: "releases/v1.2",
 			Schedule: regionv1.FileStorageSnapshotPolicySchedule{
 				Interval:   regionv1.FileStorageSnapshotPolicyIntervalMonthly,
 				TimeOfDay:  ptr.To("05:00Z"),

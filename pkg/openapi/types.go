@@ -1473,6 +1473,9 @@ type StorageSnapshotPolicyV2Spec struct {
 	// Name Stable identity key for the snapshot policy.
 	Name string `json:"name"`
 
+	// ProtectedPath Optional relative path protected by this policy. Omission protects the File Storage root. It is immutable for an existing policy name.
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+
 	// Retention Retention policy for storage snapshots.
 	Retention StorageSnapshotRetentionV2Spec `json:"retention"`
 
