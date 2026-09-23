@@ -517,6 +517,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     strict equality
   - this package therefore re-checks exact names after listing to avoid aliasing
     and false matches
+- Server port reconciliation compares the security groups and allowed address
+  pairs returned by Neutron with the desired values as unordered sets before
+  issuing an update. An omitted desired address-pair MAC is compared as the
+  port's current MAC, matching Neutron's materialized response. A converged
+  port is reused without a `PUT`, while private-IP status projection still runs.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
 
