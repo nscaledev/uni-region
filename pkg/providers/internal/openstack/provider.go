@@ -3086,6 +3086,50 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 // the unikorn:os:* image properties in v2.image.schema.json.
 const serverUserDataHashMetadataKey = "region:system:user_data_hash"
 
+// serverRebuildAttemptsMetadataKey counts the rebuilds Nova has accepted
+// toward one target, as "<count>:<target>". It is written with each rebuild,
+// so the count survives a lost status write. "0" records no attempt.
+const serverRebuildAttemptsMetadataKey = "region:system:rebuild_attempts"
+
+const maxServerRebuildAttempts = 3
+
+// serverRebuildTarget identifies what a rebuild converges onto. It uses the
+// customer user-data digest, because the submitted payload is regenerated
+// with a random MIME boundary each pass. The generation lets any spec edit
+// start a new count.
+func serverRebuildTarget(server *unikornv1.Server, desiredUserDataHash string) string {
+	return types.UserDataHash(fmt.Appendf(nil, "%d\x00%s\x00%s", server.Generation, server.Spec.Image.ID, desiredUserDataHash))
+}
+
+// serverRebuildAttempts returns the attempts Nova records toward target.
+func serverRebuildAttempts(openstackServer *servers.Server, target string) int {
+	count, recordedTarget, ok := strings.Cut(openstackServer.Metadata[serverRebuildAttemptsMetadataKey], ":")
+	if !ok || recordedTarget != target {
+		return 0
+	}
+
+	attempts, err := strconv.Atoi(count)
+	if err != nil || attempts < 0 {
+		return 0
+	}
+
+	return attempts
+}
+
+// serverRebuildAttemptsPending reports whether Nova records an attempt that
+// convergence has not yet cleared.
+func serverRebuildAttemptsPending(openstackServer *servers.Server) bool {
+	value, ok := openstackServer.Metadata[serverRebuildAttemptsMetadataKey]
+
+	return ok && value != serverRebuildAttemptsCleared
+}
+
+const serverRebuildAttemptsCleared = "0"
+
+func serverRebuildAttemptsValue(attempts int, target string) string {
+	return strconv.Itoa(attempts) + ":" + target
+}
+
 // markUserDataRecorded tells the provisioner that Nova holds the server's
 // user-data record, so it can persist the annotation the API checks.
 func markUserDataRecorded(server *unikornv1.Server) {
@@ -3128,16 +3172,18 @@ func recordLegacyUserData(ctx context.Context, client ServerInterface, openstack
 	return true, nil
 }
 
-// serverRebuildMetadata records the user data being submitted. Sending
+// serverRebuildMetadata records the user data being submitted and counts the
+// attempt. Sending
 // metadata makes Nova replace the whole set, so the existing metadata is
 // resent with it.
-func serverRebuildMetadata(openstackServer *servers.Server, desiredUserDataHash string) map[string]string {
+func serverRebuildMetadata(openstackServer *servers.Server, desiredUserDataHash, target string) map[string]string {
 	metadata := maps.Clone(openstackServer.Metadata)
 	if metadata == nil {
 		metadata = map[string]string{}
 	}
 
 	metadata[serverUserDataHashMetadataKey] = desiredUserDataHash
+	metadata[serverRebuildAttemptsMetadataKey] = serverRebuildAttemptsValue(serverRebuildAttempts(openstackServer, target)+1, target)
 
 	return metadata
 }
@@ -3224,6 +3270,35 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 	return rebuilt, provisioners.ErrYield
 }
 
+func reconcileErroredServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions, target string) (*servers.Server, error) {
+	attempts := serverRebuildAttempts(openstackServer, target)
+	if attempts == 0 {
+		return openstackServer, nil
+	}
+
+	if attempts < maxServerRebuildAttempts {
+		return submitServerRebuild(ctx, client, server, openstackServer, options)
+	}
+
+	return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+		fmt.Sprintf("the provider reports the server in an error state after %d rebuild attempts; change the image or user data, or replace the server", maxServerRebuildAttempts))
+}
+
+// clearServerRebuildAttempts records in Nova that the rebuild converged, so a
+// later unrelated ERROR cannot retry it. It reports whether to wait for a
+// running task first; a server Nova will not write to keeps its count.
+func clearServerRebuildAttempts(ctx context.Context, client ServerInterface, openstackServer *servers.Server) (bool, error) {
+	if !serverRebuildAttemptsPending(openstackServer) {
+		return false, nil
+	}
+
+	if !serverMetadataWritable(openstackServer) {
+		return serverTaskActive(openstackServer), nil
+	}
+
+	return false, client.UpdateServerMetadata(ctx, openstackServer.ID, map[string]string{serverRebuildAttemptsMetadataKey: serverRebuildAttemptsCleared})
+}
+
 // reconcileServerImage converges the server onto its desired image, deciding only
 // from the fresh openstackServer. Nova commits the image ref and task_state together
 // under a compare-and-swap, above the driver. Rows R3′ to R4″ read "drifted"
@@ -3235,7 +3310,10 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 //	R2   ref unreadable                 → park; never report success over an image
 //	                                      that cannot be verified.
 //	R3   ref == desired, rebuilding      → yield; our own rebuild is mid-flight.
-//	R3′  not drifted, ERROR, launched    → park; Nova moves the ref at accept, not
+//	R3′  not drifted, ERROR, launched    → retry our current rebuild up to
+//	                                      maxServerRebuildAttempts, then park;
+//	                                      park at once with no Nova record;
+//	                                      otherwise settle. Nova moves the ref at accept, not
 //	                                      on a successful write, so a launched
 //	                                      ERROR on the desired ref cannot certify
 //	                                      the image was realized. (It may well be
@@ -3249,6 +3327,8 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 //	                                      first boot is create-retry's to own.
 //	R3″  not drifted, record deferred,   → yield; wait to record current user data.
 //	     task active or never launched
+//	R3″  not drifted, attempt count not  → yield; wait to clear the count.
+//	     yet cleared, task active
 //	R3‴  not drifted, otherwise          → done.
 //	R4   drifted, never launched         → yield; a server that has never booted
 //	                                      belongs to create-retry, and Nova refuses
@@ -3267,6 +3347,12 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	}
 
 	desiredImageID := server.Spec.Image.ID
+	rebuildTarget := serverRebuildTarget(server, desiredUserDataHash)
+	rebuildOptions := ServerRebuildOptions{
+		ImageID:  desiredImageID,
+		UserData: server.Spec.UserData,
+		Metadata: serverRebuildMetadata(openstackServer, desiredUserDataHash, rebuildTarget),
+	}
 
 	currentImageID, refReadable := openstackServerImageID(openstackServer)
 
@@ -3328,31 +3414,41 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 				"another operation is in progress on the server; the requested changes will be applied once it completes")
 		}
 
-		return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-			ImageID:  desiredImageID,
-			UserData: server.Spec.UserData,
-			Metadata: serverRebuildMetadata(openstackServer, desiredUserDataHash),
-		})
+		return submitServerRebuild(ctx, client, server, openstackServer, rebuildOptions)
 	}
 
 	// R3′: launched ERROR on a converged image. The ref alone cannot certify the
-	// write (it moved at accept), so this must not read as provisioned. Park
-	// on the provisioning axis, exactly as create-retry does when its
-	// attempts are exhausted. The remedy is a spec edit — a new image or user
-	// data, or a replacement server — which is ErrUserActionRequired's contract:
-	// recovery is generation-driven, and there is no retry bookkeeping to
-	// clear here, so the sentinel alone suffices. The park is also
-	// re-derived per pass, so a monitor observed-write after a silent
-	// provider recovery un-parks it without any spec change.
+	// write (it moved at accept), so a failed rebuild of ours is retried, and
+	// parked once its attempts are exhausted, exactly as create-retry does. The
+	// remedy is then a spec edit — a new image or user data, or a replacement
+	// server — which starts a new attempt count. A server without a Nova record
+	// parks at once, since nothing certifies its image. An ERROR with no
+	// current attempt is not ours to resolve and settles on the monitor's
+	// health axis.
 	if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
-		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-			"the provider reports the server in an error state; change the image or user data, or replace the server")
+		if !recorded {
+			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+				"the provider reports the server in an error state; change the image or user data, or replace the server")
+		}
+
+		return reconcileErroredServerRebuild(ctx, client, server, openstackServer, rebuildOptions, rebuildTarget)
 	}
 
 	// R3″: retry a deferred record while the provider is still changing state.
 	if legacyRecordDeferred && (serverTaskActive(openstackServer) || openstackServer.LaunchedAt.IsZero()) {
 		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 			"waiting for the provider before recording the server's current user data")
+	}
+
+	// R3″: wait to clear the attempt count while a task holds the server.
+	clearDeferred, err := clearServerRebuildAttempts(ctx, client, openstackServer)
+	if err != nil {
+		return nil, err
+	}
+
+	if clearDeferred {
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+			"waiting for the provider before recording the completed rebuild")
 	}
 
 	// R3‴: converged. Other tasks and settled non-writable states are the monitor's axis.

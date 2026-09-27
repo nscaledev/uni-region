@@ -28,9 +28,9 @@ Create recovery and rebuild recovery deliberately use different state:
 | Initial create failure | Image or user-data rebuild failure |
 |---|---|
 | Server never launched | Server previously launched |
-| Delete/recreate, bounded by the existing flag | Nothing to recover |
-| `ProviderCreateFailures` | None here; Nova metadata records accepted user data |
-| Exhaustion is operator-terminal | The failure surfaces on the monitor's lifecycle axis |
+| Delete/recreate, bounded by the existing flag | In-place rebuild, bounded at three attempts |
+| `ProviderCreateFailures` | Nova metadata: the user-data and rebuild attempt records |
+| Exhaustion is operator-terminal | Exhaustion is operator-terminal |
 | Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | No wake needed: `ErrYield` requeues on a timer |
 
 The rebuild reconcile lives in the OpenStack provider's existing-server path and
