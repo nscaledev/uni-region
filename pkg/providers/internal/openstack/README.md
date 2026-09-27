@@ -101,12 +101,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     mean no trait filter. A miss yields and lets the controller retry.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
-  `none` omit Nova `key_name`. Image rebuild omits both `key_name` and
-  `user_data`, so Nova preserves the stored keypair and create-time user data
-  (including the managed SSH-CA cloud-init baked in at create) and rebuilt guests
-  stay create-equivalent. Updated user data therefore takes effect on server
-  replacement, not rebuild — Nova accepts `user_data` on rebuild from
-  microversion 2.57, deferred until gophercloud's `RebuildOpts` carries the field.
+  `none` omit Nova `key_name`. Rebuild sends the effective `user_data` payload
+  supported by Nova microversion 2.57, including managed SSH-CA cloud-init
+  augmentation, while preserving the original keypair.
 - A desired server image change is reconciled with Nova rebuild only once the
   server has booted at least once, decided from Nova's `launched_at`
   (`OS-SRV-USG:launched_at`) read fresh on the same `GetServer` — never from the
@@ -135,6 +132,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   known name-collision race.
 - `reconcileServerImage` decides entirely from the fresh `GetServer` on the same
   pass.
+
+  It also compares the effective cloud-init payload against the digest recorded
+  after the last provider-accepted create or rebuild. A mismatch follows the
+  same launched and quiescent gates as an image mismatch, then submits Nova
+  rebuild with the current image and `user_data`. The digest contains no payload
+  and prevents resubmission after acceptance. Servers predating this status
+  field establish a baseline without a destructive migration rebuild.
 
   Nova commits the image ref and `task_state` together. `nova/compute/api.py` sets
   `task_state = REBUILDING` and `image_ref = image_href` on one object and saves them

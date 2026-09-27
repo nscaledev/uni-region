@@ -1132,7 +1132,7 @@ func (c *APIClient) SatisfyServerProviderCreateGate(ctx context.Context, serverI
 	return nil
 }
 
-// UpdateServer updates a server. Changing the image ID triggers an in-place rebuild.
+// UpdateServer updates a server. Changing the image ID or user data triggers an in-place rebuild.
 func (c *APIClient) UpdateServer(ctx context.Context, serverID string, request regionopenapi.ServerV2Update) (*regionopenapi.ServerV2Read, error) {
 	path := c.endpoints.UpdateServer(serverID)
 

@@ -1206,6 +1206,10 @@ type ServerStatus struct {
 	// +listType=map
 	// +listMapKey=conditionType
 	ProviderCreateGates []ServerProviderCreateGateStatus `json:"providerCreateGates,omitempty"`
+	// AcceptedUserDataHash is the SHA-256 digest of the effective cloud-init
+	// payload accepted by the provider. It records the submitted payload without
+	// exposing it through status.
+	AcceptedUserDataHash string `json:"acceptedUserDataHash,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
