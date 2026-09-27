@@ -18,6 +18,7 @@ package server_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"io"
 	"mime"
@@ -165,6 +166,10 @@ func TestServerCreateOptions(t *testing.T) {
 
 		options, err := serverprovisioner.ServerCreateOptionsForTest(t.Context(), server, cli)
 		require.NoError(t, err)
+		repeatedOptions, err := serverprovisioner.ServerCreateOptionsForTest(t.Context(), server, cli)
+		require.NoError(t, err)
+		require.Equal(t, options.UserData, repeatedOptions.UserData)
+		require.Equal(t, sha256.Sum256(options.UserData), sha256.Sum256(repeatedOptions.UserData))
 
 		parts := parseTestMultipartUserData(t, options.UserData)
 		require.Len(t, parts, 2)

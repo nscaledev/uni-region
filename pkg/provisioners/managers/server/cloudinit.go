@@ -18,6 +18,8 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +27,7 @@ import (
 	"mime/multipart"
 	"net/mail"
 	"net/textproto"
+	"sort"
 	"strings"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
@@ -280,6 +283,11 @@ func marshalMultipartUserData(parts []userDataPart) ([]byte, error) {
 	var body bytes.Buffer
 
 	writer := multipart.NewWriter(&body)
+	boundary := multipartUserDataBoundary(parts)
+
+	if err := writer.SetBoundary(boundary); err != nil {
+		return nil, fmt.Errorf("%w: unable to set multipart userData boundary", coreerrors.ErrConsistency)
+	}
 
 	for _, part := range parts {
 		nextPart, err := writer.CreatePart(part.header)
@@ -307,4 +315,48 @@ func marshalMultipartUserData(parts []userDataPart) ([]byte, error) {
 	}
 
 	return out.Bytes(), nil
+}
+
+func multipartUserDataBoundary(parts []userDataPart) string {
+	seed := sha256.New()
+
+	for _, part := range parts {
+		keys := make([]string, 0, len(part.header))
+		for key := range part.header {
+			keys = append(keys, key)
+		}
+
+		sort.Strings(keys)
+
+		for _, key := range keys {
+			values := part.header[key]
+			_, _ = fmt.Fprintf(seed, "%s:%s\n", key, strings.Join(values, ","))
+		}
+
+		_, _ = fmt.Fprintf(seed, "%d\n", len(part.body))
+		_, _ = seed.Write(part.body)
+	}
+
+	for attempt := 0; ; attempt++ {
+		candidateHash := sha256.New()
+		_, _ = candidateHash.Write(seed.Sum(nil))
+		_, _ = fmt.Fprintf(candidateHash, "%d", attempt)
+		boundary := "unikorn-" + hex.EncodeToString(candidateHash.Sum(nil))[:62]
+
+		if !multipartBoundaryOccursInParts(boundary, parts) {
+			return boundary
+		}
+	}
+}
+
+func multipartBoundaryOccursInParts(boundary string, parts []userDataPart) bool {
+	needle := []byte("--" + boundary)
+
+	for _, part := range parts {
+		if bytes.Contains(part.body, needle) {
+			return true
+		}
+	}
+
+	return false
 }
