@@ -405,6 +405,21 @@ spec:
               publicIP:
                 description: PublicIP is the public IP address of the server.
                 type: string
+              rebuildAttempts:
+                description: |-
+                  RebuildAttempts records an unresolved provider-accepted rebuild episode for
+                  the current rebuild target and generation. It clears after convergence.
+                format: int32
+                type: integer
+              rebuildGeneration:
+                description: RebuildGeneration records the Server generation for RebuildAttempts.
+                format: int64
+                type: integer
+              rebuildTargetHash:
+                description: |-
+                  RebuildTargetHash is the SHA-256 digest of the image and effective
+                  cloud-init payload for RebuildAttempts.
+                type: string
               scheduledAt:
                 description: |-
                   ScheduledAt is the time the provider accepted and processed the creation request.
