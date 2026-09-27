@@ -18,6 +18,8 @@ limitations under the License.
 package types
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"maps"
 	"reflect"
 	"slices"
@@ -28,6 +30,13 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 )
+
+// UserDataHash returns the stable digest used to compare customer intent.
+func UserDataHash(userData []byte) string {
+	digest := sha256.Sum256(userData)
+
+	return hex.EncodeToString(digest[:])
+}
 
 type Architecture string
 

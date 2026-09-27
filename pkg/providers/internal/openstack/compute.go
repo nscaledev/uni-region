@@ -478,24 +478,35 @@ func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options Se
 	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
 	defer span.End()
 
-	if !options.UseUserData {
-		return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{ImageRef: options.ImageID.String()}).Extract()
-	}
-
 	return servers.Rebuild(ctx, c.client, id, rebuildOpts{
 		ImageRef: options.ImageID.String(),
 		UserData: options.UserData,
+		Metadata: options.Metadata,
 	}).Extract()
+}
+
+// UpdateServerMetadata uses Nova's POST form, which merges into the existing
+// metadata; the PUT form would replace it.
+func (c *ComputeClient) UpdateServerMetadata(ctx context.Context, id string, metadata map[string]string) error {
+	spanAttributes := trace.WithAttributes(
+		attribute.String("compute.server.id", id),
+	)
+
+	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/metadata", spanAttributes)
+	defer span.End()
+
+	return servers.UpdateMetadata(ctx, c.client, id, servers.MetadataOpts(metadata)).Err
 }
 
 // rebuildOpts supplies Nova's user_data field until gophercloud exposes it.
 type rebuildOpts struct {
 	ImageRef string
 	UserData []byte
+	Metadata map[string]string
 }
 
 func (opts rebuildOpts) ToServerRebuildMap() (map[string]any, error) {
-	body, err := (servers.RebuildOpts{ImageRef: opts.ImageRef}).ToServerRebuildMap()
+	body, err := (servers.RebuildOpts{ImageRef: opts.ImageRef, Metadata: opts.Metadata}).ToServerRebuildMap()
 	if err != nil {
 		return nil, err
 	}

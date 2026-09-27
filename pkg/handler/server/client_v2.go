@@ -151,12 +151,24 @@ func userDataChanged(current []byte, request *[]byte) bool {
 // predate validation keep working when a client PUTs the same bytes back. The
 // CA-awareness flag derives from the server's current SSH certificate
 // authority because updates preserve the CA chosen at create time.
+//
+// A change is refused until the controller has recorded the current user data
+// with the provider: a record taken after the change would hide it. See the
+// OpenStack provider README's user-data record section.
 func validateUpdatedUserData(current *regionv1.Server, request *openapi.ServerV2Update) error {
 	if !userDataChanged(current.Spec.UserData, request.Spec.UserData) {
 		return nil
 	}
 
-	return userdata.Validate(request.Spec.UserData, current.Spec.SSHCertificateAuthorityID != nil)
+	if err := userdata.Validate(request.Spec.UserData, current.Spec.SSHCertificateAuthorityID != nil); err != nil {
+		return err
+	}
+
+	if _, ok := current.Annotations[constants.UserDataRecordedAnnotation]; !ok {
+		return errors.HTTPConflict().WithValues("reason", "user data cannot be changed because the provider has not yet recorded the server's current user data")
+	}
+
+	return nil
 }
 
 // validateUpdateV2Request runs the update-path validations that need the

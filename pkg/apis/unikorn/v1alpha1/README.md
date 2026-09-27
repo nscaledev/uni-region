@@ -200,6 +200,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
   authoritative for live state.
+  `Server.Spec.UserData` changes are applied by rebuild too. The accepted
+  value is recorded in Nova, not in Server status; see the OpenStack
+  [user-data record](../../../providers/internal/openstack/README.md#user-data-record).
   A rebuild failure is not attributable: an unrelated host failure on the desired
   image is indistinguishable from a failed rebuild, whatever is recorded, so it
   surfaces on the monitor's lifecycle axis rather than as a reconciler diagnosis.

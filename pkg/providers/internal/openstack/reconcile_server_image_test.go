@@ -112,12 +112,38 @@ func desiredRebuildServer() *unikornv1.Server {
 }
 
 // novaRebuildServer is a launched server, which the submission gate requires.
+// It carries the user-data record of desiredRebuildServer.
 func novaRebuildServer(status, imageID string) *servers.Server {
 	return &servers.Server{
 		ID:         "server-1",
 		Status:     status,
 		Image:      map[string]any{"id": imageID},
 		LaunchedAt: time.Now().Add(-time.Hour),
+		Metadata:   rebuildMetadata(nil),
+	}
+}
+
+// withUserDataHash replaces the server's user-data record; "" removes it.
+func withUserDataHash(server *servers.Server, hash string) *servers.Server {
+	server.Metadata = map[string]string{}
+	if hash != "" {
+		server.Metadata["region:system:user_data_hash"] = hash
+	}
+
+	return server
+}
+
+// requireUserDataRecorded asserts whether the pass told the provisioner that
+// Nova holds the record. The annotation key is spelled out because it is
+// persisted.
+func requireUserDataRecorded(t *testing.T, server *unikornv1.Server, recorded bool) {
+	t.Helper()
+
+	_, ok := server.Annotations["regions.unikorn-cloud.org/user-data-recorded"]
+	require.Equal(t, recorded, ok)
+
+	if recorded {
+		require.Equal(t, "true", server.Annotations["regions.unikorn-cloud.org/user-data-recorded"])
 	}
 }
 
@@ -138,7 +164,23 @@ func novaRebuildServerTask(status, imageID, taskState string) *servers.Server {
 }
 
 func rebuildOptions() openstack.ServerRebuildOptions {
-	return openstack.ServerRebuildOptions{ImageID: idstest.MustParseImageID(rebuildNewImageID)}
+	return rebuildOptionsFor(nil)
+}
+
+// rebuildOptionsFor is the rebuild of a server whose only Nova metadata is the
+// user-data record.
+func rebuildOptionsFor(userData []byte) openstack.ServerRebuildOptions {
+	return openstack.ServerRebuildOptions{
+		ImageID:  idstest.MustParseImageID(rebuildNewImageID),
+		UserData: userData,
+		Metadata: rebuildMetadata(userData),
+	}
+}
+
+// rebuildMetadata is the Nova record of the customer user data a rebuild
+// submits. The key is spelled out because it is persisted in Nova.
+func rebuildMetadata(customerUserData []byte) map[string]string {
+	return map[string]string{"region:system:user_data_hash": types.UserDataHash(customerUserData)}
 }
 
 // TestReconcileServerImageSubmitsOnFirstPass pins that a quiescent server whose
@@ -253,8 +295,8 @@ func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
 
 // TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys pins the guard:
 // an ERROR on the desired image before first boot is a failed create, which the
-// provisioner's bounded retry machinery owns. This pass must complete without a
-// park so that machinery is reached.
+// provisioner's bounded retry machinery handles before calling the provider.
+// A recorded server completes here without a park.
 func TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys(t *testing.T) {
 	t.Parallel()
 
@@ -488,9 +530,9 @@ func TestReconcileServerImageAcceptedStampIgnoresResponseBody(t *testing.T) {
 	requireRebuildAcceptedStamp(t, server)
 }
 
-// TestReconcileServerRebuildOmitsGuestConfiguration pins that the rebuild carries
-// only the image; Nova preserves guest configuration on an omitted field.
-func TestReconcileServerRebuildOmitsGuestConfiguration(t *testing.T) {
+// TestReconcileServerRebuildUsesEffectiveUserData pins that an image rebuild
+// uses the cloud-init payload selected by the provisioner.
+func TestReconcileServerRebuildUsesEffectiveUserData(t *testing.T) {
 	t.Parallel()
 
 	client := mock.NewMockServerInterface(gomock.NewController(t))
@@ -498,9 +540,12 @@ func TestReconcileServerRebuildOmitsGuestConfiguration(t *testing.T) {
 	server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
 	client.EXPECT().GetServer(gomock.Any(), server).
 		Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
-	// Only the image reaches Nova, even with user data set and a keypair in play.
-	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
-		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	// The digest is spelled out because Nova persists it.
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", openstack.ServerRebuildOptions{
+		ImageID:  idstest.MustParseImageID(rebuildNewImageID),
+		UserData: server.Spec.UserData,
+		Metadata: map[string]string{"region:system:user_data_hash": "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2"},
+	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	_, err := openstack.ReconcileServer(t.Context(), nil, client, server, nil, "identity-keypair")
 	require.ErrorIs(t, err, provisioners.ErrYield)
@@ -517,13 +562,267 @@ func TestCreateServerCopiesFullStatusBackForAugmentedServers(t *testing.T) {
 	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n")}
 	require.NotSame(t, server, openstack.ServerForCreate(server, options), "test setup requires user-data augmentation to force a deep copy")
 
+	rebuild := rebuildOptionsFor(options.UserData)
+	rebuild.Metadata = rebuildMetadata(server.Spec.UserData)
+
 	client := mock.NewMockServerInterface(gomock.NewController(t))
 	client.EXPECT().GetServer(gomock.Any(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
-	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuild).
 		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	err := openstack.ReconcileServerForCreate(t.Context(), nil, client, server, options, nil, "")
 	require.ErrorIs(t, err, provisioners.ErrYield)
 
 	requireRebuildAcceptedStamp(t, server)
+	requireUserDataRecorded(t, server, true)
+}
+
+// TestReconcileServerIgnoresChangedAugmentation pins that managed cloud-init
+// changes do not turn into customer-requested rebuilds.
+func TestReconcileServerIgnoresChangedAugmentation(t *testing.T) {
+	t.Parallel()
+
+	server := desiredRebuildServer()
+	server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
+
+	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nusers:\n  - name: managed\n")}
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().GetServer(gomock.Any(), gomock.Any()).
+		Return(withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), types.UserDataHash(server.Spec.UserData)), nil)
+
+	err := openstack.ReconcileServerForCreate(t.Context(), nil, client, server, options, nil, "")
+	require.NoError(t, err)
+}
+
+func TestReconcileServerImageRebuildsChangedUserData(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+	server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptionsFor(server.Spec.UserData)).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), "old-user-data"))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	requireRebuildAcceptedStamp(t, server)
+
+	// The rebuild wrote the new record into Nova.
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), types.UserDataHash(server.Spec.UserData)))
+	require.NoError(t, err, "Nova's user-data record must prevent a second rebuild")
+}
+
+// TestReconcileServerImageRebuildDecision pins the single-pass decision from
+// the image ref and Nova's user-data record.
+func TestReconcileServerImageRebuildDecision(t *testing.T) {
+	t.Parallel()
+
+	userData := []byte("#cloud-config\nusers: []\n")
+	desired := "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2"
+
+	cases := []struct {
+		name        string
+		novaHash    string
+		novaStatus  string
+		novaImageID string
+		taskState   string
+		record      bool
+		rebuild     bool
+		park        bool
+	}{
+		{
+			// A server without a record must not be reimaged during migration.
+			name:        "no record on converged image",
+			novaStatus:  "ACTIVE",
+			novaImageID: rebuildNewImageID,
+			record:      true,
+		},
+		{
+			// Nova refuses a metadata write in ERROR, and the park still applies.
+			name:        "no record on converged image in error",
+			novaStatus:  "ERROR",
+			novaImageID: rebuildNewImageID,
+			park:        true,
+		},
+		{
+			name:        "no record on converged image in error with a task",
+			novaStatus:  "ERROR",
+			novaImageID: rebuildNewImageID,
+			taskState:   "rescuing",
+			park:        true,
+		},
+		{
+			name:        "no record on shelved server",
+			novaStatus:  "SHELVED",
+			novaImageID: rebuildNewImageID,
+		},
+		{
+			name:        "no record on changed image",
+			novaStatus:  "ACTIVE",
+			novaImageID: rebuildOldImageID,
+			rebuild:     true,
+		},
+		{
+			name:        "recorded user data on changed image",
+			novaHash:    desired,
+			novaStatus:  "ACTIVE",
+			novaImageID: rebuildOldImageID,
+			rebuild:     true,
+		},
+		{
+			name:        "changed user data on converged image",
+			novaHash:    "old-user-data",
+			novaStatus:  "ACTIVE",
+			novaImageID: rebuildNewImageID,
+			rebuild:     true,
+		},
+		{
+			name:        "recorded user data on converged image",
+			novaHash:    desired,
+			novaStatus:  "ACTIVE",
+			novaImageID: rebuildNewImageID,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := mock.NewMockServerInterface(gomock.NewController(t))
+			server := desiredRebuildServer()
+			server.Spec.UserData = userData
+
+			if tc.record {
+				client.EXPECT().UpdateServerMetadata(gomock.Any(), "server-1", map[string]string{"region:system:user_data_hash": desired}).Return(nil)
+			}
+
+			if tc.rebuild {
+				client.EXPECT().RebuildServer(gomock.Any(), "server-1", openstack.ServerRebuildOptions{
+					ImageID:  idstest.MustParseImageID(rebuildNewImageID),
+					UserData: userData,
+					Metadata: map[string]string{"region:system:user_data_hash": desired},
+				}).
+					Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+			}
+
+			novaServer := withUserDataHash(novaRebuildServerTask(tc.novaStatus, tc.novaImageID, tc.taskState), tc.novaHash)
+			_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaServer)
+
+			switch {
+			case tc.rebuild:
+				require.ErrorIs(t, err, provisioners.ErrYield)
+			case tc.park:
+				require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
+
+				var perr *provisioners.Error
+
+				require.ErrorAs(t, err, &perr)
+				require.Equal(t, unikornv1core.ConditionReasonErrored, perr.Reason())
+			default:
+				require.NoError(t, err)
+			}
+
+			requireUserDataRecorded(t, server, tc.record || tc.rebuild || tc.novaHash != "")
+
+			if !tc.rebuild {
+				requireNoReconcilerStamp(t, server)
+			}
+		})
+	}
+}
+
+func TestReconcileServerImageRecordsUserDataBesideCustomerTag(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+	server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
+	novaServer := withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), "")
+	novaServer.Metadata["region:user_data_hash"] = "customer-tag"
+
+	client.EXPECT().UpdateServerMetadata(gomock.Any(), "server-1", map[string]string{
+		"region:system:user_data_hash": "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2",
+	}).Return(nil)
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaServer)
+	require.NoError(t, err)
+	require.Equal(t, "customer-tag", novaServer.Metadata["region:user_data_hash"])
+	requireUserDataRecorded(t, server, true)
+	requireNoReconcilerStamp(t, server)
+}
+
+func TestReconcileServerImageDeferredLegacyRecord(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name   string
+		server *servers.Server
+	}{
+		{name: "task active", server: novaRebuildServerTask("ACTIVE", rebuildNewImageID, taskStateRebooting)},
+		{name: "never launched", server: novaUnlaunchedServer("BUILD", rebuildNewImageID)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := mock.NewMockServerInterface(gomock.NewController(t))
+			server := desiredRebuildServer()
+			server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
+
+			_, err := openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(tc.server, ""))
+			requireTypedYield(t, err, unikornv1core.ConditionReasonProvisioning,
+				"waiting for the provider before recording the server's current user data")
+			requireUserDataRecorded(t, server, false)
+			requireNoReconcilerStamp(t, server)
+
+			client.EXPECT().UpdateServerMetadata(gomock.Any(), "server-1", map[string]string{
+				"region:system:user_data_hash": "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2",
+			}).Return(nil)
+
+			_, err = openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), ""))
+			require.NoError(t, err)
+			requireUserDataRecorded(t, server, true)
+			requireNoReconcilerStamp(t, server)
+		})
+	}
+}
+
+// TestReconcileServerImageRecordRefusalRetries pins that a metadata write Nova
+// refuses surfaces for the ordinary requeue, never as a yield or a park.
+func TestReconcileServerImageRecordRefusalRetries(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	client.EXPECT().UpdateServerMetadata(gomock.Any(), "server-1", gomock.Any()).
+		Return(gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict})
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), ""))
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
+	require.False(t, provisioners.IsTerminal(err))
+	requireUserDataRecorded(t, server, false)
+}
+
+func TestReconcileServerImageRebuildsUserDataChangedDuringRebuild(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+	server.Spec.UserData = []byte("#cloud-config\nwrite_files: []\n")
+	acceptedHash := types.UserDataHash(server.Spec.UserData)
+
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptionsFor(server.Spec.UserData)).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(novaRebuildServer("ACTIVE", rebuildOldImageID), acceptedHash))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+
+	server.Spec.UserData = []byte("#cloud-config\npackages: []\n")
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(novaRebuildServer("REBUILD", rebuildNewImageID), acceptedHash))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptionsFor(server.Spec.UserData)).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), acceptedHash))
+	require.ErrorIs(t, err, provisioners.ErrYield)
 }

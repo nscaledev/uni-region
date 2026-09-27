@@ -108,12 +108,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     the user's own server.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
-  `none` omit Nova `key_name`. Image rebuild omits both `key_name` and
-  `user_data`, so Nova preserves the stored keypair and create-time user data
-  (including the managed SSH-CA cloud-init baked in at create) and rebuilt guests
-  stay create-equivalent. Updated user data therefore takes effect on server
-  replacement, not rebuild — Nova accepts `user_data` on rebuild from
-  microversion 2.57, deferred until gophercloud's `RebuildOpts` carries the field.
+  `none` omit Nova `key_name`. Rebuild sends the effective `user_data` payload
+  supported by Nova microversion 2.57, including managed SSH-CA cloud-init
+  augmentation, while preserving the original keypair.
 - A desired server image change is reconciled with Nova rebuild only once the
   server has booted at least once, decided from Nova's `launched_at`
   (`OS-SRV-USG:launched_at`) read fresh on the same `GetServer` — never from the
@@ -144,6 +141,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - `reconcileServerImage` decides entirely from the fresh `GetServer` on the same
   pass.
 
+  It also compares Nova's record of the customer user data with the desired
+  value (see [User-Data Record](#user-data-record)). A mismatch follows the
+  same launched and quiescent gates as an image mismatch, then submits Nova
+  rebuild with the current image and the effective `user_data`.
+
   Nova commits the image ref and `task_state` together. `nova/compute/api.py` sets
   `task_state = REBUILDING` and `image_ref = image_href` on one object and saves them
   with `expected_task_state=[None]` — a database compare-and-swap — *before*
@@ -156,18 +158,21 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   against a rebuilding server with a 409 before that. All of this is decided in Nova's
   API layer above the driver, so it holds for Ironic exactly as for libvirt.
 
-  The pass order, deciding only from the fresh read:
+  The pass order, deciding only from the fresh read. A server has *drifted*
+  when its ref differs from the desired image or Nova's user-data record
+  differs from the desired one:
 
   | | Condition | Action |
   |---|---|---|
   | R1 | `Spec.Image == nil` | **park** |
   | R2 | image ref unreadable | **park** |
   | R3 | ref == desired, rebuild task active | yield |
-  | R3′ | ref == desired, `ERROR`, launched | **park** |
-  | R3″ | ref == desired, otherwise | done |
-  | R4 | ref != desired, `launched_at` zero | yield |
-  | R4′ | ref != desired, any task active | yield |
-  | R4″ | ref != desired, quiescent | **submit** |
+  | R3′ | not drifted, `ERROR`, launched | **park** |
+  | R3″ | not drifted, legacy record deferred, task active or never launched | yield |
+  | R3‴ | not drifted, otherwise | done |
+  | R4 | drifted, `launched_at` zero | yield |
+  | R4′ | drifted, any task active | yield |
+  | R4″ | drifted, quiescent | **submit** |
 
   Every yielding row returns `provisioners.Yield` with a `Provisioning` reason
   and a message naming the wait, so the row a server is parked on is readable
@@ -204,7 +209,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   submitting the question is only whether Nova would accept, and it refuses while any
   task holds the server.
 
-  R3′ parks a quiesced `ERROR` on the desired ref as user-action-required
+  R3′ parks a launched `ERROR` on the desired ref as user-action-required
   (`provisioners.UserActionRequired`, so `provisioningStatus=error` with an
   actionable, cause-neutral message that advertises the spec-edit remedy),
   mirroring create-retry's exhausted-attempts park. The
@@ -227,8 +232,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   wake resumes reconciliation, monitor-independent. Or the provider recovers
   without a spec change, in which case the un-park rides the monitor's
   `status.observed` write firing the observed wake: the park is re-derived per
-  pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
-  measured path as a foreign recovery, below — within one monitor period). Or
+  pass, so the woken pass walks to R3‴ and reads `provisioned` again (the same
+  measured path as a foreign recovery, below — within one monitor period). That
+  wake needs the monitor to have stored the `ERROR` and then its clearing; if it
+  missed either (the error came and went between polls, or its status patch
+  conflicted), the server stays parked until a spec edit or controller restart.
+  Or
   the provider server disappears entirely — deleted out-of-band — in which case
   the monitor's `Observe` finds no row for it and `projectServerState`'s absent
   path records an observation (errored cleared, generation stamped, image
@@ -261,10 +270,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   evacuation on shared storage rebuilds the instance on another host without
   touching it — so `provisioning` is honest; after a failed one the spec image is
   not running. Both reports are true regardless of who initiated the operation, and
-  no destructive row can fire on a foreign operation (R4″ requires a diverged
-  ref, which a foreign rebuild does not present). The park is re-derived per
+  no destructive row can fire on a foreign operation (R4″ requires drift, which
+  a foreign rebuild does not present: it neither diverges the ref nor changes
+  the user-data metadata). The park is re-derived per
   pass, not latched: when a foreign recovery returns the server to `ACTIVE` on
-  the converged ref, the next pass walks to R3″ and the server reads
+  the converged ref, the next pass walks to R3‴ and the server reads
   `provisioned` again. What this costs is attribution in the *messages* — a
   failed evacuation reports the same cause-neutral park message as a failed
   rebuild — which is the price of having no persisted intent to consult, and
@@ -305,8 +315,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   accepted stamp while a rebuild it submitted is still in flight (R3); on every other
   waiting row it writes nothing and the monitor owns observed state.
 - Nova rebuild retains the server UUID, network ports and IP relationships,
-  attached data volumes, flavor, metadata, and placement, but recreates the
-  root disk. It stays on the same compute host; evacuation is a separate
+  attached data volumes, flavor, metadata (resent with the updated
+  `region:system:user_data_hash`), and placement, but recreates the root disk. It stays on the same compute host; evacuation is a separate
   operator workflow.
 - Server delete is held while Nova reports the server as `BUILD` with
   `task_state` `spawning`, or `REBUILD` with `rebuild_spawning`. Ironic has no
@@ -606,6 +616,78 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   the Neutron subnet matches the network spec and a spec with no routes clears
   the subnet's host routes. gophercloud drops nil option pointers, so leaving
   either unset makes Neutron keep the stale value.
+
+## User-Data Record
+
+Nova server metadata `region:system:user_data_hash` is the only record of the
+customer user data Nova last accepted: the SHA-256 of `spec.userData` before
+managed cloud-init augmentation, so a change to the augmentation does not
+rebuild every server. The second colon prevents customer tags from colliding
+with the record, since `MetadataKey` produces keys with exactly one colon.
+It is written:
+
+- on create, with the rest of the server metadata;
+- in every rebuild request. Nova's `rebuild` (`nova/compute/api.py`) applies
+  the request metadata with `task_state` and `image_ref` and commits them in
+  one `instance.save(expected_task_state=[None])`, so the record is durable
+  exactly when Nova accepts the rebuild, and a lost status write cannot cause a
+  second destructive rebuild. Rebuild metadata replaces the whole set, so the
+  request resends the existing entries;
+- for a server created before the record, by the merging
+  `POST /servers/{id}/metadata` once the image is converged (on a drifted
+  image the rebuild writes it). A deferred write never triggers a rebuild for
+  user data. After the launched `ERROR` park check, the pass yields while a
+  task is active or the server has never launched; settled non-writable
+  states complete without the record.
+
+Nova's `update_instance_metadata` is guarded by `check_instance_lock` and
+`check_instance_state(vm_state=[ACTIVE, PAUSED, SUSPENDED, STOPPED],
+task_state=None)`, and answers 409 outside those vm states, notably in
+`ERROR`, which rebuild accepts; `task_state=None` means Nova does not check
+the task. The provider writes only when Nova reports `ACTIVE`, `PAUSED`,
+`SUSPENDED` or `SHUTOFF` and, by its own choice, no task is running, so an
+errored legacy server still reaches the R3′ park. A 409 it still gets (a
+locked server, a race) returns as a plain error for the ordinary requeue.
+
+The legacy write is not fenced against later rebuilds, and Nova saves the
+whole metadata map without a condition. If a write the provider gave up on
+(the 60s client timeout, or a reset connection) commits inside Nova only
+after a retry succeeded, the API accepted a user-data change and Nova
+accepted its rebuild, it restores the old digest and the next pass rebuilds
+a second time, wiping the root disk again. This needs a request stalled in
+nova-api for minutes, and nothing guards against it.
+
+A settled non-writable legacy server (shelved, rescued, etc.) gets no record,
+and the API keeps refusing user-data changes. There is no periodic resync or
+automatic recovery for these states: after clearing the provider state, a
+spec edit or controller restart is needed to reconcile and record the user
+data. A locked writable server instead retries the refused metadata write.
+A launched `ERROR`, including one with a task set, still parks; changing the
+image allows a rebuild once quiescent, which writes the record.
+
+The Server annotation `regions.unikorn-cloud.org/user-data-recorded` says Nova
+holds the record. Whenever a pass knows the Nova server carries the key (read
+on `GetServer`, or written by this pass) the provider sets it in memory, and
+the server provisioner persists it with a metadata-only patch, because the
+reconciler persists only status. Server updates in the API carry it over.
+
+| Nova key | Annotation | Meaning | Reconcile | API user-data change |
+|---|---|---|---|---|
+| absent | absent | created before the record | writes the key once the image is converged and Nova allows it, then the annotation; never rebuilds for user data | 409 |
+| present | absent | annotation patch pending | sets the annotation; compares the key | 409 |
+| present | present | steady state | compares the key | accepted |
+
+A key deleted from Nova out of band under an annotated Server is not supported:
+the next converged pass records the current spec, so a change the API accepted
+before that pass is not applied.
+
+The API refuses a change rather than recording the old value itself: the
+record must be in Nova, and one the controller takes after the spec has
+changed would hold the new value and hide the change.
+
+Retirement: once every Server carries the annotation, the API check, the
+annotation and its provisioner patch can be removed. The Nova key remains the
+record.
 
 ## Credential Sessions
 

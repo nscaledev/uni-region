@@ -340,6 +340,9 @@ func testServerWithSSHCertificateAuthority() *regionv1.Server {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
+			Annotations: map[string]string{
+				userDataRecordedAnnotation: "true",
+			},
 			Labels: map[string]string{
 				coreconstants.OrganizationLabel:   srvOrganizationID,
 				coreconstants.ProjectLabel:        srvProjectID,
@@ -1239,6 +1242,8 @@ func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
 	updated := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
 	require.Equal(t, *result.Spec.UserData, updated.Spec.UserData)
+	// A PUT replaces annotations; the controller-set one must survive it.
+	require.Equal(t, "true", updated.Annotations[userDataRecordedAnnotation])
 }
 
 func TestServerPutV2UserDataPersistence(t *testing.T) {
@@ -1248,12 +1253,15 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 	replacement := []byte("#cloud-config\nusers: []\n")
 
 	for _, test := range []struct {
-		name   string
-		field  string
-		want   []byte
-		status int
+		name       string
+		field      string
+		want       []byte
+		status     int
+		unrecorded bool
 	}{
 		{name: "omitted preserves legacy bytes", want: legacy, status: http.StatusAccepted},
+		{name: "change before the record is refused", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: legacy, status: http.StatusConflict, unrecorded: true},
+		{name: "unchanged before the record is accepted", want: legacy, status: http.StatusAccepted, unrecorded: true},
 		{name: "null preserves legacy bytes", field: `,"userData":null`, want: legacy, status: http.StatusAccepted},
 		{name: "empty value clears", field: `,"userData":""`, status: http.StatusAccepted},
 		{name: "value replaces", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: replacement, status: http.StatusAccepted},
@@ -1266,6 +1274,11 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 
 			resource := testServerV2(srvServerID)
 			resource.Spec.UserData = legacy
+
+			if test.unrecorded {
+				delete(resource.Annotations, userDataRecordedAnnotation)
+			}
+
 			k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), resource).Build()
 			h := handler.NewServerV2Handler(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
 			body := fmt.Sprintf(`{"metadata":{"name":%q},"spec":{"flavorId":%q,"imageId":%q%s}}`, resource.Name, srvFlavorID, srvImageID, test.field)
@@ -2478,11 +2491,18 @@ func TestServerSatisfyProviderCreateGateRequiresPermission(t *testing.T) {
 	require.Empty(t, updated.Status.ProviderCreateGates)
 }
 
+// userDataRecordedAnnotation is spelled out because it is persisted.
+const userDataRecordedAnnotation = "regions.unikorn-cloud.org/user-data-recorded"
+
+// testServerV2 returns a Server whose user data the controller has recorded.
 func testServerV2(serverID string) *regionv1.Server {
 	return &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
+			Annotations: map[string]string{
+				userDataRecordedAnnotation: "true",
+			},
 			Labels: map[string]string{
 				coreconstants.OrganizationLabel:   srvOrganizationID,
 				coreconstants.ProjectLabel:        srvProjectID,

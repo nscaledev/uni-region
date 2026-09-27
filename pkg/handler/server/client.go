@@ -41,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -157,6 +158,25 @@ func (c *Client) Get(ctx context.Context, organizationID identityids.Organizatio
 }
 
 // Update a resource.
+// preserveUserDataRecorded keeps the controller-set annotation across a PUT,
+// which otherwise replaces all annotations.
+func preserveUserDataRecorded(required, current metav1.Object) error {
+	v, ok := current.GetAnnotations()[constants.UserDataRecordedAnnotation]
+	if !ok {
+		return nil
+	}
+
+	annotations := required.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+
+	annotations[constants.UserDataRecordedAnnotation] = v
+	required.SetAnnotations(annotations)
+
+	return nil
+}
+
 func (c *Client) Update(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, identityID regionids.IdentityID, serverID regionids.ServerID, request *openapi.ServerWrite) (*openapi.ServerRead, error) {
 	// The identity must exist and be owned by the caller's organization and
 	// project; nothing else from it is needed on the update path.
@@ -181,8 +201,11 @@ func (c *Client) Update(ctx context.Context, organizationID identityids.Organiza
 	// whereas v1 has always accepted and ignored image changes, so preserve the
 	// stored image and never 404 an update over a value that has no effect.
 	required.Spec.Image = current.Spec.Image.DeepCopy()
+	// User data is likewise a v2-only destructive rebuild input. Keep v1's
+	// accept-and-ignore update contract rather than allowing a PUT to arm it.
+	required.Spec.UserData = slices.Clone(current.Spec.UserData)
 
-	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator); err != nil {
+	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator, preserveUserDataRecorded); err != nil {
 		return nil, fmt.Errorf("%w: failed to merge metadata", err)
 	}
 
