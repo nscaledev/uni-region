@@ -220,6 +220,12 @@ spec:
                 oldSelf.providerCreateGates)'
           status:
             properties:
+              acceptedUserDataHash:
+                description: |-
+                  AcceptedUserDataHash is the SHA-256 digest of the effective cloud-init
+                  payload accepted by the provider. It records the submitted payload without
+                  exposing it through status.
+                type: string
               conditions:
                 description: Current service state of a cluster manager.
                 items:

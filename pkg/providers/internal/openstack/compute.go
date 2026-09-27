@@ -20,6 +20,8 @@ package openstack
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -463,14 +465,41 @@ func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options Se
 	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
 	defer span.End()
 
-	// key_name and user_data are deliberately omitted: Nova preserves the stored
-	// keypair and create-time user data on an omitted field, keeping rebuilt guests
-	// create-equivalent. Updated user data therefore applies on replacement, not
-	// rebuild (Nova accepts user_data on rebuild from microversion 2.57, but
-	// gophercloud's servers.RebuildOpts has no field for it as of v2.10.0).
-	return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{
+	if !options.UseUserData {
+		return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{ImageRef: options.ImageID.String()}).Extract()
+	}
+
+	return servers.Rebuild(ctx, c.client, id, rebuildOpts{
 		ImageRef: options.ImageID.String(),
+		UserData: options.UserData,
 	}).Extract()
+}
+
+// rebuildOpts supplies Nova's user_data field until gophercloud exposes it.
+type rebuildOpts struct {
+	ImageRef string
+	UserData []byte
+}
+
+func (opts rebuildOpts) ToServerRebuildMap() (map[string]any, error) {
+	body, err := (servers.RebuildOpts{ImageRef: opts.ImageRef}).ToServerRebuildMap()
+	if err != nil {
+		return nil, err
+	}
+
+	userData := string(opts.UserData)
+	if _, err := base64.StdEncoding.DecodeString(userData); err != nil {
+		userData = base64.StdEncoding.EncodeToString(opts.UserData)
+	}
+
+	rebuild, ok := body["rebuild"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%w: gophercloud rebuild body is malformed", errors.ErrConsistency)
+	}
+
+	rebuild["user_data"] = userData
+
+	return body, nil
 }
 
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {

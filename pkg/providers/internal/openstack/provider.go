@@ -20,6 +20,7 @@ package openstack
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -3028,6 +3029,16 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate)
 }
 
+func setAcceptedUserDataHash(server *unikornv1.Server, hash string) {
+	server.Status.AcceptedUserDataHash = hash
+}
+
+func userDataHash(userData []byte) string {
+	hash := sha256.Sum256(userData)
+
+	return fmt.Sprintf("%x", hash)
+}
+
 // novaRebuildImageNotFoundMessage is the fixed explanation Nova's rebuild
 // action returns when the target image no longer exists (nova
 // api/openstack/compute/servers.py, the ImageNotFound catch). The literal has
@@ -3091,6 +3102,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 		return nil, err
 	}
 
+	setAcceptedUserDataHash(server, userDataHash(options.UserData))
 	markServerRebuildAccepted(server)
 
 	// An accepted rebuild is in flight, so completing here would report the server
@@ -3161,6 +3173,27 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 			return openstackServer, provisioners.ErrYield
 		}
 
+		desiredUserDataHash := userDataHash(server.Spec.UserData)
+		if server.Status.AcceptedUserDataHash == "" {
+			// Servers created before user-data rebuilds have no provider-readable
+			// payload. Establish a baseline without reimaging them.
+			setAcceptedUserDataHash(server, desiredUserDataHash)
+		} else if server.Status.AcceptedUserDataHash != desiredUserDataHash {
+			if openstackServer.LaunchedAt.IsZero() {
+				return openstackServer, provisioners.ErrYield
+			}
+
+			if serverTaskActive(openstackServer) {
+				return openstackServer, provisioners.ErrYield
+			}
+
+			return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
+				ImageID:     desiredImageID,
+				UserData:    server.Spec.UserData,
+				UseUserData: true,
+			})
+		}
+
 		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
 		// write (it moved at accept), so this must not read as provisioned. Park
 		// on the provisioning axis, exactly as create-retry does when its
@@ -3195,7 +3228,9 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 
 	// R4″: the one destructive row.
 	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-		ImageID: desiredImageID,
+		ImageID:     desiredImageID,
+		UserData:    server.Spec.UserData,
+		UseUserData: true,
 	})
 }
 
@@ -3268,6 +3303,8 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	if err != nil {
 		return nil, err
 	}
+
+	setAcceptedUserDataHash(server, userDataHash(server.Spec.UserData))
 
 	setServerHealthStatus(server, openstackServer)
 	// No Ironic lookup at create time — the live monitor's UpdateServerState
