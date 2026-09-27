@@ -3039,6 +3039,50 @@ func userDataHash(userData []byte) string {
 	return fmt.Sprintf("%x", hash)
 }
 
+const maxServerRebuildAttempts int32 = 3
+
+func rebuildTargetHash(options ServerRebuildOptions) string {
+	hash := sha256.New()
+
+	_, _ = hash.Write([]byte(options.ImageID.String()))
+	_, _ = hash.Write([]byte{0})
+	if options.UseUserData {
+		_, _ = hash.Write([]byte{1})
+	}
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write(options.UserData)
+
+	return fmt.Sprintf("%x", hash.Sum(nil))
+}
+
+func recordServerRebuildAttempt(server *unikornv1.Server, options ServerRebuildOptions) {
+	targetHash := rebuildTargetHash(options)
+	if server.Status.RebuildGeneration != server.Generation || server.Status.RebuildTargetHash != targetHash {
+		server.Status.RebuildAttempts = 0
+		server.Status.RebuildGeneration = server.Generation
+		server.Status.RebuildTargetHash = targetHash
+	}
+
+	server.Status.RebuildAttempts++
+}
+
+func clearServerRebuildAttempt(server *unikornv1.Server) {
+	server.Status.RebuildAttempts = 0
+	server.Status.RebuildGeneration = 0
+	server.Status.RebuildTargetHash = ""
+}
+
+func rebuildAttemptsExhausted(server *unikornv1.Server, options ServerRebuildOptions) bool {
+	return hasRecordedServerRebuild(server, options) &&
+		server.Status.RebuildAttempts >= maxServerRebuildAttempts
+}
+
+func hasRecordedServerRebuild(server *unikornv1.Server, options ServerRebuildOptions) bool {
+	return server.Status.RebuildAttempts > 0 &&
+		server.Status.RebuildGeneration == server.Generation &&
+		server.Status.RebuildTargetHash == rebuildTargetHash(options)
+}
+
 // novaRebuildImageNotFoundMessage is the fixed explanation Nova's rebuild
 // action returns when the target image no longer exists (nova
 // api/openstack/compute/servers.py, the ImageNotFound catch). The literal has
@@ -3103,6 +3147,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 	}
 
 	setAcceptedUserDataHash(server, userDataHash(options.UserData))
+	recordServerRebuildAttempt(server, options)
 	markServerRebuildAccepted(server)
 
 	// An accepted rebuild is in flight, so completing here would report the server
@@ -3123,18 +3168,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 //	R2   ref unreadable                 → park; never report success over an image
 //	                                      that cannot be verified.
 //	R3   ref == desired, rebuilding      → yield; our own rebuild is mid-flight.
-//	R3′  ref == desired, ERROR, launched → park; Nova moves the ref at accept, not
-//	                                      on a successful write, so a quiesced
-//	                                      ERROR on the desired ref cannot certify
-//	                                      the image was realized. (It may well be
-//	                                      running — a failed live-migration also
-//	                                      lands here — so the park is cause-neutral
-//	                                      and diagnoses nothing.) The outcome of a
-//	                                      submission belongs to the reconciler's
-//	                                      axis; ambient health of a settled server
-//	                                      remains the monitor's. Never-launched
-//	                                      servers are excluded: an ERROR before
-//	                                      first boot is create-retry's to own.
+//	R3′  ref == desired, ERROR, launched with recorded rebuild → retry or park.
 //	R3″  ref == desired, otherwise       → done.
 //	R4   ref != desired, never launched  → yield; a server that has never booted
 //	                                      belongs to create-retry, and Nova refuses
@@ -3151,6 +3185,11 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	}
 
 	desiredImageID := server.Spec.Image.ID
+	rebuildOptions := ServerRebuildOptions{
+		ImageID:     desiredImageID,
+		UserData:    server.Spec.UserData,
+		UseUserData: true,
+	}
 
 	currentImageID, refReadable := openstackServerImageID(openstackServer)
 
@@ -3187,28 +3226,27 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 				return openstackServer, provisioners.ErrYield
 			}
 
-			return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-				ImageID:     desiredImageID,
-				UserData:    server.Spec.UserData,
-				UseUserData: true,
-			})
+			return submitServerRebuild(ctx, client, server, openstackServer, rebuildOptions)
 		}
 
-		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
-		// write (it moved at accept), so this must not read as provisioned. Park
-		// on the provisioning axis, exactly as create-retry does when its
-		// attempts are exhausted. The remedy is a spec edit — a new image choice
-		// or a replacement server — which is ErrUserActionRequired's contract:
-		// recovery is generation-driven, and there is no retry bookkeeping to
-		// clear here, so the sentinel alone suffices. The park is also
-		// re-derived per pass, so a monitor observed-write after a silent
-		// provider recovery un-parks it without any spec change.
+		// Nova moves the image ref when it accepts a rebuild, so ERROR cannot
+		// certify that the desired image was realized.
 		if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
+			if !hasRecordedServerRebuild(server, rebuildOptions) {
+				return openstackServer, nil
+			}
+
+			if !rebuildAttemptsExhausted(server, rebuildOptions) {
+				return submitServerRebuild(ctx, client, server, openstackServer, rebuildOptions)
+			}
+
 			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-				"the provider reports the server in an error state; select another image or replace the server")
+				fmt.Sprintf("the provider reports the server in an error state after %d rebuild attempts; select another image or replace the server", maxServerRebuildAttempts))
 		}
 
 		// R3″: converged. Any other task is the monitor's axis.
+		clearServerRebuildAttempt(server)
+
 		return openstackServer, nil
 	}
 
@@ -3227,11 +3265,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	}
 
 	// R4″: the one destructive row.
-	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-		ImageID:     desiredImageID,
-		UserData:    server.Spec.UserData,
-		UseUserData: true,
-	})
+	return submitServerRebuild(ctx, client, server, openstackServer, rebuildOptions)
 }
 
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {

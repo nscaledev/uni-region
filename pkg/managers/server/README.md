@@ -21,13 +21,9 @@ re-read one.
 
 For every yielding state it is a latency optimisation, not a liveness dependency:
 `ErrYield` requeues after `DefaultYieldTimeout`, so an in-flight rebuild is re-read
-on a timer whether or not this arm ever fires; the arm only shortens the wait. For
-a server parked by the provider's failed-rebuild row (a converged, quiesced
-`ERROR` — see
-[`pkg/providers/internal/openstack`](../../providers/internal/openstack/README.md)
-— where no requeue exists), this arm *is* the liveness for observation-driven
-recovery: a fault that clears at the provider un-parks the server only via this
-wake, or via a spec edit's generation wake, which is monitor-independent.
+on a timer whether or not this arm ever fires; the arm only shortens the wait. A
+converged, quiesced `ERROR` also wakes the bounded rebuild retry through this
+observed-state update.
 
 Unlike its siblings it compares the whole subtree instead of detecting a
 field-specific edge. A predicate sees only the old and new objects, never the patch

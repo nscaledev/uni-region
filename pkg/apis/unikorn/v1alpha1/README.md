@@ -172,10 +172,11 @@ stored objects rely on for linkage, migration, and operational coordination.
   hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
   authoritative for live state.
-  A rebuild failure is not attributable: an unrelated host failure on the desired
-  image is indistinguishable from a failed rebuild, whatever is recorded, so it
-  surfaces on the monitor's lifecycle axis rather than as a reconciler diagnosis.
-  Recovery is another image or a replacement server — never data restoration.
+  A failed provider-recorded rebuild on the desired image is retried in place up
+  to three provider-accepted attempts. The retry state is fenced by target and
+  generation and clears once that rebuild converges, then surfaces as an
+  operator-terminal error only while unresolved. An unrecorded, stale, or later
+  provider `ERROR` does not authorize a retry. Recovery never restores data.
 - `Server.Status.Observed` is the partition that lets the two status writers stop
   arbitrating. `Server` status has two writers: the reconciler drives the provider
   toward spec, the monitor polls the provider and records what it saw. Anything they

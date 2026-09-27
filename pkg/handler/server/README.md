@@ -186,9 +186,10 @@ related dependencies rather than from nested path scope.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
-- Rebuild submits at most one Nova-accepted action per target image and effective
-  user-data payload. A rebuild that fails leaves the server in `ERROR`; there is no
-  automatic retry, and recovery is another image or user-data update, or server replacement.
+- Rebuild submits at most three Nova-accepted actions per target image and effective
+  user-data payload while its provider-recorded episode remains unresolved. The record
+  clears after convergence, so a later unrelated error cannot retry it. After
+  exhaustion, recovery is another image or user-data update, or server replacement.
 
 ## Caveats
 
