@@ -92,7 +92,7 @@ func newSrvFakeClient(t *testing.T, objects ...runtime.Object) *fake.ClientBuild
 	scheme := runtime.NewScheme()
 	require.NoError(t, regionv1.AddToScheme(scheme))
 
-	builder := fake.NewClientBuilder().WithScheme(scheme)
+	builder := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&regionv1.Server{})
 
 	for _, o := range objects {
 		builder = builder.WithRuntimeObjects(o)
@@ -1213,6 +1213,7 @@ func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
 	t.Parallel()
 
 	resource := testServerV2(srvServerID)
+	previousUserDataHash := types.UserDataHash(resource.Spec.UserData)
 	network := testSrvNetworkWithProject(srvProjectID)
 	k8sClient := newSrvFakeClient(t, network, resource).Build()
 	c := server.NewClientV2(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
@@ -1234,6 +1235,7 @@ func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
 	updated := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
 	require.Equal(t, *result.Spec.UserData, updated.Spec.UserData)
+	require.Equal(t, previousUserDataHash, updated.Status.AcceptedUserDataHash)
 }
 
 func TestServerUpdateV2VolumeSetSemantics(t *testing.T) {

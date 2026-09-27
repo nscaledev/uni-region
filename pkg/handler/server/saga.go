@@ -33,6 +33,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/volume"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -264,12 +265,37 @@ func (s *updateV2Saga) releaseAddedClaims(ctx context.Context) error {
 }
 
 func (s *updateV2Saga) update(ctx context.Context) error {
+	if err := s.baselineLegacyUserData(ctx); err != nil {
+		return err
+	}
+
 	if err := s.client.Client.Client.Patch(ctx, s.updated, client.MergeFromWithOptions(s.current, &client.MergeFromWithOptimisticLock{})); err != nil {
 		if kerrors.IsConflict(err) {
 			return errors.HTTPConflict().WithError(err)
 		}
 
 		return fmt.Errorf("%w: unable to update server", err)
+	}
+
+	return nil
+}
+
+// baselineLegacyUserData preserves the old desired value before an update
+// replaces it, so the controller can rebuild the first changed legacy server.
+func (s *updateV2Saga) baselineLegacyUserData(ctx context.Context) error {
+	if s.current.Status.AcceptedUserDataHash != "" || !userDataChanged(s.current.Spec.UserData, s.request.Spec.UserData) {
+		return nil
+	}
+
+	before := s.current.DeepCopy()
+	s.current.Status.AcceptedUserDataHash = types.UserDataHash(s.current.Spec.UserData)
+
+	if err := s.client.Client.Client.Status().Patch(ctx, s.current, client.MergeFromWithOptions(before, &client.MergeFromWithOptimisticLock{})); err != nil {
+		if kerrors.IsConflict(err) {
+			return errors.HTTPConflict().WithError(err)
+		}
+
+		return fmt.Errorf("%w: unable to baseline server user-data", err)
 	}
 
 	return nil
