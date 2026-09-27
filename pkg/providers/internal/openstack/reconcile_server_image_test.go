@@ -84,6 +84,7 @@ const (
 // desiredRebuildServer is a CR wanting the new image, with no status latch.
 func desiredRebuildServer() *unikornv1.Server {
 	return &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{Generation: 1},
 		Spec: unikornv1.ServerSpec{
 			Image: &unikornv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)},
 		},
@@ -211,25 +212,127 @@ func TestReconcileServerImageConvergedIsDone(t *testing.T) {
 	requireNoReconcilerStamp(t, server)
 }
 
-// TestReconcileServerImageConvergedErrorParks pins that a quiesced ERROR on the
-// desired image parks as user-action-required: the ref moves at accept, not on
-// a successful write, so this state cannot certify the spec image was realized
-// and must not read as provisioned (INST-1235). The message is ours, cause-neutral
-// and actionable — it diagnoses nothing (the row also catches e.g. a failed
-// live-migration with the guest still running) and never carries Nova's fault
-// vocabulary.
+// TestReconcileServerImageConvergedErrorParks keeps a failed rebuild terminal
+// after the final accepted retry.
 func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	server.Status.RebuildAttempts = 3
+	server.Status.Conditions = nil
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.Error(t, err)
+	require.True(t, provisioners.IsTerminal(err), "a failed rebuild must park after all attempts")
+	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
+		"the advertised remedy is a spec edit, so the park must carry the user-fixable disposition")
+	require.ErrorContains(t, err, "the provider reports the server in an error state after 3 rebuild attempts")
+	requireNoReconcilerStamp(t, server)
+}
+
+func TestReconcileServerImageRetriesFailedRebuild(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).Times(3).
+		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.Equal(t, int32(1), server.Status.RebuildAttempts)
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.Equal(t, int32(2), server.Status.RebuildAttempts)
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.Equal(t, int32(3), server.Status.RebuildAttempts)
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
+	require.Equal(t, int32(3), server.Status.RebuildAttempts)
+}
+
+func TestReconcileServerImageDoesNotRetryErrorAfterConvergedRebuild(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.Equal(t, int32(1), server.Status.RebuildAttempts)
+
+	server.Status.Conditions = nil
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildNewImageID))
+	require.NoError(t, err)
+	require.Zero(t, server.Status.RebuildAttempts)
+	require.Zero(t, server.Status.RebuildGeneration)
+	require.Empty(t, server.Status.RebuildTargetHash)
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.NoError(t, err)
+	requireNoReconcilerStamp(t, server)
+}
+
+func TestReconcileServerImageDoesNotRetryUnrecordedError(t *testing.T) {
 	t.Parallel()
 
 	client := mock.NewMockServerInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
-	require.Error(t, err)
-	require.True(t, provisioners.IsTerminal(err), "a failed rebuild must park, not retry or settle")
-	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
-		"the advertised remedy is a spec edit, so the park must carry the user-fixable disposition, not the operator-only ErrTerminal")
-	require.ErrorContains(t, err, "the provider reports the server in an error state; select another image or replace the server")
+	require.NoError(t, err)
+	require.Zero(t, server.Status.RebuildAttempts)
+	requireNoReconcilerStamp(t, server)
+}
+
+func TestReconcileServerImageDoesNotRetryStaleRecordedError(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	server.Generation++
+	server.Status.Conditions = nil
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.NoError(t, err)
+	require.Equal(t, int32(1), server.Status.RebuildAttempts)
+	requireNoReconcilerStamp(t, server)
+}
+
+func TestReconcileServerImageDoesNotParkStaleExhaustedRebuild(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptions()).
+		Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	server := desiredRebuildServer()
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	server.Status.RebuildAttempts = 3
+	server.Generation++
+	server.Status.Conditions = nil
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	require.NoError(t, err)
+	require.Equal(t, int32(3), server.Status.RebuildAttempts)
 	requireNoReconcilerStamp(t, server)
 }
 
