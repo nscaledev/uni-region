@@ -120,7 +120,7 @@ var MetadataKey = metadataKey
 var ServerForCreate = serverForCreate
 
 func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
-	return reconcileServerImage(ctx, client, server, openstackServer)
+	return reconcileServerImage(ctx, client, server, openstackServer, userDataHash(server.Spec.UserData))
 }
 
 //nolint:gochecknoglobals
@@ -313,11 +313,11 @@ func ReconcileLoadBalancerFloatingIP(ctx context.Context, p *Provider, client Fl
 }
 
 func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
-	return p.reconcileServer(ctx, client, server, port, keyName, nil)
+	return p.reconcileServer(ctx, client, server, port, keyName, userDataHash(server.Spec.UserData), nil)
 }
 
 func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
-	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
+	return p.reconcileServer(ctx, client, server, port, keyName, userDataHash(server.Spec.UserData), serverCreatePreflight(preflight))
 }
 
 // ReconcileServerForCreate exercises the CreateServer copy-back semantics:

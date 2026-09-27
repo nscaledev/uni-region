@@ -131,7 +131,47 @@ func TestRebuildServerClearsUserData(t *testing.T) {
 
 	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
 	require.True(t, ok, "body missing 'rebuild' key")
-	assert.Equal(t, "", rebuildBody["user_data"], "an empty payload must clear Nova user data")
+	assert.Empty(t, rebuildBody["user_data"], "an empty payload must clear Nova user data")
+}
+
+func TestCreateAndRebuildServerEncodeUserDataEqually(t *testing.T) {
+	t.Parallel()
+
+	userData := []byte("#cloud-config\nusers: []\n")
+	createFake := &fakeNovaServer{}
+	createServer := httptest.NewServer(createFake)
+
+	defer createServer.Close()
+
+	createClient := openstack.NewTestComputeClient(createServer.URL + "/")
+	server := newServerFixture()
+	server.Spec.UserData = userData
+	_, err := createClient.CreateServer(t.Context(), server, "", nil, nil, nil)
+	require.NoError(t, err)
+
+	createBody, ok := createFake.body["server"].(map[string]any)
+	require.True(t, ok, "body missing 'server' key")
+	createUserData, ok := createBody["user_data"].(string)
+	require.True(t, ok, "create body missing user_data")
+
+	rebuildFake := &fakeNovaServer{}
+	rebuildServer := httptest.NewServer(rebuildFake)
+
+	defer rebuildServer.Close()
+
+	rebuildClient := openstack.NewTestComputeClient(rebuildServer.URL + "/")
+	_, err = rebuildClient.RebuildServer(t.Context(), "server-id", openstack.ServerRebuildOptions{
+		ImageID:     server.Spec.Image.ID,
+		UserData:    userData,
+		UseUserData: true,
+	})
+	require.NoError(t, err)
+
+	rebuildBody, ok := rebuildFake.body["rebuild"].(map[string]any)
+	require.True(t, ok, "body missing 'rebuild' key")
+	rebuildUserData, ok := rebuildBody["user_data"].(string)
+	require.True(t, ok, "rebuild body missing user_data")
+	require.Equal(t, createUserData, rebuildUserData)
 }
 
 // newServerFixture is a server named test-server, matching the name the fake
