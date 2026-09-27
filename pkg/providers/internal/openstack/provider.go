@@ -3050,6 +3050,47 @@ func userDataHash(userData []byte) string {
 	return types.UserDataHash(userData)
 }
 
+const maxServerRebuildAttempts = 3
+
+func serverRebuildTargetHash(options ServerRebuildOptions) string {
+	target := make([]byte, 0, len(options.ImageID.String())+1+len(options.UserData))
+	target = append(target, options.ImageID.String()...)
+	target = append(target, 0)
+
+	if options.UseUserData {
+		target = append(target, options.UserData...)
+	}
+
+	return types.UserDataHash(target)
+}
+
+func hasRecordedServerRebuild(server *unikornv1.Server, options ServerRebuildOptions) bool {
+	return server.Status.RebuildAttempts > 0 &&
+		server.Status.RebuildGeneration == server.Generation &&
+		server.Status.RebuildTargetHash == serverRebuildTargetHash(options)
+}
+
+func recordServerRebuildAttempt(server *unikornv1.Server, options ServerRebuildOptions) {
+	if !hasRecordedServerRebuild(server, options) {
+		clearServerRebuildAttempt(server)
+	}
+
+	server.Status.RebuildAttempts++
+	server.Status.RebuildGeneration = server.Generation
+	server.Status.RebuildTargetHash = serverRebuildTargetHash(options)
+}
+
+func rebuildAttemptsExhausted(server *unikornv1.Server, options ServerRebuildOptions) bool {
+	return hasRecordedServerRebuild(server, options) &&
+		server.Status.RebuildAttempts >= maxServerRebuildAttempts
+}
+
+func clearServerRebuildAttempt(server *unikornv1.Server) {
+	server.Status.RebuildAttempts = 0
+	server.Status.RebuildGeneration = 0
+	server.Status.RebuildTargetHash = ""
+}
+
 func serverRequiresRebuild(server *unikornv1.Server, currentImageID, desiredImageID regionids.ImageID, desiredUserDataHash string) bool {
 	if currentImageID == desiredImageID && server.Status.AcceptedUserDataHash == "" {
 		// Servers created before user-data rebuilds have no provider-readable
@@ -3131,6 +3172,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 	}
 
 	setAcceptedUserDataHashes(server, desiredUserDataHash, userDataHash(options.UserData))
+	recordServerRebuildAttempt(server, options)
 	markServerRebuildAccepted(server)
 
 	// An accepted rebuild is in flight, so completing here would report the server
@@ -3140,6 +3182,19 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 	}
 
 	return rebuilt, provisioners.ErrYield
+}
+
+func reconcileErroredServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredUserDataHash string, options ServerRebuildOptions) (*servers.Server, error) {
+	if !hasRecordedServerRebuild(server, options) {
+		return openstackServer, nil
+	}
+
+	if !rebuildAttemptsExhausted(server, options) {
+		return submitServerRebuild(ctx, client, server, openstackServer, desiredUserDataHash, options)
+	}
+
+	return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+		fmt.Sprintf("the provider reports the server in an error state after %d rebuild attempts; select another image or replace the server", maxServerRebuildAttempts))
 }
 
 // reconcileServerImage converges the server onto its desired image, deciding only
@@ -3179,6 +3234,11 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	}
 
 	desiredImageID := server.Spec.Image.ID
+	rebuildOptions := ServerRebuildOptions{
+		ImageID:     desiredImageID,
+		UserData:    server.Spec.UserData,
+		UseUserData: true,
+	}
 
 	currentImageID, refReadable := openstackServerImageID(openstackServer)
 
@@ -3217,11 +3277,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 				"another operation is in progress on the server; the requested changes will be applied once it completes")
 		}
 
-		return submitServerRebuild(ctx, client, server, openstackServer, desiredUserDataHash, ServerRebuildOptions{
-			ImageID:     desiredImageID,
-			UserData:    server.Spec.UserData,
-			UseUserData: true,
-		})
+		return submitServerRebuild(ctx, client, server, openstackServer, desiredUserDataHash, rebuildOptions)
 	}
 
 	// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
@@ -3234,11 +3290,12 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	// re-derived per pass, so a monitor observed-write after a silent
 	// provider recovery un-parks it without any spec change.
 	if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
-		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-			"the provider reports the server in an error state; select another image or replace the server")
+		return reconcileErroredServerRebuild(ctx, client, server, openstackServer, desiredUserDataHash, rebuildOptions)
 	}
 
 	// R3″: converged. Any other task is the monitor's axis.
+	clearServerRebuildAttempt(server)
+
 	return openstackServer, nil
 }
 
