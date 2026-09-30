@@ -1381,6 +1381,7 @@ type FileStorageSnapshotList struct {
 // +kubebuilder:printcolumn:name="file storage",type="string",JSONPath=".spec.fileStorageID"
 // +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
 // +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.status) || !has(oldSelf.status.creationConfirmed) || !oldSelf.status.creationConfirmed || (has(self.status) && has(self.status.creationConfirmed) && self.status.creationConfirmed)",message="creationConfirmed cannot transition from true to false or omitted"
 type FileStorageSnapshot struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -1416,6 +1417,11 @@ type FileStorageSnapshotSpec struct {
 }
 
 type FileStorageSnapshotStatus struct {
+	// CreationConfirmed is an internal durable receipt that the provider
+	// definitely accepted the exact immutable create intent or an exact-match
+	// replay. It prevents recreation and does not indicate readiness or health.
+	// +optional
+	CreationConfirmed *bool `json:"creationConfirmed,omitempty"`
 	// SnapshotTime is the provider-observed capture time.
 	SnapshotTime *metav1.Time `json:"snapshotTime,omitempty"`
 	// AbsoluteProtectedPath is the exact path returned by the provider. Writers
