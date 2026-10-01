@@ -186,12 +186,6 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              creationConfirmed:
-                description: |-
-                  CreationConfirmed is an internal durable receipt that the provider
-                  definitely accepted the exact immutable create intent or an exact-match
-                  replay. It prevents recreation and does not indicate readiness or health.
-                type: boolean
               snapshotTime:
                 description: SnapshotTime is the provider-observed capture time.
                 format: date-time
@@ -200,11 +194,6 @@ spec:
         required:
         - spec
         type: object
-        x-kubernetes-validations:
-        - message: creationConfirmed cannot transition from true to false or omitted
-          rule: '!has(oldSelf.status) || !has(oldSelf.status.creationConfirmed) ||
-            !oldSelf.status.creationConfirmed || (has(self.status) && has(self.status.creationConfirmed)
-            && self.status.creationConfirmed)'
     served: true
     storage: true
     subresources:
