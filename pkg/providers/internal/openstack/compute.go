@@ -148,6 +148,29 @@ func validFlavorID(id string) bool {
 	return err == nil
 }
 
+func (c *ComputeClient) filterFlavors(result []flavors.Flavor) []flavors.Flavor {
+	return slices.DeleteFunc(result, func(flavor flavors.Flavor) bool {
+		if !validFlavorID(flavor.ID) {
+			return true
+		}
+
+		// We are admin, so see all the things, throw out private flavors.
+		if !flavor.IsPublic {
+			return true
+		}
+
+		if c.options == nil || c.options.Flavors == nil {
+			return false
+		}
+
+		if c.options.Flavors.Selector != nil && len(c.options.Flavors.Selector.IDs) > 0 {
+			return !slices.Contains(c.options.Flavors.Selector.IDs, flavor.ID)
+		}
+
+		return false
+	})
+}
+
 // Flavors returns a list of flavors.
 func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error) {
 	if result, ok := c.flavorCache.Get(); ok {
@@ -170,28 +193,7 @@ func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error
 	// Mutate any flavors first, as this may alter their selection criteria.
 	c.mutateFlavors(result)
 
-	result = slices.DeleteFunc(result, func(flavor flavors.Flavor) bool {
-		if !validFlavorID(flavor.ID) {
-			return true
-		}
-
-		// We are admin, so see all the things, throw out private flavors.
-		if !flavor.IsPublic {
-			return true
-		}
-
-		if c.options == nil || c.options.Flavors == nil {
-			return false
-		}
-
-		if c.options.Flavors.Selector != nil && len(c.options.Flavors.Selector.IDs) > 0 {
-			if !slices.Contains(c.options.Flavors.Selector.IDs, flavor.ID) {
-				return true
-			}
-		}
-
-		return false
-	})
+	result = c.filterFlavors(result)
 
 	c.flavorCache.Set(result)
 
