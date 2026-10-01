@@ -42,6 +42,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	"k8s.io/utils/ptr"
 )
@@ -164,6 +165,10 @@ func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error
 	c.mutateFlavors(result)
 
 	result = slices.DeleteFunc(result, func(flavor flavors.Flavor) bool {
+		if _, err := regionids.ParseFlavorID(flavor.ID); err != nil {
+			return true
+		}
+
 		// We are admin, so see all the things, throw out private flavors.
 		if !flavor.IsPublic {
 			return true
