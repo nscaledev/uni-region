@@ -95,12 +95,8 @@ stored objects rely on for linkage, migration, and operational coordination.
   permits letters, digits, underscores, periods, and hyphens up to 63 characters.
   Protected paths are optional relative paths; omission selects the
   File Storage root. Pause and tags remain mutable.
-- Snapshot status stores conditions, provider capture time, absolute protected
-  path, and the internal optional `creationConfirmed` receipt. The receipt stays
-  false or omitted until the provider definitely accepts the exact immutable
-  create intent or an exact-match replay. Once true it cannot be cleared and
-  prevents recreation under the same intent; it does not indicate readiness or
-  health. The resource has no phase field.
+- Snapshot status stores conditions, provider capture time, and absolute
+  protected path. The resource has no phase field or internal observation latch.
 - `FileStorage.Spec.NFS` stores POSIX ACL and atime update interval desired state
   as required, defaulted values. The CRD defaults missing values to `false` and
   `0` before validation. An atime value of `0` means read-driven updates are
