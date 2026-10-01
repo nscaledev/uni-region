@@ -156,11 +156,16 @@ func NewTestServerCreatePlacementPreflight(config *unikornv1.PlacementPreflightS
 }
 
 func NewTestComputeClient(endpoint string) *ComputeClient {
+	return NewTestComputeClientWithOptions(endpoint, nil)
+}
+
+func NewTestComputeClientWithOptions(endpoint string, options *unikornv1.RegionOpenstackComputeSpec) *ComputeClient {
 	return &ComputeClient{
 		client: &gophercloud.ServiceClient{
 			ProviderClient: &gophercloud.ProviderClient{},
 			Endpoint:       endpoint,
 		},
+		options:     options,
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
 	}
 }

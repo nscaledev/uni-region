@@ -14,10 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package openstack
+package openstack_test
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -25,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 )
 
 func TestGetFlavorsFiltersUnsupportedIDs(t *testing.T) {
@@ -58,19 +58,23 @@ func TestGetFlavorsFiltersUnsupportedIDs(t *testing.T) {
 			t.Parallel()
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				require.Equal(t, "/flavors/detail", r.URL.Path)
+				if r.URL.Path != "/flavors/detail" {
+					http.NotFound(w, r)
+
+					return
+				}
+
 				w.Header().Set("Content-Type", "application/json")
-				require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"flavors": []map[string]any{
-					{"id": selectedID, "name": "selected", "vcpus": 1, "ram": 1024, "disk": 10, "os-flavor-access:is_public": true},
-					{"id": otherID, "name": "other", "vcpus": 2, "ram": 2048, "disk": 20, "os-flavor-access:is_public": true},
-					{"id": "42", "name": "numeric", "vcpus": 4, "ram": 4096, "disk": 40, "os-flavor-access:is_public": true},
-					{"id": "33333333-3333-4333-a333-333333333333", "name": "private", "vcpus": 8, "ram": 8192, "disk": 80, "os-flavor-access:is_public": false},
-				}}))
+				_, _ = w.Write([]byte(`{"flavors":[
+					{"id":"11111111-1111-4111-a111-111111111111","name":"selected","vcpus":1,"ram":1024,"disk":10,"os-flavor-access:is_public":true},
+					{"id":"22222222-2222-4222-a222-222222222222","name":"other","vcpus":2,"ram":2048,"disk":20,"os-flavor-access:is_public":true},
+					{"id":"42","name":"numeric","vcpus":4,"ram":4096,"disk":40,"os-flavor-access:is_public":true},
+					{"id":"33333333-3333-4333-a333-333333333333","name":"private","vcpus":8,"ram":8192,"disk":80,"os-flavor-access:is_public":false}
+				]}`))
 			}))
 			t.Cleanup(server.Close)
 
-			client := NewTestComputeClient(server.URL + "/")
-			client.options = tc.options
+			client := openstack.NewTestComputeClientWithOptions(server.URL+"/", tc.options)
 
 			flavors, err := client.GetFlavors(t.Context())
 			require.NoError(t, err)
@@ -79,6 +83,7 @@ func TestGetFlavorsFiltersUnsupportedIDs(t *testing.T) {
 			for i := range flavors {
 				got[i] = flavors[i].ID
 			}
+
 			require.Equal(t, tc.want, got)
 		})
 	}

@@ -142,6 +142,12 @@ func (c *ComputeClient) mutateFlavors(f []flavors.Flavor) {
 	}
 }
 
+func validFlavorID(id string) bool {
+	_, err := regionids.ParseFlavorID(id)
+
+	return err == nil
+}
+
 // Flavors returns a list of flavors.
 func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error) {
 	if result, ok := c.flavorCache.Get(); ok {
@@ -165,7 +171,7 @@ func (c *ComputeClient) GetFlavors(ctx context.Context) ([]flavors.Flavor, error
 	c.mutateFlavors(result)
 
 	result = slices.DeleteFunc(result, func(flavor flavors.Flavor) bool {
-		if _, err := regionids.ParseFlavorID(flavor.ID); err != nil {
+		if !validFlavorID(flavor.ID) {
 			return true
 		}
 
