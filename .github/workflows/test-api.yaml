@@ -200,7 +200,7 @@ jobs:
         grafana-service-account-token: ${{ secrets.GRAFANA_SERVICE_ACCOUNT_TOKEN }}
         enable-unikorn-cr-enrichment: 'true'
         unikorn-cr-teleport-token: github-unikorn-cr-reader
-        unikorn-cr-kube-cluster: nks-dev-glo1
+        unikorn-cr-kube-cluster: uni-dev-glo1
 
   find-uat-deployed-version:
     name: Resolve UAT test ref
