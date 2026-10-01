@@ -58,15 +58,9 @@ func TestFileStorageSnapshotSchema(t *testing.T) {
 	}
 
 	require.Equal(t, "string", requireSchemaProperty(t, schema, "spec", "protectedPath").Type)
-	status := requireSchemaProperty(t, schema, "status")
-	require.Equal(t, "string", requireSchemaProperty(t, status, "absoluteProtectedPath").Type)
-	require.Equal(t, "array", requireSchemaProperty(t, status, "conditions").Type)
-
-	creationConfirmed := requireSchemaProperty(t, status, "creationConfirmed")
-	require.Equal(t, "boolean", creationConfirmed.Type)
-	require.NotContains(t, status.Required, "creationConfirmed")
-	require.NotContains(t, requireSchemaProperty(t, schema, "spec").Properties, "creationConfirmed")
-	require.NotContains(t, status.Properties, "backendObservedAt")
+	require.Equal(t, "string", requireSchemaProperty(t, schema, "status", "absoluteProtectedPath").Type)
+	require.Equal(t, "array", requireSchemaProperty(t, schema, "status", "conditions").Type)
+	require.NotContains(t, requireSchemaProperty(t, schema, "status").Properties, "backendObservedAt")
 }
 
 func TestFileStorageSnapshotManagedResourceHelpers(t *testing.T) {
@@ -248,41 +242,6 @@ func TestFileStorageSnapshotIntentIsImmutable(t *testing.T) {
 	}
 }
 
-func TestFileStorageSnapshotCreationConfirmedIsWriteOnce(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name  string
-		old   *bool
-		new   *bool
-		valid bool
-	}{
-		{name: "omitted remains omitted", valid: true},
-		{name: "omitted becomes false", new: ptr.To(false), valid: true},
-		{name: "omitted becomes true", new: ptr.To(true), valid: true},
-		{name: "false becomes omitted", old: ptr.To(false), valid: true},
-		{name: "false remains false", old: ptr.To(false), new: ptr.To(false), valid: true},
-		{name: "false becomes true", old: ptr.To(false), new: ptr.To(true), valid: true},
-		{name: "true becomes omitted", old: ptr.To(true)},
-		{name: "true becomes false", old: ptr.To(true), new: ptr.To(false)},
-		{name: "true remains true", old: ptr.To(true), new: ptr.To(true), valid: true},
-	}
-
-	validator := newCRDValidator(t, fileStorageSnapshotCRDFile)
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			require.Equal(t, tc.valid, validator.validatesUpdateUnstructured(
-				t,
-				fileStorageSnapshotWithCreationConfirmed(tc.new),
-				fileStorageSnapshotWithCreationConfirmed(tc.old),
-			))
-		})
-	}
-}
-
 func fileStorageSnapshot(protectedPath *string) map[string]any {
 	spec := map[string]any{
 		"name":           "Daily.Backup",
@@ -303,17 +262,4 @@ func fileStorageSnapshot(protectedPath *string) map[string]any {
 		},
 		"spec": spec,
 	}
-}
-
-func fileStorageSnapshotWithCreationConfirmed(creationConfirmed *bool) map[string]any {
-	snapshot := fileStorageSnapshot(nil)
-	status := map[string]any{}
-
-	if creationConfirmed != nil {
-		status["creationConfirmed"] = *creationConfirmed
-	}
-
-	snapshot["status"] = status
-
-	return snapshot
 }
