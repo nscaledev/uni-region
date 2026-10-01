@@ -377,7 +377,7 @@ jobs:
         webhook-type: incoming-webhook
         payload: |
           {
-            "text": ":red_circle: *Region API Tests (dev) did not run* — `${{ github.repository }}`. Resolve Dev test ref finished with `${{ needs.find-dev-deployed-version.result }}`; check whether `DEV_API_AUTH_TOKEN` is valid.\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            "text": ":red_circle: *Region API Tests (dev) did not run* — `${{ github.repository }}`. Resolve Dev test ref finished with `${{ needs.find-dev-deployed-version.result }}` — see the run for the cause.\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
 
     - name: Notify Slack that UAT API tests did not run
@@ -388,5 +388,5 @@ jobs:
         webhook-type: incoming-webhook
         payload: |
           {
-            "text": ":red_circle: *Region API Tests (uat) did not run* — `${{ github.repository }}`. Resolve UAT test ref finished with `${{ needs.find-uat-deployed-version.result }}`; check whether `UAT_API_AUTH_TOKEN` is valid.\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            "text": ":red_circle: *Region API Tests (uat) did not run* — `${{ github.repository }}`. Resolve UAT test ref finished with `${{ needs.find-uat-deployed-version.result }}` — see the run for the cause.\n${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           }
