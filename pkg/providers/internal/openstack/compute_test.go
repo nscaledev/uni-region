@@ -84,7 +84,7 @@ func (f *fakeNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func TestRebuildServerSendsOnlyImage(t *testing.T) {
+func TestRebuildServerSendsUserData(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeNovaServer{}
@@ -94,7 +94,9 @@ func TestRebuildServerSendsOnlyImage(t *testing.T) {
 
 	client := openstack.NewTestComputeClient(srv.URL + "/")
 	options := openstack.ServerRebuildOptions{
-		ImageID: idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+		ImageID:     idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+		UserData:    []byte("#cloud-config\nusers: []\n"),
+		UseUserData: true,
 	}
 
 	_, err := client.RebuildServer(t.Context(), "server-id", options)
@@ -104,13 +106,72 @@ func TestRebuildServerSendsOnlyImage(t *testing.T) {
 	require.True(t, ok, "body missing 'rebuild' key")
 	assert.Equal(t, options.ImageID.String(), rebuildBody["imageRef"])
 
-	// key_name and user_data are omitted so Nova preserves the stored keypair and
-	// create-time user data, keeping the rebuilt guest create-equivalent.
+	// Rebuild cannot change the keypair, so it is intentionally omitted.
 	_, hasKeyName := rebuildBody["key_name"]
 	assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
 
-	_, hasUserData := rebuildBody["user_data"]
-	assert.False(t, hasUserData, "user_data must be omitted so Nova keeps the create-time user data")
+	assert.Equal(t, "I2Nsb3VkLWNvbmZpZwp1c2VyczogW10K", rebuildBody["user_data"])
+}
+
+func TestRebuildServerClearsUserData(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeNovaServer{}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+	_, err := client.RebuildServer(t.Context(), "server-id", openstack.ServerRebuildOptions{
+		ImageID:     idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+		UserData:    []byte{},
+		UseUserData: true,
+	})
+	require.NoError(t, err)
+
+	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
+	require.True(t, ok, "body missing 'rebuild' key")
+	assert.Empty(t, rebuildBody["user_data"], "an empty payload must clear Nova user data")
+}
+
+func TestCreateAndRebuildServerEncodeUserDataEqually(t *testing.T) {
+	t.Parallel()
+
+	userData := []byte("#cloud-config\nusers: []\n")
+	createFake := &fakeNovaServer{}
+	createServer := httptest.NewServer(createFake)
+
+	defer createServer.Close()
+
+	createClient := openstack.NewTestComputeClient(createServer.URL + "/")
+	server := newServerFixture()
+	server.Spec.UserData = userData
+	_, err := createClient.CreateServer(t.Context(), server, "", nil, nil, nil)
+	require.NoError(t, err)
+
+	createBody, ok := createFake.body["server"].(map[string]any)
+	require.True(t, ok, "body missing 'server' key")
+	createUserData, ok := createBody["user_data"].(string)
+	require.True(t, ok, "create body missing user_data")
+
+	rebuildFake := &fakeNovaServer{}
+	rebuildServer := httptest.NewServer(rebuildFake)
+
+	defer rebuildServer.Close()
+
+	rebuildClient := openstack.NewTestComputeClient(rebuildServer.URL + "/")
+	_, err = rebuildClient.RebuildServer(t.Context(), "server-id", openstack.ServerRebuildOptions{
+		ImageID:     server.Spec.Image.ID,
+		UserData:    userData,
+		UseUserData: true,
+	})
+	require.NoError(t, err)
+
+	rebuildBody, ok := rebuildFake.body["rebuild"].(map[string]any)
+	require.True(t, ok, "body missing 'rebuild' key")
+	rebuildUserData, ok := rebuildBody["user_data"].(string)
+	require.True(t, ok, "rebuild body missing user_data")
+	require.Equal(t, createUserData, rebuildUserData)
 }
 
 // newServerFixture is a server named test-server, matching the name the fake

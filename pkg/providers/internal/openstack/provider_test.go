@@ -2382,7 +2382,9 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	compute := mock.NewMockServerInterface(c)
 	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
 	compute.EXPECT().RebuildServer(t.Context(), "server-1", openstack.ServerRebuildOptions{
-		ImageID: idstest.MustParseImageID(rebuildNewImageID),
+		ImageID:     idstest.MustParseImageID(rebuildNewImageID),
+		UserData:    options.UserData,
+		UseUserData: true,
 	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	p := openstack.NewTestProvider(client, regionFixture())
