@@ -19,6 +19,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -641,6 +642,22 @@ func (s *FileStorage) ResourceLabels() (labels.Set, error) {
 // resources that are dynamically defined for a region.
 func (r *Region) StaticName() string {
 	return string(r.Spec.Provider) + "." + r.Name
+}
+
+// BlockedNetworkPrefix returns the first blocked prefix that overlaps the
+// given network prefix, or nil if the network prefix may be used.
+// Overlap is either way round: inside a blocked prefix, or containing one.
+func (r *Region) BlockedNetworkPrefix(prefix *net.IPNet) *unikornv1core.IPv4Prefix {
+	for i := range r.Spec.BlockedNetworkPrefixes {
+		blocked := &r.Spec.BlockedNetworkPrefixes[i]
+
+		// Both are network aligned, so overlap means one contains the other's base.
+		if blocked.Contains(prefix.IP) || prefix.Contains(blocked.IP) {
+			return blocked
+		}
+	}
+
+	return nil
 }
 
 // VLANSpec returns allocatable VLANs for a region, if any are defined.

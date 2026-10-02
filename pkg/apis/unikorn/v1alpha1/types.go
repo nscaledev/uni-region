@@ -78,6 +78,10 @@ type RegionSpec struct {
 	Security *RegionSecuritySpec `json:"security,omitempty"`
 	// Type defines the provider type.
 	Provider Provider `json:"provider"`
+	// BlockedNetworkPrefixes are address ranges a tenant network prefix
+	// must not overlap, e.g. infrastructure address space that would collide
+	// with tenant traffic.  Only enforced on network creation.
+	BlockedNetworkPrefixes []unikornv1core.IPv4Prefix `json:"blockedNetworkPrefixes,omitempty"`
 	// Kubernetes is provider specific configuration for the region.
 	Kubernetes *RegionKubernetesSpec `json:"kubernetes,omitempty"`
 	// Openstack is provider specific configuration for the region.

@@ -39,6 +39,10 @@ stored objects rely on for linkage, migration, and operational coordination.
   region. It carries provider type, provider-specific configuration, stored
   visibility inputs, flavor/image/network/volume-class selection rules, and
   helper methods that downstream code actively depends on.
+- `Region.Spec.BlockedNetworkPrefixes` is provider-agnostic, Region-scoped
+  policy: tenant network prefixes that overlap any entry are rejected on
+  create. Empty means no restriction. `Region.BlockedNetworkPrefix` owns the
+  overlap test (either way round, so supernets of an entry are blocked too).
 - `Region.Spec.Openstack.DefaultArchitecture` controls the Region-scoped
   fallback used when OpenStack flavor or image inventory lacks explicit
   architecture metadata. CRD admission defaults omission to `x86_64` and

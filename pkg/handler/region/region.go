@@ -105,12 +105,23 @@ func (c *Client) getRegion(ctx context.Context, regionID regionids.RegionID) (*u
 // allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
 // to avoid confirming region existence to unauthorized callers.
 func (c *Client) CheckAccess(ctx context.Context, regionID regionids.RegionID) error {
+	_, err := c.Get(ctx, regionID)
+
+	return err
+}
+
+// Get is CheckAccess for callers that also need the region's configuration.
+func (c *Client) Get(ctx context.Context, regionID regionids.RegionID) (*unikornv1.Region, error) {
 	resource, err := c.getRegion(ctx, regionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return checkAccess(ctx, resource)
+	if err := checkAccess(ctx, resource); err != nil {
+		return nil, err
+	}
+
+	return resource, nil
 }
 
 func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {

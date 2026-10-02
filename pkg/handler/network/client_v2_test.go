@@ -201,6 +201,75 @@ func TestCreateV2RBACNoPermissions(t *testing.T) {
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
 }
 
+// TestCreateV2BlockedPrefix verifies that a network prefix overlapping one of
+// the region's blocked prefixes is rejected before anything is created.
+func TestCreateV2BlockedPrefix(t *testing.T) {
+	t.Parallel()
+
+	const regionID = "55555555-5555-4555-a555-555555555555"
+
+	region := &regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      regionID,
+		},
+		Spec: regionv1.RegionSpec{
+			Provider: regionv1.ProviderSimulated,
+			BlockedNetworkPrefixes: []corev1alpha1.IPv4Prefix{
+				{IPNet: net.IPNet{IP: net.IPv4(10, 0, 0, 0).To4(), Mask: net.CIDRMask(8, 32)}},
+			},
+		},
+	}
+
+	cli := newNetworkFakeClient(t, region)
+
+	ctrl := gomock.NewController(t)
+
+	// No EXPECT calls, the identity API must not be contacted.
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := network.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: namespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: organizationID,
+				Projects: &identityapi.AclProjectList{
+					{
+						Id: projectID,
+						Endpoints: identityapi.AclEndpoints{
+							{
+								Name:       "region:networks:v2",
+								Operations: identityapi.AclOperations{identityapi.Create},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	request := minimalNetworkV2CreateRequest(organizationID, projectID)
+	request.Spec.RegionId = idstest.MustParseRegionID(regionID)
+	request.Spec.Prefix = "10.0.0.0/24"
+
+	_, err := c.CreateV2(ctx, request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
+
+	identities := &regionv1.IdentityList{}
+	require.NoError(t, cli.List(t.Context(), identities))
+	require.Empty(t, identities.Items)
+
+	networks := &regionv1.NetworkList{}
+	require.NoError(t, cli.List(t.Context(), networks))
+	require.Empty(t, networks.Items)
+}
+
 func TestUpdateV2PreservesReservations(t *testing.T) {
 	t.Parallel()
 

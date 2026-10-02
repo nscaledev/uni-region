@@ -2311,6 +2311,13 @@ func (in *RegionSpec) DeepCopyInto(out *RegionSpec) {
 		*out = new(RegionSecuritySpec)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.BlockedNetworkPrefixes != nil {
+		in, out := &in.BlockedNetworkPrefixes, &out.BlockedNetworkPrefixes
+		*out = make([]unikornv1alpha1.IPv4Prefix, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
 	if in.Kubernetes != nil {
 		in, out := &in.Kubernetes, &out.Kubernetes
 		*out = new(RegionKubernetesSpec)
