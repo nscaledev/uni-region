@@ -337,30 +337,30 @@ func newCreateSaga(client *Client, request *openapi.NetworkV2Create) (*createSag
 	}, nil
 }
 
-// validateRequest performs any parsing of input data that JSON schema cannot handle,
-// then generated the network.
-func (s *createSaga) validateRequest(ctx context.Context) error {
-	prefix, err := parseIPV4Prefix(s.request.Spec.Prefix)
+// validateCreateRequest performs any parsing of input data that JSON schema
+// cannot handle.  It runs before the saga so a rejected request creates nothing.
+func validateCreateRequest(r *regionv1.Region, request *openapi.NetworkV2Create) (*net.IPNet, *regionv1.NetworkReservations, error) {
+	prefix, err := parseIPV4Prefix(request.Spec.Prefix)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-
-	s.prefix = prefix
 
 	ones, _ := prefix.Mask.Size()
 
 	if ones > 24 {
-		return errors.OAuth2InvalidRequest("minimum network prefix size is /24")
+		return nil, nil, errors.OAuth2InvalidRequest("minimum network prefix size is /24")
 	}
 
-	reservations, err := generateReservations(prefix, s.request.Spec.Reservations)
+	if blocked := r.BlockedNetworkPrefix(prefix); blocked != nil {
+		return nil, nil, errors.HTTPUnprocessableContent(fmt.Sprintf("network prefix %s overlaps %s, which is reserved in this region", prefix, blocked))
+	}
+
+	reservations, err := generateReservations(prefix, request.Spec.Reservations)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	s.reservations = reservations
-
-	return nil
+	return prefix, reservations, nil
 }
 
 // createServicePricipal creates the service principal that will own all the infrastructure
@@ -448,7 +448,6 @@ func (s *createSaga) createNetwork(ctx context.Context) error {
 
 func (s *createSaga) Actions() []saga.Action {
 	return []saga.Action{
-		saga.NewAction("validate request", s.validateRequest, nil),
 		saga.NewAction("create service principal", s.createServicePricipal, s.deleteServicePricipal),
 		saga.NewAction("generate network", s.generateNetwork, nil),
 		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
@@ -466,7 +465,12 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create)
 		return nil, err
 	}
 
-	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, request.Spec.RegionId); err != nil {
+	r, err := region.NewClient(c.ClientArgs).Get(ctx, request.Spec.RegionId)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.prefix, s.reservations, err = validateCreateRequest(r, request); err != nil {
 		return nil, err
 	}
 

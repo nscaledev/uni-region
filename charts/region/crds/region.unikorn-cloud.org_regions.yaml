@@ -57,6 +57,15 @@ spec:
           spec:
             description: RegionSpec defines metadata about the region.
             properties:
+              blockedNetworkPrefixes:
+                description: |-
+                  BlockedNetworkPrefixes are address ranges a tenant network prefix
+                  must not overlap, e.g. infrastructure address space that would collide
+                  with tenant traffic.  Only enforced on network creation.
+                items:
+                  pattern: ^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]?[0-9])\/(?:3[0-2]|[1-2]?[0-9])$
+                  type: string
+                type: array
               kubernetes:
                 description: Kubernetes is provider specific configuration for the
                   region.

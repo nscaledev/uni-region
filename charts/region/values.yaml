@@ -25,6 +25,11 @@ organization: nscaledev
 #     - 5fb90278-7365-4c0a-a00c-fba299d99c52
 #   # Provider type, must be one of "openstack", "kubernetes", or "simulated".
 #   provider: openstack
+#   # Tenant network prefixes may not overlap these ranges, e.g. infrastructure
+#   # address space tenant traffic would collide with.  Checked on network
+#   # creation only, as the prefix is immutable.  Default is no restriction.
+#   blockedNetworkPrefixes:
+#   - 10.0.0.0/10
 #   # Openstack specific configuration.
 #   openstack:
 #     # Keystone endpoint.

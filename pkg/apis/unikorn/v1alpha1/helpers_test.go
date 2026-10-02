@@ -17,10 +17,12 @@ limitations under the License.
 package v1alpha1_test
 
 import (
+	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 
@@ -221,5 +223,74 @@ func TestVLANSpec(t *testing.T) {
 		got := region.VLANSpec()
 		require.NotNil(t, got)
 		require.Equal(t, vlan, got)
+	})
+}
+
+func mustParsePrefix(t *testing.T, s string) *net.IPNet {
+	t.Helper()
+
+	_, prefix, err := net.ParseCIDR(s)
+	require.NoError(t, err)
+
+	return prefix
+}
+
+func TestBlockedNetworkPrefix(t *testing.T) {
+	t.Parallel()
+
+	region := &regionv1.Region{
+		Spec: regionv1.RegionSpec{
+			BlockedNetworkPrefixes: []unikornv1core.IPv4Prefix{
+				{IPNet: *mustParsePrefix(t, "172.16.0.0/12")},
+				{IPNet: *mustParsePrefix(t, "10.0.0.0/8")},
+			},
+		},
+	}
+
+	blocked := []struct {
+		name   string
+		prefix string
+		want   string
+	}{
+		{name: "Exact", prefix: "10.0.0.0/8", want: "10.0.0.0/8"},
+		{name: "Inside", prefix: "10.100.101.0/24", want: "10.0.0.0/8"},
+		{name: "LastInside", prefix: "10.255.255.0/24", want: "10.0.0.0/8"},
+		{name: "Supernet", prefix: "10.0.0.0/7", want: "10.0.0.0/8"},
+		{name: "SupernetLowerBase", prefix: "8.0.0.0/6", want: "10.0.0.0/8"},
+		{name: "DefaultRoute", prefix: "0.0.0.0/0", want: "172.16.0.0/12"},
+		{name: "SecondEntry", prefix: "172.31.0.0/16", want: "172.16.0.0/12"},
+	}
+
+	for _, test := range blocked {
+		t.Run("Blocks"+test.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := region.BlockedNetworkPrefix(mustParsePrefix(t, test.prefix))
+			require.NotNil(t, got)
+			require.Equal(t, test.want, got.String())
+		})
+	}
+
+	allowed := []struct {
+		name   string
+		prefix string
+	}{
+		{name: "BelowNeighbour", prefix: "9.255.255.0/24"},
+		{name: "AboveNeighbour", prefix: "11.0.0.0/8"},
+		{name: "Unrelated", prefix: "192.168.0.0/16"},
+	}
+
+	for _, test := range allowed {
+		t.Run("Allows"+test.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Nil(t, region.BlockedNetworkPrefix(mustParsePrefix(t, test.prefix)))
+		})
+	}
+
+	t.Run("AllowsAnythingWhenUnset", func(t *testing.T) {
+		t.Parallel()
+
+		require.Nil(t, (&regionv1.Region{}).BlockedNetworkPrefix(mustParsePrefix(t, "10.0.0.0/8")))
 	})
 }
