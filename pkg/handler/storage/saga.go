@@ -174,7 +174,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRegion(ctx context.Context, regionID regionids.RegionID) error {
-	if err := region.NewClient(s.client.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+	if err := region.NewClient(s.client.ClientArgs).CheckAccess(ctx, s.organizationID, regionID); err != nil {
 		if !errors.IsHTTPNotFound(err) {
 			return err
 		}

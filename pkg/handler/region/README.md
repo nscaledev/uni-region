@@ -20,7 +20,7 @@ provider capability discovery into user-visible region catalogue data.
 ## Distinctive Behaviour
 
 - region visibility is filtered against region security constraints and the
-  caller's organization scope
+  organization the request is made for
 - flavor, VolumeClass, and external-network reads cross the provider boundary
   rather than reading from CRD-backed child resources
 - flavor and VolumeClass conversion passes through the shared
@@ -59,13 +59,23 @@ provider capability discovery into user-visible region catalogue data.
   visible Region set. Requests without either grant omit the selected Regions
   without performing provider lookups.
 - Region ACL checking is enforced in two places:
-  - **List responses** (`FilterRegions`) — removes regions the caller cannot see
+  - **List responses** (`filterRegions`) — removes regions the caller cannot see
     before building the response or applying list selectors such as the
     VolumeClass `regionID` query.
   - **Direct Region references** (`CheckAccess`) — used by read or mutation
     operations that address or depend on one specific Region.
 - `CheckAccess` returns `HTTPNotFound` rather than `HTTPForbidden` to avoid
   confirming the existence of regions the caller cannot see.
+- The ACL is checked against the organization in the request (path or
+  request body), never the union of all organizations the caller belongs to.
+  Otherwise a user in two organizations sees, and can create resources in, a
+  region under the organization that is not allowed. Only APIs with no
+  organization in scope check against any of the caller's organizations:
+  VolumeClass listing, and v2 image queries without an `organizationID`
+  filter (`CheckAccessAnyOrganization`), which return only global images.
+- A v2 image query with an `organizationID` filter keeps only the filter
+  organizations that may use the region (`AllowedOrganizations`), and is not
+  found if there are none.
 
 ## Caveats
 

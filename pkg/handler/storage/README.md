@@ -57,7 +57,8 @@ accounting meet.
 
 - Storage is a `v2` resource and follows the flatter direct-lookup model.
 - Region access is enforced via `region.CheckAccess` during request validation,
-  preventing callers from creating storage in regions they cannot see.
+  preventing callers from creating storage in regions the request
+  organization may not use.
 - File Storage update requires File Storage update authorization before mutating
   storage or allocation state.
 - Quota allocation changes are part of the storage lifecycle contract, not an
