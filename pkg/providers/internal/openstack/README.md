@@ -351,7 +351,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     attach/detach remain separate capabilities
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
-  as architecture, baremetal status, and GPU semantics. Architecture resolves
+  as architecture, baremetal status, and GPU semantics. Only public flavors
+  with UUID IDs are exported, because Region's FlavorID request and CRD
+  contracts are UUID-backed; configured selectors further restrict that set.
+  Architecture resolves
   from per-flavor `cpu.architecture`, then `openstack.defaultArchitecture`,
   then the legacy `x86_64` fallback for objects that bypass CRD defaulting. The
   baremetal flag is
