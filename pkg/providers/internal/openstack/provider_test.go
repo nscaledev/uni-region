@@ -2032,6 +2032,7 @@ func TestReconcileVolume(t *testing.T) {
 	t.Run("ItIsInUse", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
