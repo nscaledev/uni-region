@@ -19,6 +19,7 @@ package region
 import (
 	"context"
 
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
@@ -28,6 +29,10 @@ var ConvertRegionType = convertRegionType
 
 //nolint:gochecknoglobals
 var Convert = convert
+
+func FilterRegions(ctx context.Context, organizationID identityids.OrganizationID, regions *unikornv1.RegionList) {
+	filterRegions(ctx, regions, []string{organizationID.String()})
+}
 
 func (c *Client) ConvertDetail(ctx context.Context, in *unikornv1.Region) (*openapi.RegionDetailRead, error) {
 	return c.convertDetail(ctx, in)

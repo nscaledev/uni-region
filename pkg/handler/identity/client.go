@@ -114,7 +114,7 @@ func (c *Client) convertList(ctx context.Context, in unikornv1.IdentityList) ope
 
 // generate a new resource from a request.
 func (c *Client) generate(ctx context.Context, organizationID identityids.OrganizationID, projectID identityids.ProjectID, request *openapi.IdentityWrite) (*unikornv1.Identity, error) {
-	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, request.Spec.RegionId); err != nil {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, organizationID, request.Spec.RegionId); err != nil {
 		return nil, err
 	}
 

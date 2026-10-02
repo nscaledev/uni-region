@@ -29,6 +29,8 @@ import (
 
 	"github.com/unikorn-cloud/core/pkg/util/cache"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
+	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	imagemock "github.com/unikorn-cloud/region/pkg/handler/image/mock"
@@ -166,6 +168,104 @@ func Test_Imagev2_List(t *testing.T) {
 			handler.GetApiV2RegionsRegionIDImages(response, request, idstest.MustParseRegionID(regionID), tc.params)
 
 			require.Equal(t, http.StatusOK, response.Result().StatusCode)
+		})
+	}
+}
+
+// Test_Imagev2_List_PrivateRegion verifies an organization filter is scoped to
+// the organizations that may use the region, not any the caller belongs to.
+func Test_Imagev2_List_PrivateRegion(t *testing.T) {
+	t.Parallel()
+
+	const (
+		namespace    = "test-org-images"
+		regionID     = "aaaa0000-0000-4000-a000-000000000001"
+		allowedOrgID = "c0000000-0000-4000-a000-000000000001"
+		deniedOrgID  = "c0000000-0000-4000-a000-000000000002"
+	)
+
+	testcases := map[string]struct {
+		organizationIDs []string
+		setupQuery      func(*testing.T, *imagemock.MockImageQuery)
+		status          int
+	}{
+		"denied org": {
+			organizationIDs: []string{deniedOrgID},
+			status:          http.StatusNotFound,
+		},
+		"denied org is dropped": {
+			organizationIDs: []string{allowedOrgID, deniedOrgID},
+			setupQuery: func(t *testing.T, query *imagemock.MockImageQuery) {
+				t.Helper()
+
+				// gomock lets extra variadic arguments match, so assert on them directly.
+				query.EXPECT().AvailableToOrganization(gomock.Any()).DoAndReturn(func(organizationIDs ...identityids.OrganizationID) types.ImageQuery {
+					require.Equal(t, []identityids.OrganizationID{identityids.MustParseOrganizationID(allowedOrgID)}, organizationIDs)
+
+					return query
+				})
+				query.EXPECT().List(gomock.Any()).Return(&cache.ListSnapshot[types.Image]{}, nil)
+			},
+			status: http.StatusOK,
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			endpoints := &identityapi.AclEndpoints{
+				{Name: "region:images", Operations: identityapi.AclOperations{identityapi.Read}},
+			}
+
+			ctx := rbac.NewContext(t.Context(), &identityapi.Acl{
+				Organizations: &identityapi.AclOrganizationList{
+					{Id: allowedOrgID, Endpoints: endpoints},
+					{Id: deniedOrgID, Endpoints: endpoints},
+				},
+			})
+
+			ctrl := gomock.NewController(t)
+			providers := mockproviders.NewMockProviders(ctrl)
+
+			if tc.setupQuery != nil {
+				provider := mockprovider.NewMockProvider(ctrl)
+				querier := imagemock.NewMockImageQuery(ctrl)
+
+				provider.EXPECT().QueryImages().Return(querier, nil)
+				providers.EXPECT().LookupCloud(gomock.Any()).Return(provider, nil)
+				tc.setupQuery(t, querier)
+			}
+
+			testRegion := &regionv1.Region{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      regionID,
+					Namespace: namespace,
+				},
+				Spec: regionv1.RegionSpec{
+					Security: &regionv1.RegionSecuritySpec{
+						Organizations: []regionv1.RegionSecurityOrganizationSpec{
+							{ID: allowedOrgID},
+						},
+					},
+				},
+			}
+
+			handler := NewImageV2Handler(common.ClientArgs{
+				Namespace: namespace,
+				Client:    fakeClientWithSchema(t, testRegion),
+				Providers: providers,
+			}, &Options{})
+
+			path := fmt.Sprintf("/api/v2/region/%s/images", regionID)
+			request := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+			response := httptest.NewRecorder()
+
+			handler.GetApiV2RegionsRegionIDImages(response, request, idstest.MustParseRegionID(regionID), openapi.GetApiV2RegionsRegionIDImagesParams{
+				OrganizationID: ptr.To(tc.organizationIDs),
+			})
+
+			require.Equal(t, tc.status, response.Result().StatusCode)
 		})
 	}
 }

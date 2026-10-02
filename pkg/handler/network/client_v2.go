@@ -465,7 +465,7 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create)
 		return nil, err
 	}
 
-	r, err := region.NewClient(c.ClientArgs).Get(ctx, request.Spec.RegionId)
+	r, err := region.NewClient(c.ClientArgs).Get(ctx, s.organizationID, request.Spec.RegionId)
 	if err != nil {
 		return nil, err
 	}

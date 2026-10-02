@@ -98,7 +98,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWrit
 		return
 	}
 
-	result, err := region.NewClient(h.ClientArgs).List(r.Context())
+	result, err := region.NewClient(h.ClientArgs).List(r.Context(), organizationID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -114,7 +114,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDDetail(w htt
 		return
 	}
 
-	result, err := region.NewClient(h.ClientArgs).GetDetail(r.Context(), regionID)
+	result, err := region.NewClient(h.ClientArgs).GetDetail(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -130,7 +130,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetw
 		return
 	}
 
-	result, err := region.NewClient(h.ClientArgs).ListExternalNetworks(r.Context(), regionID)
+	result, err := region.NewClient(h.ClientArgs).ListExternalNetworks(r.Context(), organizationID, regionID)
 	if err != nil {
 		errors.HandleError(w, r, err)
 		return

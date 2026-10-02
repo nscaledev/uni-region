@@ -39,7 +39,8 @@ service-principal root.
   direct object access paths are gated accordingly.
 - `v2` lists prefilter by organization/project/region before per-item RBAC.
 - Region access is enforced via `region.Get` before network creation,
-  preventing callers from creating networks in regions they cannot see.
+  preventing callers from creating networks in regions the request
+  organization may not use.
 - A `v2` network prefix that overlaps any of the Region's
   `BlockedNetworkPrefixes` is rejected with a 422 naming the clashing range.
   This exists to keep tenant ranges out of infrastructure address space at

@@ -33,7 +33,8 @@ import (
 
 // QueryImages takes the parameters from an image list request and runs them as a query against the provider.
 func (c *Client) QueryImages(ctx context.Context, regionID regionids.RegionID, params openapi.GetApiV2RegionsRegionIDImagesParams) (openapi.Images, error) {
-	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+	organizationIDs, err := c.queryOrganizations(ctx, regionID, params.OrganizationID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -47,7 +48,7 @@ func (c *Client) QueryImages(ctx context.Context, regionID regionids.RegionID, p
 		return nil, err
 	}
 
-	query = filterByOrganizationAndScope(ctx, query, params)
+	query = filterByOrganizationAndScope(query, organizationIDs, params)
 
 	if s := params.Status; s != nil {
 		statuses := *s
@@ -109,15 +110,27 @@ func allowedOrganizations(ctx context.Context, orgIDs []string) []identityids.Or
 	return allowed
 }
 
-func filterByOrganizationAndScope(ctx context.Context, query types.ImageQuery, params openapi.GetApiV2RegionsRegionIDImagesParams) types.ImageQuery {
-	if orgIDs := params.OrganizationID; orgIDs != nil {
-		allowedOrgs := allowedOrganizations(ctx, *orgIDs)
+// queryOrganizations returns the requested organizations the caller may read
+// images for and that may use the region. Without a filter only global images
+// are returned, so the region need only be visible to any of the caller's
+// organizations.
+func (c *Client) queryOrganizations(ctx context.Context, regionID regionids.RegionID, requested *[]string) ([]identityids.OrganizationID, error) {
+	regionClient := region.NewClient(c.ClientArgs)
 
+	if requested == nil {
+		return nil, regionClient.CheckAccessAnyOrganization(ctx, regionID)
+	}
+
+	return regionClient.AllowedOrganizations(ctx, regionID, allowedOrganizations(ctx, *requested))
+}
+
+func filterByOrganizationAndScope(query types.ImageQuery, organizationIDs []identityids.OrganizationID, params openapi.GetApiV2RegionsRegionIDImagesParams) types.ImageQuery {
+	if params.OrganizationID != nil {
 		// default scope to available, if not provided.
 		if params.Scope != nil && *params.Scope == openapi.GetApiV2RegionsRegionIDImagesParamsScopeOwned {
-			query = query.OwnedByOrganization(allowedOrgs...)
+			query = query.OwnedByOrganization(organizationIDs...)
 		} else {
-			query = query.AvailableToOrganization(allowedOrgs...)
+			query = query.AvailableToOrganization(organizationIDs...)
 		}
 	} else {
 		query = query.AvailableToOrganization() // not owned by any org; i.e., only global images. Anyone can see these.
