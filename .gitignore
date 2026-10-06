@@ -22,3 +22,4 @@ fuzz-results.xml
 hack/ci/ca-bundle.pem
 .claude/settings.local.json
 .mise.toml
+mise.toml
