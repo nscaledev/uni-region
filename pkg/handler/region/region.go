@@ -23,6 +23,7 @@ import (
 	goerrors "errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
@@ -52,11 +53,14 @@ var (
 
 type Client struct {
 	common.ClientArgs
+
+	volumeClassDiscoveryTimeout time.Duration
 }
 
 func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
-		ClientArgs: clientArgs,
+		ClientArgs:                  clientArgs,
+		volumeClassDiscoveryTimeout: volumeClassDiscoveryTimeout,
 	}
 }
 
@@ -219,7 +223,10 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.Org
 	return conversion.ConvertFlavors(result), nil
 }
 
-const volumeClassReadEndpoint = "region:volumeclasses:v2"
+const (
+	volumeClassReadEndpoint     = "region:volumeclasses:v2"
+	volumeClassDiscoveryTimeout = 5 * time.Second
+)
 
 func hasVolumeClassReadAccess(ctx context.Context) bool {
 	if rbac.AllowGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) == nil {
@@ -241,12 +248,15 @@ func hasVolumeClassReadAccess(ctx context.Context) bool {
 }
 
 func (c *Client) listRegionVolumeClasses(ctx context.Context, regionID string) (types.VolumeClassList, error) {
+	discoveryCtx, cancel := context.WithTimeout(ctx, c.volumeClassDiscoveryTimeout)
+	defer cancel()
+
 	provider, err := c.Providers.LookupCommon(regionID)
 	if err != nil {
 		return nil, providers.ProviderToServerError(err)
 	}
 
-	volumeClasses, err := provider.VolumeClasses(ctx)
+	volumeClasses, err := provider.VolumeClasses(discoveryCtx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to list volume classes", err)
 	}
