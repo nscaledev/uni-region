@@ -55,6 +55,21 @@ func requireRebuildAcceptedStamp(t *testing.T, server *unikornv1.Server) {
 	require.Equal(t, string(unikornv1core.ConditionReasonUnknown), health.Reason)
 }
 
+// requireTypedYield asserts a yielding row carries a reason and message. A bare
+// sentinel leaves the manager nothing to lift onto the Available condition, so
+// the row a server is parked on would be unobservable from the API.
+func requireTypedYield(t *testing.T, err error, message string) {
+	t.Helper()
+
+	require.ErrorIs(t, err, provisioners.ErrYield)
+
+	var perr *provisioners.Error
+
+	require.ErrorAs(t, err, &perr, "a yield must be typed so the condition can name the wait")
+	require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
+	require.Contains(t, perr.Message(), message, "the condition message must say which row we are on")
+}
+
 // requireNoReconcilerStamp asserts the pass left both monitor-owned conditions
 // alone. Every row except an accepted rebuild must.
 func requireNoReconcilerStamp(t *testing.T, server *unikornv1.Server) {
@@ -174,7 +189,7 @@ func TestReconcileServerImageDoesNotResubmitWhileRebuilding(t *testing.T) {
 
 			_, err := openstack.ReconcileServerImage(t.Context(), client, server,
 				novaRebuildServerTask("REBUILD", rebuildNewImageID, taskState))
-			require.ErrorIs(t, err, provisioners.ErrYield)
+			requireTypedYield(t, err, "rebuilding the server onto the requested image")
 			requireRebuildAcceptedStamp(t, server)
 		})
 	}
@@ -269,7 +284,7 @@ func TestReconcileServerImageForeignTaskDefersSubmission(t *testing.T) {
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
 		novaRebuildServerTask("ACTIVE", rebuildOldImageID, taskStateRebooting))
-	require.ErrorIs(t, err, provisioners.ErrYield)
+	requireTypedYield(t, err, "another operation is in progress on the server")
 	requireNoReconcilerStamp(t, server)
 }
 
@@ -289,7 +304,7 @@ func TestReconcileServerImageDefersUntilFirstLaunch(t *testing.T) {
 			server := desiredRebuildServer()
 
 			_, err := openstack.ReconcileServerImage(t.Context(), client, server, openstackServer)
-			require.ErrorIs(t, err, provisioners.ErrYield)
+			requireTypedYield(t, err, "once the server has booted")
 			requireNoReconcilerStamp(t, server)
 		})
 	}
@@ -347,9 +362,12 @@ func TestReconcileServerImageNoDesiredImageParks(t *testing.T) {
 	requireNoReconcilerStamp(t, server)
 }
 
-// TestReconcileServerImageConflictYieldsSilently pins the pre-acceptance path: a
-// 409 leaves the server untouched, so the pass yields and writes no status.
-func TestReconcileServerImageConflictYieldsSilently(t *testing.T) {
+// TestReconcileServerImageConflictYieldsTyped pins the pre-acceptance path: a 409
+// leaves the server untouched, so the pass writes no status, but the yield is
+// typed so the Available condition still names the wait. A 409 here means we lost
+// the race between observing a quiesced server and asking Nova to rebuild it —
+// the same situation as R4', hence the same wording.
+func TestReconcileServerImageConflictYieldsTyped(t *testing.T) {
 	t.Parallel()
 
 	client := mock.NewMockServerInterface(gomock.NewController(t))
@@ -359,7 +377,7 @@ func TestReconcileServerImageConflictYieldsSilently(t *testing.T) {
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	require.ErrorIs(t, err, provisioners.ErrYield)
+	requireTypedYield(t, err, "another operation is in progress on the server")
 	requireNoReconcilerStamp(t, server)
 }
 

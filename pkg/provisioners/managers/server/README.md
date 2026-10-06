@@ -8,7 +8,10 @@ Distinctive behaviour:
   security groups, and optional SSH certificate authority
 - blocks on identity readiness before provider create/delete
 - blocks provider create while any configured `providerCreateGates` remain
-  unsatisfied
+  unsatisfied. The wait is a typed `provisioners.Yield` naming the outstanding
+  gates on the `Available` condition: gates are satisfied by a separate service,
+  so this wait can legitimately be long, and a bare sentinel would make it
+  indistinguishable from every other wait on the create path
 - preflight checks may still yield inside the provider, after other
   validation succeeds; those checks are transient and are not recorded
   as lifecycle transitions

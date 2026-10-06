@@ -3075,7 +3075,10 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 			log.FromContext(ctx).Info("server rebuild refused pending another operation, waiting for a rebuildable state",
 				"server", server.Name, "novaServerID", openstackServer.ID)
 
-			return openstackServer, provisioners.ErrYield
+			// Same situation as R4′: we lost the race between observing a
+			// quiesced server and asking Nova to rebuild it, so same wording.
+			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+				"another operation is in progress on the server; the requested image will be applied once it completes")
 		}
 
 		log.FromContext(ctx).Info("the provider rejected the server rebuild",
@@ -3158,7 +3161,8 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		if serverRebuildInFlight(openstackServer) {
 			markServerRebuildAccepted(server)
 
-			return openstackServer, provisioners.ErrYield
+			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+				"the provider is rebuilding the server onto the requested image")
 		}
 
 		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
@@ -3185,12 +3189,20 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		log.FromContext(ctx).Info("image change deferred until first launch",
 			"server", server.Name, "novaServerID", openstackServer.ID)
 
-		return openstackServer, provisioners.ErrYield
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+			"the requested image differs from the running one; it will be applied once the server has booted")
 	}
 
 	// R4′: a foreign operation holds the server; Nova would refuse the rebuild.
+	// The task state is provider vocabulary, so it goes to the log; the condition
+	// says only that another operation holds the server.
 	if serverTaskActive(openstackServer) {
-		return openstackServer, provisioners.ErrYield
+		log.FromContext(ctx).Info("image change deferred while another operation holds the server",
+			"server", server.Name, "novaServerID", openstackServer.ID,
+			"novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
+
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+			"another operation is in progress on the server; the requested image will be applied once it completes")
 	}
 
 	// R4″: the one destructive row.

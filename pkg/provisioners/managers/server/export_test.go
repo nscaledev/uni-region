@@ -42,6 +42,14 @@ func BlockUntilResourceReadyForTest(ctx context.Context, server *unikornv1.Serve
 	return (&Provisioner{server: server}).blockUntilResourceReady(ctx, cli, id, resource)
 }
 
+// BlockUntilDependenciesReadyForTest exposes blockUntilDependenciesReady so the
+// provider-create-gate arm can be asserted directly. Reaching it through
+// Provision would require a provider and an identity that are irrelevant to the
+// gate decision.
+func BlockUntilDependenciesReadyForTest(ctx context.Context, server *unikornv1.Server, cli client.Client, identity *unikornv1.Identity) error {
+	return (&Provisioner{server: server}).blockUntilDependenciesReady(ctx, cli, identity)
+}
+
 func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, cli client.Client) (*types.ServerCreateOptions, error) {
 	provisioner := &Provisioner{
 		server: server,

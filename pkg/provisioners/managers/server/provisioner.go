@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/pflag"
 
@@ -436,8 +437,14 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 		}
 	}
 
-	if !p.server.ProviderCreateGatesReady() {
-		return fmt.Errorf("%w: provider create gates remaining %v", provisioners.ErrYield, p.server.RemainingProviderCreateGates())
+	// Typed rather than a bare ErrYield: the manager lifts a reason and message
+	// onto the Available condition only from a provisioners.Error, so a bare
+	// sentinel would leave this wait indistinguishable from every other one above.
+	// The gate is satisfied by a separate service and can be held for a long time,
+	// which makes naming the outstanding gate the useful part.
+	if remaining := p.server.RemainingProviderCreateGates(); len(remaining) > 0 {
+		return provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+			fmt.Sprintf("waiting for provider create gate(s) to be satisfied: %s", strings.Join(remaining, ", ")))
 	}
 
 	return nil
