@@ -53,14 +53,11 @@ var (
 
 type Client struct {
 	common.ClientArgs
-
-	volumeClassDiscoveryTimeout time.Duration
 }
 
 func NewClient(clientArgs common.ClientArgs) *Client {
 	return &Client{
-		ClientArgs:                  clientArgs,
-		volumeClassDiscoveryTimeout: volumeClassDiscoveryTimeout,
+		ClientArgs: clientArgs,
 	}
 }
 
@@ -228,6 +225,18 @@ const (
 	volumeClassDiscoveryTimeout = 5 * time.Second
 )
 
+type volumeClassDiscoveryOptions struct {
+	timeout time.Duration
+}
+
+type volumeClassDiscoveryOption func(*volumeClassDiscoveryOptions)
+
+func withTimeout(timeout time.Duration) volumeClassDiscoveryOption {
+	return func(options *volumeClassDiscoveryOptions) {
+		options.timeout = timeout
+	}
+}
+
 func hasVolumeClassReadAccess(ctx context.Context) bool {
 	if rbac.AllowGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) == nil {
 		return true
@@ -247,8 +256,13 @@ func hasVolumeClassReadAccess(ctx context.Context) bool {
 	return false
 }
 
-func (c *Client) listRegionVolumeClasses(ctx context.Context, regionID string) (types.VolumeClassList, error) {
-	discoveryCtx, cancel := context.WithTimeout(ctx, c.volumeClassDiscoveryTimeout)
+func (c *Client) listRegionVolumeClasses(ctx context.Context, regionID string, options ...volumeClassDiscoveryOption) (types.VolumeClassList, error) {
+	config := volumeClassDiscoveryOptions{timeout: volumeClassDiscoveryTimeout}
+	for _, option := range options {
+		option(&config)
+	}
+
+	discoveryCtx, cancel := context.WithTimeout(ctx, config.timeout)
 	defer cancel()
 
 	provider, err := c.Providers.LookupCommon(regionID)
@@ -265,6 +279,10 @@ func (c *Client) listRegionVolumeClasses(ctx context.Context, regionID string) (
 }
 
 func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2VolumeclassesParams) (openapi.VolumeClassListV2Read, error) {
+	return c.listVolumeClasses(ctx, params)
+}
+
+func (c *Client) listVolumeClasses(ctx context.Context, params openapi.GetApiV2VolumeclassesParams, options ...volumeClassDiscoveryOption) (openapi.VolumeClassListV2Read, error) {
 	regions, err := c.listRegions(ctx, rbac.OrganizationIDs(ctx))
 	if err != nil {
 		return nil, err
@@ -284,7 +302,8 @@ func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2V
 			continue
 		}
 
-		volumeClasses, err := c.listRegionVolumeClasses(ctx, region.Name)
+		volumeClasses, err := c.listRegionVolumeClasses(ctx, region.Name, options...)
+
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

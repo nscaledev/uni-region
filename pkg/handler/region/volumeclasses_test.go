@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-//nolint:testpackage // The per-client timeout needs direct coverage without a mutable global.
+//nolint:testpackage // The private timeout option needs direct coverage.
 package region
 
 import (
@@ -43,7 +43,7 @@ import (
 
 const volumeClassDiscoveryTestNamespace = "volume-class-discovery-test"
 
-func newVolumeClassDiscoveryClient(t *testing.T, timeout time.Duration, regions ...*regionv1.Region) (*Client, *mockproviders.MockProviders, *gomock.Controller) {
+func newVolumeClassDiscoveryClient(t *testing.T, regions ...*regionv1.Region) (*Client, *mockproviders.MockProviders, *gomock.Controller) {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
@@ -66,7 +66,6 @@ func newVolumeClassDiscoveryClient(t *testing.T, timeout time.Duration, regions 
 			Namespace: volumeClassDiscoveryTestNamespace,
 			Providers: providers,
 		},
-		volumeClassDiscoveryTimeout: timeout,
 	}, providers, ctrl
 }
 
@@ -90,7 +89,7 @@ func TestListVolumeClassesSkipsTimedOutRegion(t *testing.T) {
 		volumeClassID   = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
 	)
 
-	client, providers, ctrl := newVolumeClassDiscoveryClient(t, 100*time.Millisecond,
+	client, providers, ctrl := newVolumeClassDiscoveryClient(t,
 		&regionv1.Region{ObjectMeta: metav1.ObjectMeta{Name: stalledRegionID}},
 		&regionv1.Region{ObjectMeta: metav1.ObjectMeta{Name: healthyRegionID}},
 	)
@@ -109,7 +108,7 @@ func TestListVolumeClassesSkipsTimedOutRegion(t *testing.T) {
 	}}, nil)
 	providers.EXPECT().LookupCommon(healthyRegionID).Return(healthyProvider, nil)
 
-	result, err := client.ListVolumeClasses(volumeClassDiscoveryContext(t), openapi.GetApiV2VolumeclassesParams{})
+	result, err := client.listVolumeClasses(volumeClassDiscoveryContext(t), openapi.GetApiV2VolumeclassesParams{}, withTimeout(100*time.Millisecond))
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -122,7 +121,7 @@ func TestListVolumeClassesReturnsTimedOutFilteredRegion(t *testing.T) {
 
 	const regionID = "88888888-8888-4888-a888-888888888888"
 
-	client, providers, ctrl := newVolumeClassDiscoveryClient(t, 100*time.Millisecond,
+	client, providers, ctrl := newVolumeClassDiscoveryClient(t,
 		&regionv1.Region{ObjectMeta: metav1.ObjectMeta{Name: regionID}},
 	)
 	provider := mockprovider.NewMockCommonProvider(ctrl)
@@ -133,9 +132,9 @@ func TestListVolumeClassesReturnsTimedOutFilteredRegion(t *testing.T) {
 	})
 	providers.EXPECT().LookupCommon(regionID).Return(provider, nil)
 
-	_, err := client.ListVolumeClasses(volumeClassDiscoveryContext(t), openapi.GetApiV2VolumeclassesParams{
+	_, err := client.listVolumeClasses(volumeClassDiscoveryContext(t), openapi.GetApiV2VolumeclassesParams{
 		RegionID: &openapi.RegionIDQueryParameter{regionID},
-	})
+	}, withTimeout(100*time.Millisecond))
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
