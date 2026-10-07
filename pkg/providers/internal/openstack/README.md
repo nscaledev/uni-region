@@ -99,6 +99,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     Required flavor traits are sent as positive Placement `required` entries;
     forbidden flavor traits are sent as `!TRAIT` entries. Empty trait inputs
     mean no trait filter. A miss yields and lets the controller retry.
+  - a miss splits the same way the image rows do: the host, resource class and
+    required traits go to the log, and the condition gets wording we choose.
+    None of that detail is on the API — the resource class and flavor traits are
+    Nova extra specs and `requiredTraits` is region config — so it would be
+    provider vocabulary on a surface the caller cannot act on. The yield is
+    typed `DependencyNotReady`, because a pinned host is a dependency and is not
+    the user's own server.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
   `none` omit Nova `key_name`. Image rebuild omits both `key_name` and

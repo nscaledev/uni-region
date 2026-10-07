@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -310,8 +311,15 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 
 		require.ErrorAs(t, err, &perr)
 		require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
-		require.Contains(t, perr.Message(), "node-a")
-		require.Contains(t, perr.Message(), "CUSTOM_GPU")
+		require.Equal(t, "the requested host is not available for this flavor", perr.Message())
+
+		// The condition is API surface and the placement detail is not: the
+		// resource class and flavor traits come from Nova extra specs, the
+		// required traits from region config, and none of it is readable by the
+		// caller. It belongs in the log line, not here.
+		for _, leak := range []string{"node-a", "CUSTOM_GPU", "resource provider", "trait", "openstack"} {
+			require.NotContains(t, strings.ToLower(perr.Message()), strings.ToLower(leak))
+		}
 	})
 }
 
