@@ -34,6 +34,8 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
+
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -222,28 +224,26 @@ func (p serverCreatePlacementPreflight) check(ctx context.Context, server *uniko
 	}
 
 	if !available {
+		// Placement vocabulary stays in the log: the resource class and flavor
+		// traits come from Nova extra specs and the required traits from the
+		// region's own config, so none of it is visible to the caller this
+		// condition is written for. The log line is also what someone chasing a
+		// stalled create needs, and this path had nothing before.
+		log.FromContext(ctx).Info("no placement resource provider matched the pinned host",
+			"server", server.Name,
+			"infrastructureRef", *server.Spec.InfrastructureRef,
+			"flavorID", server.Spec.FlavorID,
+			"resourceClass", resourceClass,
+			"requiredTraits", required)
+
 		// Typed rather than a %w-wrapped sentinel: the manager lifts a reason and
 		// message onto the Available condition only from a *provisioners.Error, so
-		// wrapped this wait is indistinguishable from every other yield. The host
-		// reference, flavor and configured traits are all tenant-visible
-		// configuration, so naming them here leaks nothing (CWE-209).
+		// wrapped this wait is indistinguishable from every other yield.
 		return provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
-			placementUnavailableMessage(*server.Spec.InfrastructureRef, server.Spec.FlavorID, resourceClass, required))
+			"the requested host is not available for this flavor")
 	}
 
 	return nil
-}
-
-// placementUnavailableMessage describes an unsatisfied preflight in terms the
-// tenant can act on: which host was asked for, and what it was asked to supply.
-func placementUnavailableMessage(infrastructureRef string, flavorID regionids.FlavorID, resourceClass string, required []string) string {
-	message := fmt.Sprintf("openstack placement resource provider %q is not ready for flavor %q: no provider with resource class %q", infrastructureRef, flavorID, resourceClass)
-
-	if len(required) > 0 {
-		message += fmt.Sprintf(" and trait(s) %s", strings.Join(required, ", "))
-	}
-
-	return message
 }
 
 func (p serverCreatePlacementPreflight) flavorPlacementRequirements(ctx context.Context, flavorID regionids.FlavorID) (string, []string, error) {
