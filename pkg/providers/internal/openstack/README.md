@@ -162,15 +162,25 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   | R4′ | ref != desired, any task active | yield |
   | R4″ | ref != desired, quiescent | **submit** |
 
-  Every yielding row returns `provisioners.Yield` with a `DependencyNotReady`
-  reason and a message naming the wait, so the row a server is parked on is
-  readable from its `Available` condition. That matters because the rows are not
+  Every yielding row returns `provisioners.Yield` with a `Provisioning` reason
+  and a message naming the wait, so the row a server is parked on is readable
+  from its `Available` condition. That matters because the rows are not
   equivalent — R3 is our own rebuild, R4 is a server that has never booted, R4′ is
   someone else's operation — and a bare `ErrYield` renders them identical: the
   manager only lifts a reason and message off a typed `provisioners.Error`, so a
-  bare sentinel leaves the generic `Provisioning` default. Provider vocabulary
-  (Nova status, `task_state`) stays in the log line; the condition gets only
-  user-safe wording.
+  bare sentinel leaves the generic default with no message at all. Provider
+  vocabulary (Nova status, `task_state`) stays in the log line; the condition
+  gets only user-safe wording.
+
+  The reason stays `Provisioning` here, and only the message varies. `reason` is
+  API surface — it projects to `provisioningStatusDetail.reason` and callers
+  script against it — so it has to describe the wait accurately. None of these
+  rows is a `DependencyNotReady`: that means a dependency exists but is not yet
+  provisioned, whereas every row above is waiting on the user's own server to
+  finish something. Naming them `DependencyNotReady` would send a user looking
+  through their networks and security groups for a fault that is not there. The
+  provider-create gate is the one wait in the server path that does use
+  `DependencyNotReady`, because another service genuinely satisfies it.
 
   R2 exists because every server this provider creates is image-booted, so an absent,
   empty or unparseable ref is abnormal: the pass must not report success over an image

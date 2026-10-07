@@ -3077,7 +3077,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 
 			// Same situation as R4′: we lost the race between observing a
 			// quiesced server and asking Nova to rebuild it, so same wording.
-			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 				"another operation is in progress on the server; the requested image will be applied once it completes")
 		}
 
@@ -3161,7 +3161,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		if serverRebuildInFlight(openstackServer) {
 			markServerRebuildAccepted(server)
 
-			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 				"the provider is rebuilding the server onto the requested image")
 		}
 
@@ -3189,7 +3189,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		log.FromContext(ctx).Info("image change deferred until first launch",
 			"server", server.Name, "novaServerID", openstackServer.ID)
 
-		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 			"the requested image differs from the running one; it will be applied once the server has booted")
 	}
 
@@ -3201,7 +3201,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 			"server", server.Name, "novaServerID", openstackServer.ID,
 			"novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
 
-		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 			"another operation is in progress on the server; the requested image will be applied once it completes")
 	}
 
