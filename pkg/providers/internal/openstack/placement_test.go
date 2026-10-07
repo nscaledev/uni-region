@@ -29,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -298,7 +299,19 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 			placementClient,
 		)
 
-		require.ErrorIs(t, preflight(t.Context(), server), provisioners.ErrYield)
+		err := preflight(t.Context(), server)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+
+		// The disposition alone is not the contract: the manager reads a reason
+		// and message off the condition only from a *provisioners.Error, so an
+		// untyped yield leaves the server on the generic "provisioning" condition
+		// with no indication that placement is what it is waiting for.
+		var perr *provisioners.Error
+
+		require.ErrorAs(t, err, &perr)
+		require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
+		require.Contains(t, perr.Message(), "node-a")
+		require.Contains(t, perr.Message(), "CUSTOM_GPU")
 	})
 }
 
