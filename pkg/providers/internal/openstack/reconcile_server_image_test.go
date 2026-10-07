@@ -63,7 +63,7 @@ func requireRebuildAcceptedStamp(t *testing.T, server *unikornv1.Server) {
 // script against, so each row has to state the one it means rather than inherit
 // whatever the helper happened to hard-code.
 //
-//nolint:unparam // Every image row is Provisioning today; the gate is not, and a row must state its reason rather than inherit it.
+//nolint:unparam // Every row here is Provisioning; stated per row so the reason each one asserts is visible at the call site.
 func requireTypedYield(t *testing.T, err error, reason unikornv1core.ProvisioningConditionReason, message string) {
 	t.Helper()
 
