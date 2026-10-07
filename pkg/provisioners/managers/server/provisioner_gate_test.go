@@ -118,3 +118,71 @@ func TestBlockUntilResourceReadyNotFound(t *testing.T) {
 	require.Equal(t, unikornv1core.ConditionReasonDependencyNotFound, perr.Reason())
 	require.True(t, provisioners.IsTerminal(err), "a missing referenced dependency is terminal")
 }
+
+// TestBlockUntilDependenciesReadyGateYieldIsTyped pins the provider-create-gate
+// wait as a typed yield carrying the gate names.
+//
+// WHY: the gate is satisfied by a separate service, so a server can legitimately
+// wait here for a long time, and a bare sentinel would make that wait
+// indistinguishable from every other one in this function. The message is asserted
+// as well as the reason, because the outstanding gate name is the diagnostic
+// value.
+func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
+	t.Parallel()
+
+	cli := retryClient(t)
+
+	identity := &regionv1.Identity{}
+	identity.Name = "identity-1"
+	identity.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
+
+	newServer := func(gateStatus corev1.ConditionStatus, write bool) *regionv1.Server {
+		server := &regionv1.Server{}
+		server.Name = "server-1"
+		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+			{ConditionType: "fabric.unikorn-cloud.org/partition-ready"},
+		}
+
+		if write {
+			server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/partition-ready",
+				gateStatus, "actor", "Reason", "message")
+		}
+
+		return server
+	}
+
+	t.Run("UnwrittenGateYieldsTypedAndNamesTheGate", func(t *testing.T) {
+		t.Parallel()
+
+		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer("", false), cli, identity)
+		require.Error(t, err)
+
+		var perr *provisioners.Error
+
+		require.ErrorAs(t, err, &perr, "the gate wait must be a typed provisioners.Error, not a bare wrapped ErrYield")
+		require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
+		require.Contains(t, perr.Message(), "fabric.unikorn-cloud.org/partition-ready",
+			"the message must name the outstanding gate")
+		require.False(t, provisioners.IsTerminal(err), "an unsatisfied gate yields, it must not park")
+	})
+
+	t.Run("FalseGateYieldsTypedAndNamesTheGate", func(t *testing.T) {
+		t.Parallel()
+
+		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(corev1.ConditionFalse, true), cli, identity)
+		require.Error(t, err)
+
+		var perr *provisioners.Error
+
+		require.ErrorAs(t, err, &perr)
+		require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
+		require.Contains(t, perr.Message(), "fabric.unikorn-cloud.org/partition-ready")
+	})
+
+	t.Run("SatisfiedGatePasses", func(t *testing.T) {
+		t.Parallel()
+
+		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(corev1.ConditionTrue, true), cli, identity)
+		require.NoError(t, err, "a satisfied gate must not block the create path")
+	})
+}

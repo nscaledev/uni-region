@@ -1266,7 +1266,10 @@ type ServerStatus struct {
 type ServerObservedStatus struct {
 	// Generation is metadata.generation as read when this snapshot was taken, so a
 	// reader can tell whether the observation postdates a spec edit. Stamped on
-	// every poll, so a present subtree with no image means the image was unreadable.
+	// every poll, including a poll that finds no provider server at all, so a
+	// present subtree with no image means either the image was unreadable or there
+	// is no provider server to read one from. Those two are distinguished by the
+	// Active condition, not by this subtree.
 	Generation int64 `json:"generation"`
 	// Image is the image the provider reports the server running, as of the last poll
 	// that could read it. An unreadable ref preserves the previous value.

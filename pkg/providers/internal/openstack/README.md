@@ -121,8 +121,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   every 10s until first boot, after which a pass submits the rebuild once the
   server is quiescent. A
   never-booted server Nova reports in `ERROR` is likewise deferred here — the
-  reconcile pass yields silently without writing a health stamp (the monitor
-  owns observed state) — and absorbed by the bounded provider-create
+  reconcile pass yields without writing a health stamp (the monitor owns observed
+  state), though the yield itself is named on the `Available` condition — and
+  absorbed by the bounded provider-create
   delete-and-retry flow, which recreates it from the already-updated spec
   image. That retry adoption keys off the `Healthy=Errored` stamp the
   monitor's poll writes, so it takes effect at worst one poll later. This
@@ -160,6 +161,16 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   | R4 | ref != desired, `launched_at` zero | yield |
   | R4′ | ref != desired, any task active | yield |
   | R4″ | ref != desired, quiescent | **submit** |
+
+  Every yielding row returns `provisioners.Yield` with a `DependencyNotReady`
+  reason and a message naming the wait, so the row a server is parked on is
+  readable from its `Available` condition. That matters because the rows are not
+  equivalent — R3 is our own rebuild, R4 is a server that has never booted, R4′ is
+  someone else's operation — and a bare `ErrYield` renders them identical: the
+  manager only lifts a reason and message off a typed `provisioners.Error`, so a
+  bare sentinel leaves the generic `Provisioning` default. Provider vocabulary
+  (Nova status, `task_state`) stays in the log line; the condition gets only
+  user-safe wording.
 
   R2 exists because every server this provider creates is image-booted, so an absent,
   empty or unparseable ref is abnormal: the pass must not report success over an image
