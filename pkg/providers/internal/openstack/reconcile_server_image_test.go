@@ -58,7 +58,11 @@ func requireRebuildAcceptedStamp(t *testing.T, server *unikornv1.Server) {
 // requireTypedYield asserts a yielding row carries a reason and message. A bare
 // sentinel leaves the manager nothing to lift onto the Available condition, so
 // the row a server is parked on would be unobservable from the API.
-func requireTypedYield(t *testing.T, err error, message string) {
+//
+// The reason is a parameter, not a constant: it is API surface that callers
+// script against, so each row has to state the one it means rather than inherit
+// whatever the helper happened to hard-code.
+func requireTypedYield(t *testing.T, err error, reason unikornv1core.ProvisioningConditionReason, message string) {
 	t.Helper()
 
 	require.ErrorIs(t, err, provisioners.ErrYield)
@@ -66,7 +70,7 @@ func requireTypedYield(t *testing.T, err error, message string) {
 	var perr *provisioners.Error
 
 	require.ErrorAs(t, err, &perr, "a yield must be typed so the condition can name the wait")
-	require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
+	require.Equal(t, reason, perr.Reason())
 	require.Contains(t, perr.Message(), message, "the condition message must say which row we are on")
 }
 
@@ -189,7 +193,7 @@ func TestReconcileServerImageDoesNotResubmitWhileRebuilding(t *testing.T) {
 
 			_, err := openstack.ReconcileServerImage(t.Context(), client, server,
 				novaRebuildServerTask("REBUILD", rebuildNewImageID, taskState))
-			requireTypedYield(t, err, "rebuilding the server onto the requested image")
+			requireTypedYield(t, err, unikornv1core.ConditionReasonProvisioning, "rebuilding the server onto the requested image")
 			requireRebuildAcceptedStamp(t, server)
 		})
 	}
@@ -284,7 +288,7 @@ func TestReconcileServerImageForeignTaskDefersSubmission(t *testing.T) {
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server,
 		novaRebuildServerTask("ACTIVE", rebuildOldImageID, taskStateRebooting))
-	requireTypedYield(t, err, "another operation is in progress on the server")
+	requireTypedYield(t, err, unikornv1core.ConditionReasonProvisioning, "another operation is in progress on the server")
 	requireNoReconcilerStamp(t, server)
 }
 
@@ -304,7 +308,7 @@ func TestReconcileServerImageDefersUntilFirstLaunch(t *testing.T) {
 			server := desiredRebuildServer()
 
 			_, err := openstack.ReconcileServerImage(t.Context(), client, server, openstackServer)
-			requireTypedYield(t, err, "once the server has booted")
+			requireTypedYield(t, err, unikornv1core.ConditionReasonProvisioning, "once the server has booted")
 			requireNoReconcilerStamp(t, server)
 		})
 	}
@@ -377,7 +381,7 @@ func TestReconcileServerImageConflictYieldsTyped(t *testing.T) {
 	server := desiredRebuildServer()
 
 	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ACTIVE", rebuildOldImageID))
-	requireTypedYield(t, err, "another operation is in progress on the server")
+	requireTypedYield(t, err, unikornv1core.ConditionReasonProvisioning, "another operation is in progress on the server")
 	requireNoReconcilerStamp(t, server)
 }
 
