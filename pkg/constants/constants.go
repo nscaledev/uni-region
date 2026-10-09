@@ -75,6 +75,9 @@ const (
 	// ServerLabel creates an indexable linkage between resources and an
 	// owning entity.
 	ServerLabel = "regions.unikorn-cloud.org/server-id"
+	// FileStorageLabel creates an indexable linkage between Manual Snapshots
+	// and their parent File Storage.
+	FileStorageLabel = "regions.unikorn-cloud.org/file-storage-id"
 )
 
 const (

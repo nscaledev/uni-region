@@ -78,6 +78,26 @@ func (e *Endpoints) GetFileStorage(filestorageID string) string {
 		url.PathEscape(filestorageID))
 }
 
+// ListFileStorageSnapshots returns the nested Manual Snapshot collection.
+func (e *Endpoints) ListFileStorageSnapshots(filestorageID string, tags ...string) string {
+	path := fmt.Sprintf("/api/v2/filestorage/%s/snapshots", url.PathEscape(filestorageID))
+	if len(tags) == 0 {
+		return path
+	}
+
+	query := url.Values{}
+	for _, tag := range tags {
+		query.Add("tag", tag)
+	}
+
+	return path + "?" + query.Encode()
+}
+
+// GetFileStorageSnapshot returns one Manual Snapshot under its parent.
+func (e *Endpoints) GetFileStorageSnapshot(filestorageID, snapshotID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s/snapshots/%s", url.PathEscape(filestorageID), url.PathEscape(snapshotID))
+}
+
 // UpdateFileStorage returns the endpoint for updating a specific file storage resource.
 func (e *Endpoints) UpdateFileStorage(filestorageID string) string {
 	return fmt.Sprintf("/api/v2/filestorage/%s",

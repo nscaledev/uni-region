@@ -94,6 +94,9 @@ this option does not remove existing ACLs; they may remain enforced. For
 value updates atime during a read only when the existing atime is older than that
 number of seconds.
 
+Manual Snapshot v2 read models and nested routes follow the
+[storage handler contract](../handler/storage/README.md#manual-snapshot-reads).
+
 Keeping the schema unified matters because it allows:
 
 - one generated client/server contract

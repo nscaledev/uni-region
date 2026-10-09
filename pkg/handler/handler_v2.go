@@ -410,6 +410,26 @@ func (h *Handler) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r *htt
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+func (h *Handler) GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, params openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams) {
+	result, err := h.storageClient().ListSnapshots(r.Context(), filestorageID, params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
+func (h *Handler) GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, snapshotID openapi.FilestorageSnapshotIDParameter) {
+	result, err := h.storageClient().GetSnapshot(r.Context(), filestorageID, snapshotID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
+}
+
 func (h *Handler) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter) {
 	request := &openapi.StorageV2Update{}
 
