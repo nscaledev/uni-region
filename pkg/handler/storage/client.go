@@ -48,6 +48,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,6 +63,9 @@ const (
 // Client provides a restful API for storage.
 type Client struct {
 	common.ClientArgs
+
+	// Clock supplies request evaluation time for Manual Snapshot expiration.
+	Clock clock.PassiveClock
 }
 
 type storageV2GenerateRequest struct {
@@ -81,6 +85,7 @@ type storageV2GenerateSpec struct {
 func New(clientArgs common.ClientArgs) *Client {
 	return &Client{
 		ClientArgs: clientArgs,
+		Clock:      clock.RealClock{},
 	}
 }
 

@@ -125,6 +125,12 @@ type ServerInterface interface {
 	// Update file storage
 	// (PUT /api/v2/filestorage/{filestorageID})
 	PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
+	// List manual file storage snapshots
+	// (GET /api/v2/filestorage/{filestorageID}/snapshots)
+	GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, params GetApiV2FilestorageFilestorageIDSnapshotsParams)
+	// Get a manual file storage snapshot
+	// (GET /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID})
+	GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageSnapshotID FilestorageSnapshotIDParameter)
 	// List file storage classes
 	// (GET /api/v2/filestorageclasses)
 	GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request, params GetApiV2FilestorageclassesParams)
@@ -452,6 +458,18 @@ func (_ Unimplemented) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r
 // Update file storage
 // (PUT /api/v2/filestorage/{filestorageID})
 func (_ Unimplemented) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List manual file storage snapshots
+// (GET /api/v2/filestorage/{filestorageID}/snapshots)
+func (_ Unimplemented) GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, params GetApiV2FilestorageFilestorageIDSnapshotsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a manual file storage snapshot
+// (GET /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID})
+func (_ Unimplemented) GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageSnapshotID FilestorageSnapshotIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2430,6 +2448,88 @@ func (siw *ServerInterfaceWrapper) PutApiV2FilestorageFilestorageID(w http.Respo
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2FilestorageFilestorageIDSnapshots operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2FilestorageFilestorageIDSnapshotsParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2FilestorageFilestorageIDSnapshots(w, r, filestorageID, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filestorageSnapshotID" -------------
+	var filestorageSnapshotID FilestorageSnapshotIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageSnapshotID", chi.URLParam(r, "filestorageSnapshotID"), &filestorageSnapshotID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageSnapshotID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w, r, filestorageID, filestorageSnapshotID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2Filestorageclasses operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2Filestorageclasses(w http.ResponseWriter, r *http.Request) {
 
@@ -4180,6 +4280,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v2/filestorage/{filestorageID}", wrapper.PutApiV2FilestorageFilestorageID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}/snapshots", wrapper.GetApiV2FilestorageFilestorageIDSnapshots)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}", wrapper.GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/filestorageclasses", wrapper.GetApiV2Filestorageclasses)

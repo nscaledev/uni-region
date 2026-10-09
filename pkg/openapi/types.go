@@ -193,6 +193,45 @@ type ExternalNetworks = []ExternalNetwork
 // FileStorageId A file storage ID.
 type FileStorageId = regionids.FileStorageID
 
+// FileStorageSnapshotId A Manual File Storage Snapshot ID.
+type FileStorageSnapshotId = regionids.FileStorageSnapshotID
+
+// FileStorageSnapshotV2Read A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
+type FileStorageSnapshotV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec Immutable Manual Snapshot capture intent.
+	Spec FileStorageSnapshotV2Spec `json:"spec"`
+
+	// Status Snapshot details observed during capture.
+	Status FileStorageSnapshotV2Status `json:"status"`
+}
+
+// FileStorageSnapshotV2Spec Immutable Manual Snapshot capture intent.
+type FileStorageSnapshotV2Spec struct {
+	// ExpirationTime Optional immutable expiration deadline. The snapshot is hidden once the deadline is reached. Omission means no automatic expiration.
+	ExpirationTime *time.Time `json:"expirationTime,omitempty"`
+
+	// FileStorageId A file storage ID.
+	FileStorageId FileStorageId `json:"fileStorageId"`
+
+	// ProtectedPath Optional immutable canonical relative protected path within the File Storage. Omission selects the File Storage root.
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+}
+
+// FileStorageSnapshotV2Status Snapshot details observed during capture.
+type FileStorageSnapshotV2Status struct {
+	// AbsoluteProtectedPath Optional absolute path captured by the snapshot.
+	AbsoluteProtectedPath *string `json:"absoluteProtectedPath,omitempty"`
+
+	// SnapshotTime Optional provider-observed capture time; distinct from Region creation time.
+	SnapshotTime *time.Time `json:"snapshotTime,omitempty"`
+}
+
+// FileStorageSnapshotsV2Read A list of manual file storage snapshots.
+type FileStorageSnapshotsV2Read = []FileStorageSnapshotV2Read
+
 // Flavor A flavor.
 type Flavor struct {
 	// Metadata This metadata is for resources that just exist, and don't require
@@ -1744,6 +1783,9 @@ type VolumesV2Read = []VolumeV2Read
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
 
+// FilestorageSnapshotIDParameter A Manual File Storage Snapshot ID.
+type FilestorageSnapshotIDParameter = FileStorageSnapshotId
+
 // IdentityIDParameter A cloud identity ID.
 type IdentityIDParameter = IdentityId
 
@@ -1809,6 +1851,12 @@ type ConsoleSessionResponse = ConsoleSession
 
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
+
+// FileStorageSnapshotV2Response A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
+type FileStorageSnapshotV2Response = FileStorageSnapshotV2Read
+
+// FileStorageSnapshotsV2Response A list of manual file storage snapshots.
+type FileStorageSnapshotsV2Response = FileStorageSnapshotsV2Read
 
 // FlavorsResponse A list of flavors.
 type FlavorsResponse = Flavors
@@ -1994,6 +2042,13 @@ type GetApiV2FilestorageParams struct {
 
 	// RegionID Allows resources to be filtered by region.
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// GetApiV2FilestorageFilestorageIDSnapshotsParams defines parameters for GetApiV2FilestorageFilestorageIDSnapshots.
+type GetApiV2FilestorageFilestorageIDSnapshotsParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // GetApiV2FilestorageclassesParams defines parameters for GetApiV2Filestorageclasses.

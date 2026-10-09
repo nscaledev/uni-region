@@ -543,6 +543,82 @@ func (c *APIClient) GetFileStorage(ctx context.Context, filestorageID string) (*
 	}
 }
 
+// ListFileStorageSnapshots lists Manual Snapshots of a file storage resource.
+func (c *APIClient) ListFileStorageSnapshots(ctx context.Context, parentID string, tags ...string) (regionopenapi.FileStorageSnapshotsV2Read, error) {
+	return coreclient.ListResource[regionopenapi.FileStorageSnapshotV2Read](
+		ctx,
+		c.regionClient,
+		c.endpoints.ListFileStorageSnapshots(parentID, tags...),
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "filestoragesnapshots",
+			ResourceID:     parentID,
+			ResourceIDType: "file storage",
+		},
+	)
+}
+
+// GetFileStorageSnapshot gets a Manual Snapshot by ID under its parent.
+// Returns ErrResourceNotFound if the snapshot is not visible under that parent.
+func (c *APIClient) GetFileStorageSnapshot(ctx context.Context, parentID, snapshotID string) (*regionopenapi.FileStorageSnapshotV2Read, error) {
+	path := c.endpoints.GetFileStorageSnapshot(parentID, snapshotID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally.
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting file storage snapshot: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var snapshot regionopenapi.FileStorageSnapshotV2Read
+		if err := json.Unmarshal(respBody, &snapshot); err != nil {
+			return nil, fmt.Errorf("unmarshaling file storage snapshot: %w", err)
+		}
+
+		return &snapshot, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("file storage snapshot '%s': %w", snapshotID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting file storage snapshot: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// ListFileStorageSnapshotsExpectError returns the standard error body for an expected rejection.
+func (c *APIClient) ListFileStorageSnapshotsExpectError(ctx context.Context, parentID string, expectedStatus int, tags ...string) (*coreapi.Error, error) {
+	path := c.endpoints.ListFileStorageSnapshots(parentID, tags...)
+
+	//nolint:bodyclose // DoRegionRequest handles response body closing internally.
+	_, respBody, err := c.DoRegionRequest(ctx, http.MethodGet, path, nil, expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("listing file storage snapshots: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(respBody, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
+// GetFileStorageSnapshotExpectError returns the standard error body for an expected rejection.
+func (c *APIClient) GetFileStorageSnapshotExpectError(ctx context.Context, parentID, snapshotID string, expectedStatus int) (*coreapi.Error, error) {
+	path := c.endpoints.GetFileStorageSnapshot(parentID, snapshotID)
+
+	//nolint:bodyclose // DoRegionRequest handles response body closing internally.
+	_, respBody, err := c.DoRegionRequest(ctx, http.MethodGet, path, nil, expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("getting file storage snapshot: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(respBody, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
 // UpdateFileStorage updates a file storage resource.
 func (c *APIClient) UpdateFileStorage(ctx context.Context, filestorageID string, request regionopenapi.StorageV2UpdateRequest) (*regionopenapi.StorageV2Read, error) {
 	path := c.endpoints.UpdateFileStorage(filestorageID)

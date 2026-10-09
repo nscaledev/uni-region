@@ -55,7 +55,57 @@ accounting meet.
 
 ## Invariants And Guard Rails
 
-- Storage is a `v2` resource and follows the flatter direct-lookup model.
+### Manual Snapshot Reads
+
+`GET /api/v2/filestorage/{filestorageID}/snapshots` and
+`GET /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}`
+read only Region `FileStorageSnapshot` CRs. Manual Snapshot inventory and
+authorization are scoped to one parent File Storage. There is no project-wide
+snapshot collection or pagination. Reads never discover, adopt, or inventory
+provider or policy-created snapshots.
+
+Both operations resolve the parent File Storage first using its standard Read
+check, then require `region:filestoragesnapshots:v2` Read in that same recovered
+project before reading any child storage. Missing or inaccessible parents,
+missing or inaccessible children, wrong-parent children, and expired children
+use the exact canonical `HTTPNotFound` response, including the standard trace ID.
+Storage transport failures remain server errors rather than being disguised as
+not-found responses. This uniform response is specific to the snapshot routes;
+the parent File Storage GET can return 403, so it does not conceal parent
+existence across the whole API.
+
+Collection queries select the shared namespace by the parent's organization,
+project, `FileStorageLabel`, and API version 2. Both operations verify that child
+labels agree with the parent and with immutable `spec.fileStorageID`. Tag filters
+use the standard core decoder and stored tag matching. Results sort by immutable,
+case-sensitive `spec.name`, then UUID; public `metadata.name` projects this
+Manual Snapshot Name rather than treating its mirrored label as rename authority.
+
+One clock observation at the start of each storage-client read fixes request
+evaluation time. `spec.expirationTime <= now` hides the child, even if its CR
+still exists, is paused, or is deleting or errored. Omission means no automatic
+expiration. Non-expired deleting and errored resources remain readable. Expiration
+does not depend on status, provider calls, expirer progress, or CR deletion.
+
+Read projection reuses core's project-scoped metadata and condition conversion.
+It exposes immutable `spec.fileStorageId`, optional expiration and relative
+protected path, and optional `status.snapshotTime` and exact
+`status.absoluteProtectedPath`. It preserves the latter byte-for-byte. Internal
+pause, labels, annotations, Kubernetes UID, and provider identifiers are not
+projected. Lifecycle producers own sanitizing condition messages; the read path
+projects only those standard provisioning and health conditions, never raw
+provider diagnostics.
+
+`Healthy=True` records capture readiness observed during provisioning. After
+`Available=True / Provisioned`, health, Snapshot Time, and Absolute Protected
+Path remain the last provisioning observation. They do not guarantee current
+provider existence or usability and never authorize provider mutation. GETs use
+the standard middleware stack and are excluded from mutation audit logging.
+
+### Parent File Storage
+
+- The parent File Storage is a `v2` resource with direct UUID lookup. Its
+  Manual Snapshot children use the nested read contract described above.
 - Region access is enforced via `region.CheckAccess` during request validation,
   preventing callers from creating storage in regions the request
   organization may not use.
