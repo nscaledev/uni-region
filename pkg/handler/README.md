@@ -238,7 +238,8 @@ but we do not have transactions.”
 - [`sshcertificateauthority`](./sshcertificateauthority/README.md): project-scoped
   SSH CA records with explicit reference-blocked deletion
 - [`storage`](./storage/README.md): quota-heavy stateful resource with saga-backed
-  create/update and attachment validation, plus nested Manual Snapshot reads
+  create/update and attachment validation, plus nested Manual Snapshot creation,
+  deletion, and reads
 - [`volume`](./volume/README.md): Network-scoped block Volume CRUD with immutable
   class/size, observed-size projection, and attached-delete blocking
 - `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler

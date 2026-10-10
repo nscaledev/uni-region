@@ -94,8 +94,15 @@ this option does not remove existing ACLs; they may remain enforced. For
 value updates atime during a read only when the existing atime is older than that
 number of seconds.
 
-Manual Snapshot v2 read models and nested routes follow the
+Manual Snapshot v2 create/delete contracts and read models follow the
+[storage lifecycle contract](../handler/storage/README.md#manual-snapshot-lifecycle)
+and
 [storage handler contract](../handler/storage/README.md#manual-snapshot-reads).
+POST returns the complete pending resource with 202; DELETE returns the standard
+accepted response. Both use parent-derived scope and independent snapshot grants.
+Expired DELETE returns canonical 404 without mutation, including for an already
+deleting CR. Generated types, clients, router, and embedded schema all derive
+from `server.spec.yaml`.
 
 Keeping the schema unified matters because it allows:
 

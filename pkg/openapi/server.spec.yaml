@@ -1802,6 +1802,36 @@ paths:
     description: Manual snapshots of a file storage resource.
     parameters:
     - $ref: '#/components/parameters/filestorageIDParameter'
+    post:
+      description: Create a Manual Snapshot resource under an authorized File Storage. Returns the complete pending resource. A deleting parent FileStorage conflicts.
+      summary: Create a manual file storage snapshot
+      tags:
+      - File storage snapshots
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/fileStorageSnapshotV2Create'
+      responses:
+        '202':
+          $ref: '#/components/responses/fileStorageSnapshotV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     get:
       description: List manual snapshots of a file storage resource, ordered by name then ID. Expired snapshots are omitted.
       summary: List manual file storage snapshots
@@ -1829,6 +1859,26 @@ paths:
     parameters:
     - $ref: '#/components/parameters/filestorageIDParameter'
     - $ref: '#/components/parameters/filestorageSnapshotIDParameter'
+    delete:
+      description: Record deletion intent for a Manual Snapshot without provider calls.
+      summary: Delete a manual file storage snapshot
+      tags:
+      - File storage snapshots
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     get:
       description: Get a manual snapshot of a file storage resource. Missing, inaccessible, and expired snapshots return not found.
       summary: Get a manual file storage snapshot
@@ -4194,6 +4244,34 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/storageV2Read'
+    fileStorageSnapshotV2Create:
+      description: Manual Snapshot resource.
+      type: object
+      additionalProperties: false
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/fileStorageSnapshotV2CreateSpec'
+    fileStorageSnapshotV2CreateSpec:
+      description: Capture intent. Omitted expiration means no automatic expiration; omitted protected path selects the File Storage root.
+      type: object
+      additionalProperties: false
+      properties:
+        expirationTime:
+          description: Optional expiration deadline using the platform date-time format. Fractional seconds are truncated before validating that the normalized deadline is strictly later than request acceptance time. Malformed timestamps return 400; non-future normalized deadlines return 422.
+          type: string
+          format: date-time
+          example: '2030-01-01T00:00:00Z'
+        protectedPath:
+          description: Optional canonical relative path within the File Storage. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected.
+          type: string
+          maxLength: 1024
+          pattern: '^([^/]+/)*[^/]+$'
+          example: datasets/model
     fileStorageSnapshotV2Read:
       description: A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
       type: object
