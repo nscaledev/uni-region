@@ -128,6 +128,12 @@ type ServerInterface interface {
 	// List manual file storage snapshots
 	// (GET /api/v2/filestorage/{filestorageID}/snapshots)
 	GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, params GetApiV2FilestorageFilestorageIDSnapshotsParams)
+	// Create a manual file storage snapshot
+	// (POST /api/v2/filestorage/{filestorageID}/snapshots)
+	PostApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
+	// Delete a manual file storage snapshot
+	// (DELETE /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID})
+	DeleteApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageSnapshotID FilestorageSnapshotIDParameter)
 	// Get a manual file storage snapshot
 	// (GET /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID})
 	GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageSnapshotID FilestorageSnapshotIDParameter)
@@ -464,6 +470,18 @@ func (_ Unimplemented) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r
 // List manual file storage snapshots
 // (GET /api/v2/filestorage/{filestorageID}/snapshots)
 func (_ Unimplemented) GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, params GetApiV2FilestorageFilestorageIDSnapshotsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a manual file storage snapshot
+// (POST /api/v2/filestorage/{filestorageID}/snapshots)
+func (_ Unimplemented) PostApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a manual file storage snapshot
+// (DELETE /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID})
+func (_ Unimplemented) DeleteApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageSnapshotID FilestorageSnapshotIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2490,6 +2508,77 @@ func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageIDSnapshots(w h
 	handler.ServeHTTP(w, r)
 }
 
+// PostApiV2FilestorageFilestorageIDSnapshots operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2FilestorageFilestorageIDSnapshots(w, r, filestorageID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filestorageSnapshotID" -------------
+	var filestorageSnapshotID FilestorageSnapshotIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageSnapshotID", chi.URLParam(r, "filestorageSnapshotID"), &filestorageSnapshotID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageSnapshotID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w, r, filestorageID, filestorageSnapshotID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request) {
 
@@ -4283,6 +4372,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}/snapshots", wrapper.GetApiV2FilestorageFilestorageIDSnapshots)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/filestorage/{filestorageID}/snapshots", wrapper.PostApiV2FilestorageFilestorageIDSnapshots)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}", wrapper.DeleteApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}", wrapper.GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID)

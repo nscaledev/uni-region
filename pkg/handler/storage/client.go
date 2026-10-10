@@ -660,7 +660,7 @@ func (c *Client) Delete(ctx context.Context, storageID regionids.FileStorageID) 
 		return nil
 	}
 
-	if err := c.Client.Delete(ctx, resource); err != nil {
+	if err := c.Client.Delete(ctx, resource, util.ForegroundDeleteOptions()); err != nil {
 		return fmt.Errorf("%w: delete failed", err)
 	}
 

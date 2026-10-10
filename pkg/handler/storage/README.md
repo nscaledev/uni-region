@@ -55,6 +55,79 @@ accounting meet.
 
 ## Invariants And Guard Rails
 
+### Manual Snapshot Lifecycle
+
+`POST /api/v2/filestorage/{filestorageID}/snapshots` and
+`DELETE /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}`
+record durable Region intent and return `202 Accepted`. Neither request calls a
+provider, allocates snapshot-specific quota, or waits for backend convergence.
+
+Both mutations resolve and authorize the parent File Storage with its standard
+Read grant before checking the independent `region:filestoragesnapshots:v2`
+Create or Delete grant in the recovered project. Visibility failures use the
+same canonical 404 as [snapshot reads](#manual-snapshot-reads). Create completes principal
+scope from the parent before persisting attribution. Delete needs no principal
+enrichment.
+
+Create accepts standard resource metadata plus optional immutable expiration
+and protected path. The immutable, case-sensitive name uses the platform's
+label-value rules, is non-empty and at most 63 characters, and rejects exact
+`.` and `..`. Protected Path follows Snapshot Policy
+rules: canonical, relative, traversal-free, at most 1024 characters, with no
+empty value, absolute path, trailing/repeated slash, or `.`/`..` component.
+Omission protects the root and requests no automatic expiration. Schema shape
+errors, including malformed timestamps, use the existing middleware/decoding
+400 response.
+
+Creation uses core's `NewDeterministicObjectMetadata`, as other deterministic
+Region resources do. Following Servers, Region supplies the parent File Storage
+UUID as the hashing namespace and the validated, exact-case name as the invariant.
+Core owns UUIDv5 generation and rehashes digit-leading results until the UUID
+starts with a letter. [Snapshot IDs](../../ids/README.md)
+are opaque to callers; a raw UUIDv5 calculation is not the public contract.
+Golden vectors through `Client.CreateSnapshot` guard identity stability across
+dependency upgrades without duplicating core's hashing implementation.
+
+Kubernetes creation atomically rejects an occupied parent/name slot with
+canonical 409, including while its previous CR is terminating. Different parents
+and differently cased names occupy distinct API slots. This API uniqueness does
+not change the provider's tenant-wide exact-name uniqueness, which is resolved
+asynchronously.
+
+After the CR is fully removed, recreating the same parent/name pair deliberately
+reuses its API ID. The ID identifies a reusable slot, not a Kubernetes lifetime.
+Delayed old-lifetime create/delete operations can affect the recreated slot;
+customer Delete likewise uses no UID or resource-version preconditions. This
+unfenced same-slot race is accepted.
+
+The create response contains the complete pending read model. Standard
+unobserved Available/Healthy conditions project to `pending`/`unknown`, matching
+the other asynchronous Region create paths; the controller writes observed
+conditions. The stored CR inherits organization, project, Region ancestry,
+parent label, API version 2, immutable creator/principal attribution, description,
+and tags. Before persistence it receives a same-namespace File Storage owner
+reference with `blockOwnerDeletion: true`.
+A parent with deletion intent rejects creation with canonical 409.
+
+The lifecycle controller installs its finalizer before provider mutations and
+removes it after confirmed cleanup. Deleting an untouched CR before its first
+reconciliation can immediately remove it and release its slot.
+
+Individual Delete authorizes controller cleanup of the exact-name,
+exact-resolved-path provider slot without creator proof. Recorded capture
+completion and health do not authorize skipping cleanup.
+
+At request evaluation, `spec.expirationTime <= now` returns the exact canonical
+404, even for paused, provisioning, errored, provisioned, or already-deleting
+children. The request writes no deletion intent or other resource state. A retry
+that crosses the deadline changes from 202 to 404 without modifying ongoing
+cleanup.
+
+File Storage Delete explicitly requests **foreground** propagation. Its blocking
+snapshot children must finish cleanup first. Core's existing `foregroundDeletion`
+gate delays parent Deprovision until Kubernetes clears the cascade finalizer.
+A child that cannot safely complete deletion blocks normal parent teardown.
+
 ### Manual Snapshot Reads
 
 `GET /api/v2/filestorage/{filestorageID}/snapshots` and
@@ -105,7 +178,7 @@ the standard middleware stack and are excluded from mutation audit logging.
 ### Parent File Storage
 
 - The parent File Storage is a `v2` resource with direct UUID lookup. Its
-  Manual Snapshot children use the nested read contract described above.
+  Manual Snapshot children use the nested lifecycle and read contracts above.
 - Region access is enforced via `region.CheckAccess` during request validation,
   preventing callers from creating storage in regions the request
   organization may not use.

@@ -196,6 +196,24 @@ type FileStorageId = regionids.FileStorageID
 // FileStorageSnapshotId A Manual File Storage Snapshot ID.
 type FileStorageSnapshotId = regionids.FileStorageSnapshotID
 
+// FileStorageSnapshotV2Create Manual Snapshot resource.
+type FileStorageSnapshotV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec Capture intent. Omitted expiration means no automatic expiration; omitted protected path selects the File Storage root.
+	Spec FileStorageSnapshotV2CreateSpec `json:"spec"`
+}
+
+// FileStorageSnapshotV2CreateSpec Capture intent. Omitted expiration means no automatic expiration; omitted protected path selects the File Storage root.
+type FileStorageSnapshotV2CreateSpec struct {
+	// ExpirationTime Optional expiration deadline using the platform date-time format. Fractional seconds are truncated before validating that the normalized deadline is strictly later than request acceptance time. Malformed timestamps return 400; non-future normalized deadlines return 422.
+	ExpirationTime *time.Time `json:"expirationTime,omitempty"`
+
+	// ProtectedPath Optional canonical relative path within the File Storage. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected.
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+}
+
 // FileStorageSnapshotV2Read A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
 type FileStorageSnapshotV2Read struct {
 	// Metadata Metadata required by project scoped resource reads.
@@ -2215,6 +2233,9 @@ type PostApiV2FilestorageJSONRequestBody = StorageV2Create
 
 // PutApiV2FilestorageFilestorageIDJSONRequestBody defines body for PutApiV2FilestorageFilestorageID for application/json ContentType.
 type PutApiV2FilestorageFilestorageIDJSONRequestBody = StorageV2Update
+
+// PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDSnapshots for application/json ContentType.
+type PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody = FileStorageSnapshotV2Create
 
 // PostApiV2LoadbalancersJSONRequestBody defines body for PostApiV2Loadbalancers for application/json ContentType.
 type PostApiV2LoadbalancersJSONRequestBody = LoadBalancerV2Create
