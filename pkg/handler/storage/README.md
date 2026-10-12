@@ -62,12 +62,10 @@ accounting meet.
 record durable Region intent and return `202 Accepted`. Neither request calls a
 provider, allocates snapshot-specific quota, or waits for backend convergence.
 
-Both mutations resolve and authorize the parent File Storage with its standard
-Read grant before checking the independent `region:filestoragesnapshots:v2`
-Create or Delete grant in the recovered project. Visibility failures use the
-same canonical 404 as [snapshot reads](#manual-snapshot-reads). Create completes principal
-scope from the parent before persisting attribution. Delete needs no principal
-enrichment.
+Snapshot operations require their independent `region:filestoragesnapshots:v2`
+grant, not File Storage Read. Create uses parent scope and completes the principal
+before authorization. Delete uses child scope without requiring the parent.
+Visibility follows [snapshot reads](#manual-snapshot-reads).
 
 Create accepts standard resource metadata plus optional immutable expiration
 and protected path. The immutable, case-sensitive name uses the platform's
@@ -137,22 +135,19 @@ authorization are scoped to one parent File Storage. There is no project-wide
 snapshot collection or pagination. Reads never discover, adopt, or inventory
 provider or policy-created snapshots.
 
-Both operations resolve the parent File Storage first using its standard Read
-check, then require `region:filestoragesnapshots:v2` Read in that same recovered
-project before reading any child storage. Missing or inaccessible parents,
-missing or inaccessible children, wrong-parent children, and expired children
-use the exact canonical `HTTPNotFound` response, including the standard trace ID.
-Storage transport failures remain server errors rather than being disguised as
-not-found responses. This uniform response is specific to the snapshot routes;
-the parent File Storage GET can return 403, so it does not conceal parent
-existence across the whole API.
+List checks Snapshot Read in the parent's project and filters by parent ID,
+organization/project, and per-child RBAC. Get checks the child's
+scope without requiring the parent. Get/Delete validate the URL parent ID
+against `spec.fileStorageID` and the parent label.
 
-Collection queries select the shared namespace by the parent's organization,
-project, `FileStorageLabel`, and API version 2. Both operations verify that child
-labels agree with the parent and with immutable `spec.fileStorageID`. Tag filters
-use the standard core decoder and stored tag matching. Results sort by immutable,
-case-sensitive `spec.name`, then UUID; public `metadata.name` projects this
-Manual Snapshot Name rather than treating its mirrored label as rename authority.
+Missing or inaccessible parents return canonical 404 on List. Missing,
+inaccessible, wrong-parent, or expired items also return canonical 404. Other
+failures propagate normally; authorized empty collections return `200 []`.
+
+Tag filters use the standard core decoder and stored tag matching. Results sort
+by immutable, case-sensitive `spec.name`, then UUID; public `metadata.name`
+projects this Manual Snapshot Name rather than treating its mirrored label as
+rename authority.
 
 One clock observation at the start of each storage-client read fixes request
 evaluation time. `spec.expirationTime <= now` hides the child, even if its CR

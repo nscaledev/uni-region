@@ -19,17 +19,22 @@ package storage_test
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	corev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	identitymock "github.com/unikorn-cloud/identity/pkg/openapi/mock"
 	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -57,16 +62,92 @@ func snapshotMutationContext(ctx context.Context, operations ...identityapi.AclO
 			Id: testProjID,
 			Endpoints: identityapi.AclEndpoints{
 				{
-					Name:       "region:filestorage:v2",
-					Operations: identityapi.AclOperations{identityapi.Read},
-				},
-				{
 					Name:       "region:filestoragesnapshots:v2",
 					Operations: operations,
 				},
 			},
 		}},
 	}}})
+}
+
+func TestCreateSnapshotRequiresOnlySnapshotCreate(t *testing.T) {
+	t.Parallel()
+
+	ctx := snapshotMutationContext(t.Context(), identityapi.Create)
+	c := snapshotReadClient(t, snapshotParent())
+	created, err := c.CreateSnapshot(ctx, idstest.MustParseFileStorageID(snapshotParentID), &openapi.FileStorageSnapshotV2Create{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "backup"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "backup", created.Metadata.Name)
+	require.Equal(t, testOrgID, created.Metadata.OrganizationId)
+	require.Equal(t, testProjID, created.Metadata.ProjectId)
+	require.Equal(t, ptr.To("creator@example.com"), created.Metadata.CreatedBy)
+	require.Equal(t, coreapi.ResourceProvisioningStatusPending, created.Metadata.ProvisioningStatus)
+}
+
+func TestCreateSnapshotVerifiesOrganizationScopedProject(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name           string
+		identityStatus int
+		responseStatus int
+	}{
+		{name: "existing project", identityStatus: http.StatusOK},
+		{name: "missing project", identityStatus: http.StatusNotFound, responseStatus: http.StatusNotFound},
+		{name: "identity unavailable", identityStatus: http.StatusServiceUnavailable, responseStatus: http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			identity := identitymock.NewMockClientWithResponsesInterface(gomock.NewController(t))
+			identity.EXPECT().GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(
+				gomock.Any(), identityids.MustParseOrganizationID(testOrgID), identityids.MustParseProjectID(testProjID),
+			).DoAndReturn(func(ctx context.Context, _ identityids.OrganizationID, _ identityids.ProjectID, _ ...identityapi.RequestEditorFn) (*identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse, error) {
+				p, err := principal.GetPrincipal(ctx)
+				require.NoError(t, err)
+				require.Equal(t, testOrgID, p.OrganizationID)
+				require.Equal(t, testProjID, p.ProjectID)
+
+				return &identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+					HTTPResponse: &http.Response{StatusCode: test.identityStatus},
+				}, nil
+			})
+
+			endpoints := identityapi.AclEndpoints{{Name: "region:filestoragesnapshots:v2", Operations: identityapi.AclOperations{identityapi.Create}}}
+			ctx := rbac.NewContext(snapshotMutationContext(t.Context()), &identityapi.Acl{
+				Organizations: &identityapi.AclOrganizationList{{Id: testOrgID, Endpoints: &endpoints}},
+			})
+			c := snapshotReadClient(t, snapshotParent())
+			c.Identity = identity
+			got, err := c.CreateSnapshot(ctx, idstest.MustParseFileStorageID(snapshotParentID), &openapi.FileStorageSnapshotV2Create{
+				Metadata: coreapi.ResourceWriteMetadata{Name: "backup"},
+			})
+
+			if test.responseStatus == 0 {
+				require.NoError(t, err)
+				require.Equal(t, "backup", got.Metadata.Name)
+				require.Equal(t, testProjID, got.Metadata.ProjectId)
+			} else {
+				require.Nil(t, got)
+				require.Error(t, err)
+
+				response := httptest.NewRecorder()
+				coreerrors.HandleError(response, httptest.NewRequestWithContext(ctx, http.MethodPost, "/", nil), err)
+				require.Equal(t, test.responseStatus, response.Code)
+			}
+
+			stored := &regionv1.FileStorageSnapshotList{}
+			require.NoError(t, c.Client.List(ctx, stored, client.InNamespace(snapshotNamespace)))
+
+			if test.responseStatus == 0 {
+				require.Len(t, stored.Items, 1)
+			} else {
+				require.Empty(t, stored.Items)
+			}
+		})
+	}
 }
 
 func TestCreateSnapshotReturnsCompletePendingIntent(t *testing.T) {
@@ -240,14 +321,14 @@ func TestDeleteSnapshotBeforeControllerReconciliationReleasesSlot(t *testing.T) 
 	require.Equal(t, created.Metadata.Id, recreated.Metadata.Id)
 }
 
-func TestDeleteSnapshotRecordsIntentUntilFinalizerCompletes(t *testing.T) {
+func TestDeleteSnapshotWithoutParentRecordsIntentUntilFinalizerCompletes(t *testing.T) {
 	t.Parallel()
 
 	snapshot := manualSnapshot(snapshotID, "backup")
 	snapshot.Finalizers = []string{coreconstants.Finalizer}
 	snapshot.Spec.Pause = true
 	snapshot.Annotations = map[string]string{coreconstants.CreatorAnnotation: "original@example.com"}
-	c := snapshotReadClient(t, snapshotParent(), snapshot)
+	c := snapshotReadClient(t, snapshot)
 	ctx := snapshotMutationContext(t.Context(), identityapi.Delete, identityapi.Read)
 	parentID := idstest.MustParseFileStorageID(snapshotParentID)
 	childID := idstest.MustParseFileStorageSnapshotID(snapshotID)
@@ -630,19 +711,22 @@ func TestCreateSnapshotNormalizesExpirationBeforeStorage(t *testing.T) {
 	requireSnapshotNotFound(t, c.DeleteSnapshot(ctx, parentID, childID))
 }
 
-func TestSnapshotMutationRBACMatrix(t *testing.T) {
+func TestSnapshotRBACMatrix(t *testing.T) {
 	t.Parallel()
 
-	for _, scope := range []string{"global", "organization", "project"} {
+	for _, scope := range []struct {
+		name          string
+		createLookups int
+	}{
+		{name: "global"},
+		{name: "organization", createLookups: 1},
+		{name: "project"},
+	} {
 		for _, operation := range []identityapi.AclOperation{identityapi.Create, identityapi.Read, identityapi.Update, identityapi.Delete, "none"} {
-			t.Run(scope+"/"+string(operation), func(t *testing.T) {
+			t.Run(scope.name+"/"+string(operation), func(t *testing.T) {
 				t.Parallel()
 
 				endpoints := identityapi.AclEndpoints{
-					{
-						Name:       "region:filestorage:v2",
-						Operations: identityapi.AclOperations{identityapi.Read},
-					},
 					{
 						Name:       "region:filestoragesnapshots:v2",
 						Operations: identityapi.AclOperations{operation},
@@ -650,7 +734,7 @@ func TestSnapshotMutationRBACMatrix(t *testing.T) {
 				}
 				acl := &identityapi.Acl{}
 
-				switch scope {
+				switch scope.name {
 				case "global":
 					acl.Global = &endpoints
 				case "organization":
@@ -671,22 +755,48 @@ func TestSnapshotMutationRBACMatrix(t *testing.T) {
 				snapshot := manualSnapshot(snapshotID, "backup")
 				snapshot.Finalizers = []string{coreconstants.Finalizer}
 				c := snapshotReadClient(t, snapshotParent(), snapshot)
+				identity := identitymock.NewMockClientWithResponsesInterface(gomock.NewController(t))
+				c.Identity = identity
+				lookups := map[identityapi.AclOperation]int{identityapi.Create: scope.createLookups}
+				identity.EXPECT().GetApiV1OrganizationsOrganizationIDProjectsProjectIDWithResponse(
+					gomock.Any(), identityids.MustParseOrganizationID(testOrgID), identityids.MustParseProjectID(testProjID),
+				).Return(&identityapi.GetApiV1OrganizationsOrganizationIDProjectsProjectIDResponse{
+					HTTPResponse: &http.Response{StatusCode: http.StatusOK},
+				}, nil).Times(lookups[operation])
+
 				ctx := rbac.NewContext(snapshotMutationContext(t.Context()), acl)
 				parentID := idstest.MustParseFileStorageID(snapshotParentID)
 				got, err := c.CreateSnapshot(ctx, parentID, &openapi.FileStorageSnapshotV2Create{Metadata: coreapi.ResourceWriteMetadata{Name: "new-backup"}})
 
 				if operation == identityapi.Create {
-					require.NoError(t, err, "Create must not require child Read/Delete or parent Create")
+					require.NoError(t, err, "Create requires only Snapshot Create")
 					require.Equal(t, "new-backup", got.Metadata.Name)
 				} else {
 					require.Nil(t, got)
 					requireSnapshotNotFound(t, err)
 				}
 
-				err = c.DeleteSnapshot(ctx, parentID, idstest.MustParseFileStorageSnapshotID(snapshotID))
+				childID := idstest.MustParseFileStorageSnapshotID(snapshotID)
+				read, err := c.GetSnapshot(ctx, parentID, childID)
+				listed, listErr := c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+
+				if operation == identityapi.Read {
+					require.NoError(t, err, "Get requires only Snapshot Read")
+					require.NoError(t, listErr, "List requires only Snapshot Read")
+					require.Equal(t, snapshotID, read.Metadata.Id)
+					require.Len(t, listed, 1)
+					require.Equal(t, snapshotID, listed[0].Metadata.Id)
+				} else {
+					require.Nil(t, read)
+					requireSnapshotNotFound(t, err)
+					require.Nil(t, listed)
+					requireSnapshotNotFound(t, listErr)
+				}
+
+				err = c.DeleteSnapshot(ctx, parentID, childID)
 
 				if operation == identityapi.Delete {
-					require.NoError(t, err, "Delete must not require child Read/Create or parent Delete")
+					require.NoError(t, err, "Delete requires only Snapshot Delete")
 				} else {
 					requireSnapshotNotFound(t, err)
 				}

@@ -99,7 +99,9 @@ Manual Snapshot v2 create/delete contracts and read models follow the
 and
 [storage handler contract](../handler/storage/README.md#manual-snapshot-reads).
 POST returns the complete pending resource with 202; DELETE returns the standard
-accepted response. Both use parent-derived scope and independent snapshot grants.
+accepted response. Snapshot operations require independent snapshot grants, not
+File Storage Read. Create/List use parent scope; Get/Delete use child scope
+without requiring the parent. Scoped access denials return canonical 404.
 Expired DELETE returns canonical 404 without mutation, including for an already
 deleting CR. Generated types, clients, router, and embedded schema all derive
 from `server.spec.yaml`.

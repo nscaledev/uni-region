@@ -41,6 +41,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
@@ -117,7 +118,6 @@ func snapshotReadContext(ctx context.Context) context.Context {
 			Projects: &identityapi.AclProjectList{{
 				Id: testProjID,
 				Endpoints: identityapi.AclEndpoints{
-					{Name: "region:filestorage:v2", Operations: identityapi.AclOperations{identityapi.Read}},
 					{Name: "region:filestoragesnapshots:v2", Operations: identityapi.AclOperations{identityapi.Read}},
 				},
 			}},
@@ -211,6 +211,42 @@ func TestGetSnapshotProjectsCompleteReadModel(t *testing.T) {
 	}
 }
 
+func TestGetSnapshotWithoutParentRequiresOnlySnapshotRead(t *testing.T) {
+	t.Parallel()
+
+	c := snapshotReadClient(t, manualSnapshot(snapshotID, "backup"))
+	read, err := c.GetSnapshot(snapshotReadContext(t.Context()), idstest.MustParseFileStorageID(snapshotParentID), idstest.MustParseFileStorageSnapshotID(snapshotID))
+	require.NoError(t, err)
+	require.Equal(t, snapshotID, read.Metadata.Id)
+	require.Equal(t, "backup", read.Metadata.Name)
+	require.Equal(t, testOrgID, read.Metadata.OrganizationId)
+	require.Equal(t, testProjID, read.Metadata.ProjectId)
+	require.Equal(t, idstest.MustParseFileStorageID(snapshotParentID), read.Spec.FileStorageId)
+}
+
+func TestSnapshotAccessDoesNotRequireAPIVersionLabel(t *testing.T) {
+	t.Parallel()
+
+	snapshot := manualSnapshot(snapshotID, "backup")
+	delete(snapshot.Labels, constants.ResourceAPIVersionLabel)
+	c := snapshotReadClient(t, snapshot)
+	parentID := idstest.MustParseFileStorageID(snapshotParentID)
+	childID := idstest.MustParseFileStorageSnapshotID(snapshotID)
+	read, err := c.GetSnapshot(snapshotReadContext(t.Context()), parentID, childID)
+	require.NoError(t, err)
+	require.Equal(t, snapshotID, read.Metadata.Id)
+	require.Equal(t, parentID, read.Spec.FileStorageId)
+
+	listClient := snapshotReadClient(t, snapshotParent(), snapshot.DeepCopy())
+	listed, err := listClient.ListSnapshots(snapshotReadContext(t.Context()), parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, snapshotID, listed[0].Metadata.Id)
+	require.NoError(t, c.DeleteSnapshot(snapshotMutationContext(t.Context(), identityapi.Delete), parentID, childID))
+	_, err = c.GetSnapshot(snapshotReadContext(t.Context()), parentID, childID)
+	requireSnapshotNotFound(t, err)
+}
+
 func TestGetSnapshotExpiration(t *testing.T) {
 	t.Parallel()
 
@@ -275,15 +311,26 @@ func TestListSnapshotsFiltersAndOrdersLedger(t *testing.T) {
 	wrongParent := first.DeepCopy()
 	wrongParent.Name = "a8888888-8888-4888-a888-888888888888"
 	wrongParent.Spec.FileStorageID = idstest.MustParseFileStorageID(snapshotOtherFileStorageID)
+	otherParent := first.DeepCopy()
+	otherParent.Name = "a9999999-9999-4999-a999-999999999999"
+	otherParent.Spec.FileStorageID = idstest.MustParseFileStorageID(snapshotOtherFileStorageID)
+	otherParent.Labels[constants.FileStorageLabel] = snapshotOtherFileStorageID
 	wrongProject := first.DeepCopy()
-	wrongProject.Name = "a9999999-9999-4999-a999-999999999999"
+	wrongProject.Name = "addddddd-dddd-4ddd-addd-dddddddddddd"
 	wrongProject.Labels[coreconstants.ProjectLabel] = snapshotOtherProjectID
+	wrongOrganization := first.DeepCopy()
+	wrongOrganization.Name = "aeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee"
+	wrongOrganization.Labels[coreconstants.OrganizationLabel] = snapshotOtherOrganizationID
+	missingScope := first.DeepCopy()
+	missingScope.Name = "afffffff-ffff-4fff-afff-ffffffffffff"
+	delete(missingScope.Labels, coreconstants.ProjectLabel)
+
 	wrongTags := manualSnapshot("abbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb", "excluded")
 	wrongTags.Spec.Tags = corev1.TagList{{Name: "environment", Value: "production"}}
 	expired := first.DeepCopy()
 	expired.Name = "accccccc-cccc-4ccc-accc-cccccccccccc"
 	expired.Spec.ExpirationTime = ptr.To(metav1.NewTime(now))
-	objects := []client.Object{snapshotParent(), last, tied, first, wrongParent, wrongProject, wrongTags, expired}
+	objects := []client.Object{snapshotParent(), last, tied, first, wrongParent, otherParent, wrongProject, wrongOrganization, missingScope, wrongTags, expired}
 	c := snapshotReadClient(t, objects...)
 	c.Clock = clocktesting.NewFakeClock(now)
 
@@ -304,6 +351,111 @@ func TestListSnapshotsFiltersAndOrdersLedger(t *testing.T) {
 		require.Equal(t, testProjID, resource.Metadata.ProjectId)
 		require.Equal(t, &coreapi.TagList{{Name: "environment", Value: "production"}, {Name: "team", Value: "ml"}}, resource.Metadata.Tags)
 	}
+}
+
+func TestListSnapshotsUsesOnlySnapshotReadInParentProject(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name       string
+		parent     bool
+		projectID  string
+		operations identityapi.AclOperations
+		visible    bool
+	}{
+		{
+			name:       "snapshot read without file storage read",
+			parent:     true,
+			projectID:  testProjID,
+			operations: identityapi.AclOperations{identityapi.Read},
+			visible:    true,
+		},
+		{
+			name:       "missing parent",
+			projectID:  testProjID,
+			operations: identityapi.AclOperations{identityapi.Read},
+		},
+		{
+			name:      "no snapshot read",
+			parent:    true,
+			projectID: testProjID,
+		},
+		{
+			name:       "snapshot read in another project",
+			parent:     true,
+			projectID:  snapshotOtherProjectID,
+			operations: identityapi.AclOperations{identityapi.Read},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			objects := []client.Object{manualSnapshot(snapshotID, "backup")}
+			if test.parent {
+				objects = append(objects, snapshotParent())
+			}
+
+			c := snapshotReadClient(t, objects...)
+			ctx := rbac.NewContext(t.Context(), &identityapi.Acl{
+				Organizations: &identityapi.AclOrganizationList{{
+					Id: testOrgID,
+					Projects: &identityapi.AclProjectList{{
+						Id: test.projectID,
+						Endpoints: identityapi.AclEndpoints{{
+							Name:       "region:filestoragesnapshots:v2",
+							Operations: test.operations,
+						}},
+					}},
+				}},
+			})
+			listed, err := c.ListSnapshots(ctx, idstest.MustParseFileStorageID(snapshotParentID), openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+
+			if test.visible {
+				require.NoError(t, err)
+				require.Len(t, listed, 1)
+				require.Equal(t, snapshotID, listed[0].Metadata.Id)
+				require.Equal(t, testProjID, listed[0].Metadata.ProjectId)
+			} else {
+				require.Nil(t, listed)
+				requireSnapshotNotFound(t, err)
+			}
+		})
+	}
+}
+
+func TestListSnapshotsChecksChildReadScope(t *testing.T) {
+	t.Parallel()
+
+	visible := manualSnapshot(snapshotID, "backup")
+	denied := manualSnapshot("addddddd-dddd-4ddd-addd-dddddddddddd", "denied")
+	denied.Labels[coreconstants.ProjectLabel] = snapshotOtherProjectID
+	invalid := manualSnapshot("aeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee", "invalid")
+	delete(invalid.Labels, coreconstants.ProjectLabel)
+
+	c := storage.New(common.ClientArgs{
+		Client: snapshotReadClientBuilder(t, snapshotParent()).WithInterceptorFuncs(interceptor.Funcs{
+			List: func(_ context.Context, _ client.WithWatch, list client.ObjectList, options ...client.ListOption) error {
+				listOptions := &client.ListOptions{}
+				listOptions.ApplyOptions(options)
+				require.Equal(t, snapshotNamespace, listOptions.Namespace)
+				require.True(t, listOptions.LabelSelector.Matches(labels.Set(visible.Labels)))
+				require.False(t, listOptions.LabelSelector.Matches(labels.Set(denied.Labels)))
+				require.False(t, listOptions.LabelSelector.Matches(labels.Set(invalid.Labels)))
+
+				// Return a broader working set to exercise per-item RBAC.
+				snapshots, ok := list.(*regionv1.FileStorageSnapshotList)
+				require.True(t, ok)
+				snapshots.Items = []regionv1.FileStorageSnapshot{*visible, *denied, *invalid}
+
+				return nil
+			},
+		}).Build(),
+		Namespace: snapshotNamespace,
+	})
+	got, err := c.ListSnapshots(snapshotReadContext(t.Context()), idstest.MustParseFileStorageID(snapshotParentID), openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	require.Equal(t, snapshotID, got[0].Metadata.Id)
 }
 
 func TestSnapshotReadsHideExpiredLifecycleStates(t *testing.T) {
@@ -351,10 +503,10 @@ func requireSnapshotNotFound(t *testing.T, err error) {
 	require.JSONEq(t, `{"error":"not_found","error_description":"resource not found","trace_id":"00000000000000000000000000000000"}`, response.Body.String())
 }
 
-func TestSnapshotReadsRequireBothParentProjectPermissions(t *testing.T) {
+func TestSnapshotReadsRequireSnapshotRead(t *testing.T) {
 	t.Parallel()
 
-	for _, endpoint := range []string{"none", "region:filestorage:v2", "region:filestoragesnapshots:v2"} {
+	for _, endpoint := range []string{"none", "region:filestorage:v2"} {
 		t.Run(endpoint, func(t *testing.T) {
 			t.Parallel()
 
@@ -365,15 +517,13 @@ func TestSnapshotReadsRequireBothParentProjectPermissions(t *testing.T) {
 					Endpoints: identityapi.AclEndpoints{{Name: endpoint, Operations: identityapi.AclOperations{identityapi.Read}}},
 				}},
 			}}}
-			c := storage.New(common.ClientArgs{
-				Client:    snapshotReadClientBuilder(t, snapshotParent(), manualSnapshot(snapshotID, "backup")).WithInterceptorFuncs(unavailableSnapshotReads()).Build(),
-				Namespace: snapshotNamespace,
-			})
+			c := snapshotReadClient(t, snapshotParent(), manualSnapshot(snapshotID, "backup"))
 			ctx := rbac.NewContext(t.Context(), acl)
 			parentID := idstest.MustParseFileStorageID(snapshotParentID)
 			_, err := c.GetSnapshot(ctx, parentID, idstest.MustParseFileStorageSnapshotID(snapshotID))
 			requireSnapshotNotFound(t, err)
-			_, err = c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+			listed, err := c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+			require.Nil(t, listed)
 			requireSnapshotNotFound(t, err)
 		})
 	}
@@ -396,7 +546,41 @@ func TestSnapshotReadsPreserveStorageFailures(t *testing.T) {
 	require.False(t, coreerrors.IsHTTPNotFound(err))
 }
 
-func TestGetSnapshotDoesNotDiscloseOtherParentsOrProjects(t *testing.T) {
+func TestSnapshotParentStorageFailureDoesNotAffectChildOperations(t *testing.T) {
+	t.Parallel()
+
+	c := storage.New(common.ClientArgs{
+		Client: snapshotReadClientBuilder(t, snapshotParent(), manualSnapshot(snapshotID, "backup")).WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, object client.Object, options ...client.GetOption) error {
+				if _, ok := object.(*regionv1.FileStorage); ok {
+					return errors.New("snapshot parent storage unavailable") //nolint:err113 // Test boundary failure.
+				}
+
+				return c.Get(ctx, key, object, options...)
+			},
+		}).Build(),
+		Namespace: snapshotNamespace,
+	})
+	ctx := snapshotMutationContext(t.Context(), identityapi.Create, identityapi.Read, identityapi.Delete)
+	parentID := idstest.MustParseFileStorageID(snapshotParentID)
+	childID := idstest.MustParseFileStorageSnapshotID(snapshotID)
+	created, err := c.CreateSnapshot(ctx, parentID, &openapi.FileStorageSnapshotV2Create{Metadata: coreapi.ResourceWriteMetadata{Name: "new-backup"}})
+	require.Nil(t, created)
+	require.Error(t, err)
+	require.False(t, coreerrors.IsHTTPNotFound(err))
+	listed, err := c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+	require.Nil(t, listed)
+	require.Error(t, err)
+	require.False(t, coreerrors.IsHTTPNotFound(err), "transport failures must not become empty collections")
+	read, err := c.GetSnapshot(ctx, parentID, childID)
+	require.NoError(t, err)
+	require.Equal(t, snapshotID, read.Metadata.Id)
+	require.NoError(t, c.DeleteSnapshot(ctx, parentID, childID))
+	_, err = c.GetSnapshot(ctx, parentID, childID)
+	requireSnapshotNotFound(t, err)
+}
+
+func TestSnapshotItemOperationsDoNotDiscloseOtherParentsOrProjects(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -413,8 +597,6 @@ func TestGetSnapshotDoesNotDiscloseOtherParentsOrProjects(t *testing.T) {
 		{name: "other organization", change: func(s *regionv1.FileStorageSnapshot) {
 			s.Labels[coreconstants.OrganizationLabel] = snapshotOtherOrganizationID
 		}},
-		{name: "missing scope", change: func(s *regionv1.FileStorageSnapshot) { delete(s.Labels, coreconstants.ProjectLabel) }},
-		{name: "wrong API version", change: func(s *regionv1.FileStorageSnapshot) { s.Labels[constants.ResourceAPIVersionLabel] = "1" }},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -426,28 +608,77 @@ func TestGetSnapshotDoesNotDiscloseOtherParentsOrProjects(t *testing.T) {
 			parentID := idstest.MustParseFileStorageID(snapshotParentID)
 			_, err := c.GetSnapshot(ctx, parentID, idstest.MustParseFileStorageSnapshotID(snapshotID))
 			requireSnapshotNotFound(t, err)
-			listed, err := c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
-			require.NoError(t, err)
-			require.Empty(t, listed)
+			requireSnapshotNotFound(t, c.DeleteSnapshot(snapshotMutationContext(t.Context(), identityapi.Delete), parentID, idstest.MustParseFileStorageSnapshotID(snapshotID)))
 		})
 	}
 }
 
-func TestSnapshotReadsMissingParentOrChild(t *testing.T) {
+func TestSnapshotOperationsPreserveInvalidStoredScope(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name  string
+		label string
+		value string
+	}{
+		{name: "missing organization", label: coreconstants.OrganizationLabel},
+		{name: "missing project", label: coreconstants.ProjectLabel},
+		{name: "malformed organization", label: coreconstants.OrganizationLabel, value: "not-a-uuid"},
+		{name: "malformed project", label: coreconstants.ProjectLabel, value: "not-a-uuid"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			parent := snapshotParent()
+			snapshot := manualSnapshot(snapshotID, "backup")
+			parent.Labels[test.label] = test.value
+			snapshot.Labels[test.label] = test.value
+			c := snapshotReadClient(t, parent, snapshot)
+			ctx := snapshotMutationContext(t.Context(), identityapi.Create, identityapi.Read, identityapi.Delete)
+			parentID := idstest.MustParseFileStorageID(snapshotParentID)
+			childID := idstest.MustParseFileStorageSnapshotID(snapshotID)
+			created, createErr := c.CreateSnapshot(ctx, parentID, &openapi.FileStorageSnapshotV2Create{Metadata: coreapi.ResourceWriteMetadata{Name: "new-backup"}})
+			listed, listErr := c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+			read, readErr := c.GetSnapshot(ctx, parentID, childID)
+			deleteErr := c.DeleteSnapshot(ctx, parentID, childID)
+
+			require.Nil(t, created)
+			require.Nil(t, listed)
+			require.Nil(t, read)
+
+			for _, err := range []error{createErr, listErr, readErr, deleteErr} {
+				require.Error(t, err)
+				require.False(t, coreerrors.IsHTTPNotFound(err))
+
+				response := httptest.NewRecorder()
+				coreerrors.HandleError(response, httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil), err)
+				require.Equal(t, http.StatusInternalServerError, response.Code)
+			}
+
+			stored := &regionv1.FileStorageSnapshotList{}
+			require.NoError(t, c.Client.List(ctx, stored, client.InNamespace(snapshotNamespace)))
+			require.Len(t, stored.Items, 1)
+			require.Nil(t, stored.Items[0].DeletionTimestamp)
+		})
+	}
+}
+
+func TestSnapshotReadsMissingChild(t *testing.T) {
 	t.Parallel()
 
 	ctx := snapshotReadContext(t.Context())
 	parentID := idstest.MustParseFileStorageID(snapshotParentID)
 	snapshotID := idstest.MustParseFileStorageSnapshotID(snapshotID)
-	c := snapshotReadClient(t, manualSnapshot(snapshotID.String(), "backup"))
+	c := snapshotReadClient(t)
 	_, err := c.GetSnapshot(ctx, parentID, snapshotID)
 	requireSnapshotNotFound(t, err)
-	_, err = c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+	listed, err := c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+	require.Nil(t, listed)
 	requireSnapshotNotFound(t, err)
 	c = snapshotReadClient(t, snapshotParent())
 	_, err = c.GetSnapshot(ctx, parentID, snapshotID)
 	requireSnapshotNotFound(t, err)
-	listed, err := c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
+	listed, err = c.ListSnapshots(ctx, parentID, openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams{})
 	require.NoError(t, err)
 	require.Equal(t, openapi.FileStorageSnapshotsV2Read{}, listed)
 }

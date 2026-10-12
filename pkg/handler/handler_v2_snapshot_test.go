@@ -150,10 +150,6 @@ func snapshotHTTPParent() *regionv1.FileStorage {
 func snapshotHTTPACL() *identityapi.Acl {
 	return &identityapi.Acl{Global: &identityapi.AclEndpoints{
 		{
-			Name:       "region:filestorage:v2",
-			Operations: identityapi.AclOperations{identityapi.Read},
-		},
-		{
 			Name:       "region:filestoragesnapshots:v2",
 			Operations: identityapi.AclOperations{identityapi.Create, identityapi.Read, identityapi.Delete},
 		},
@@ -488,7 +484,7 @@ func TestSnapshotHTTPAcceptsNameAndPathBoundaries(t *testing.T) {
 	}
 }
 
-func TestSnapshotHTTPIndependentMutationGrants(t *testing.T) {
+func TestSnapshotHTTPIndependentGrants(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -496,28 +492,26 @@ func TestSnapshotHTTPIndependentMutationGrants(t *testing.T) {
 		parentRead bool
 		operations identityapi.AclOperations
 		create     bool
+		read       bool
 		delete     bool
 	}{
 		{
-			name:       "parent and create only",
-			parentRead: true,
+			name:       "snapshot create only",
 			operations: identityapi.AclOperations{identityapi.Create},
 			create:     true,
 		},
 		{
-			name:       "parent and delete only",
-			parentRead: true,
+			name:       "snapshot delete only",
 			operations: identityapi.AclOperations{identityapi.Delete},
 			delete:     true,
 		},
 		{
-			name:       "parent and read only",
-			parentRead: true,
+			name:       "snapshot read only",
 			operations: identityapi.AclOperations{identityapi.Read},
+			read:       true,
 		},
 		{
-			name:       "parent and update only",
-			parentRead: true,
+			name:       "snapshot update only",
 			operations: identityapi.AclOperations{identityapi.Update},
 		},
 		{
@@ -525,8 +519,14 @@ func TestSnapshotHTTPIndependentMutationGrants(t *testing.T) {
 			parentRead: true,
 		},
 		{
+			name: "no grants",
+		},
+		{
 			name:       "no parent read",
 			operations: identityapi.AclOperations{identityapi.Create, identityapi.Read, identityapi.Delete},
+			create:     true,
+			read:       true,
+			delete:     true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -555,8 +555,7 @@ func TestSnapshotHTTPIndependentMutationGrants(t *testing.T) {
 				require.NoError(t, err)
 				requireSnapshotHTTPNotFound(t, body)
 			}
-			// A missing child cannot distinguish denied Delete from permitted Delete;
-			// use a real seeded child under this parent for the Delete half of the matrix.
+			// Seed a child to distinguish operation authorization from absence.
 			child := &regionv1.FileStorageSnapshot{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "cbf0d246-544c-586b-a502-24f2bcec1209",
@@ -574,15 +573,176 @@ func TestSnapshotHTTPIndependentMutationGrants(t *testing.T) {
 					FileStorageID: idstest.MustParseFileStorageID(snapshotHTTPParentID),
 				},
 			}
-			deleteClient, _, _ := snapshotHTTPClient(t, acl, snapshotHTTPParent(), child)
+			childClient, _, _ := snapshotHTTPClient(t, acl, snapshotHTTPParent(), child)
 
-			if test.delete {
-				require.NoError(t, deleteClient.DeleteFileStorageSnapshot(t.Context(), snapshotHTTPParentID, child.Name))
+			if test.read {
+				listed, err := childClient.ListFileStorageSnapshots(t.Context(), snapshotHTTPParentID)
+				require.NoError(t, err)
+				read, err := childClient.GetFileStorageSnapshot(t.Context(), snapshotHTTPParentID, child.Name)
+				require.NoError(t, err)
+				require.Equal(t, child.Name, read.Metadata.Id)
+				require.Equal(t, "other-backup", read.Metadata.Name)
+				require.Len(t, listed, 1)
+				require.Equal(t, child.Name, listed[0].Metadata.Id)
 			} else {
-				body, err := deleteClient.DeleteFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, child.Name, http.StatusNotFound)
+				body, err := childClient.ListFileStorageSnapshotsExpectError(t.Context(), snapshotHTTPParentID, http.StatusNotFound)
+				require.NoError(t, err)
+				requireSnapshotHTTPNotFound(t, body)
+				body, err = childClient.GetFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, child.Name, http.StatusNotFound)
 				require.NoError(t, err)
 				requireSnapshotHTTPNotFound(t, body)
 			}
+
+			if test.delete {
+				require.NoError(t, childClient.DeleteFileStorageSnapshot(t.Context(), snapshotHTTPParentID, child.Name))
+			} else {
+				body, err := childClient.DeleteFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, child.Name, http.StatusNotFound)
+				require.NoError(t, err)
+				requireSnapshotHTTPNotFound(t, body)
+			}
+		})
+	}
+}
+
+func TestSnapshotHTTPParentlessChildAccess(t *testing.T) {
+	t.Parallel()
+
+	acl := &identityapi.Acl{Organizations: &identityapi.AclOrganizationList{{
+		Id: snapshotHTTPOrgID,
+		Projects: &identityapi.AclProjectList{{
+			Id: snapshotHTTPProjectID,
+			Endpoints: identityapi.AclEndpoints{{
+				Name:       "region:filestoragesnapshots:v2",
+				Operations: identityapi.AclOperations{identityapi.Create, identityapi.Read, identityapi.Delete},
+			}},
+		}},
+	}}}
+	c, kube, logs := snapshotHTTPClient(t, acl, snapshotHTTPParent())
+	request := openapi.FileStorageSnapshotV2Create{Metadata: coreapi.ResourceWriteMetadata{Name: "backup"}}
+	created, err := c.CreateFileStorageSnapshot(t.Context(), snapshotHTTPParentID, request)
+	require.NoError(t, err)
+
+	// Model a forced parent removal with a surviving child; this harness has no GC.
+	require.NoError(t, kube.Delete(t.Context(), snapshotHTTPParent()))
+	missing, err := c.ListFileStorageSnapshotsExpectError(t.Context(), snapshotHTTPParentID, http.StatusNotFound)
+	require.NoError(t, err)
+	requireSnapshotHTTPNotFound(t, missing)
+	read, err := c.GetFileStorageSnapshot(t.Context(), snapshotHTTPParentID, created.Metadata.Id)
+	require.NoError(t, err)
+	require.Equal(t, created.Metadata.Id, read.Metadata.Id)
+	require.Equal(t, snapshotHTTPOrgID, read.Metadata.OrganizationId)
+	require.Equal(t, snapshotHTTPProjectID, read.Metadata.ProjectId)
+	require.Equal(t, idstest.MustParseFileStorageID(snapshotHTTPParentID), read.Spec.FileStorageId)
+	missing, err = c.CreateFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, request, http.StatusNotFound)
+	require.NoError(t, err)
+	requireSnapshotHTTPNotFound(t, missing)
+	require.NoError(t, c.DeleteFileStorageSnapshot(t.Context(), snapshotHTTPParentID, created.Metadata.Id))
+	missing, err = c.GetFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, created.Metadata.Id, http.StatusNotFound)
+	require.NoError(t, err)
+	requireSnapshotHTTPNotFound(t, missing)
+	require.Empty(t, logs.FilterMessage("response openapi schema validation failure").All())
+}
+
+func TestSnapshotHTTPListFiltersChildScope(t *testing.T) {
+	t.Parallel()
+
+	for _, scope := range []string{"global", "project"} {
+		t.Run(scope, func(t *testing.T) {
+			t.Parallel()
+
+			acl := snapshotHTTPACL()
+			if scope == "project" {
+				acl = &identityapi.Acl{Organizations: &identityapi.AclOrganizationList{{
+					Id: snapshotHTTPOrgID,
+					Projects: &identityapi.AclProjectList{{
+						Id:        snapshotHTTPProjectID,
+						Endpoints: *acl.Global,
+					}},
+				}}}
+			}
+
+			c, kube, logs := snapshotHTTPClient(t, acl, snapshotHTTPParent())
+			created, err := c.CreateFileStorageSnapshot(t.Context(), snapshotHTTPParentID, openapi.FileStorageSnapshotV2Create{
+				Metadata: coreapi.ResourceWriteMetadata{Name: "backup"},
+			})
+			require.NoError(t, err)
+
+			stored := &regionv1.FileStorageSnapshot{}
+			require.NoError(t, kube.Get(t.Context(), client.ObjectKey{Namespace: snapshotHTTPNamespace, Name: created.Metadata.Id}, stored))
+
+			for _, test := range []struct {
+				label string
+				value string
+			}{
+				{label: coreconstants.OrganizationLabel, value: "a1111111-1111-4111-a111-111111111111"},
+				{label: coreconstants.ProjectLabel, value: "a2222222-2222-4222-a222-222222222222"},
+				{label: coreconstants.ProjectLabel},
+			} {
+				child := stored.DeepCopy()
+				child.Name = uuid.NewString()
+				child.ResourceVersion = ""
+				child.Spec.Name = "outside-parent-scope"
+				child.Labels[test.label] = test.value
+				require.NoError(t, kube.Create(t.Context(), child))
+			}
+
+			listed, err := c.ListFileStorageSnapshots(t.Context(), snapshotHTTPParentID)
+			require.NoError(t, err)
+			require.Len(t, listed, 1)
+			require.Equal(t, created.Metadata.Id, listed[0].Metadata.Id)
+			require.Equal(t, snapshotHTTPOrgID, listed[0].Metadata.OrganizationId)
+			require.Equal(t, snapshotHTTPProjectID, listed[0].Metadata.ProjectId)
+			require.Empty(t, logs.FilterMessage("response openapi schema validation failure").All())
+		})
+	}
+}
+
+func TestSnapshotHTTPInvalidStoredScopeReturnsServerError(t *testing.T) {
+	t.Parallel()
+
+	for _, value := range []string{"", "not-a-uuid"} {
+		t.Run("project="+value, func(t *testing.T) {
+			t.Parallel()
+
+			parent := snapshotHTTPParent()
+			c, kube, logs := snapshotHTTPClient(t, snapshotHTTPACL(), parent)
+			created, err := c.CreateFileStorageSnapshot(t.Context(), snapshotHTTPParentID, openapi.FileStorageSnapshotV2Create{
+				Metadata: coreapi.ResourceWriteMetadata{Name: "backup"},
+			})
+			require.NoError(t, err)
+
+			stored := &regionv1.FileStorageSnapshot{}
+			key := client.ObjectKey{Namespace: snapshotHTTPNamespace, Name: created.Metadata.Id}
+			require.NoError(t, kube.Get(t.Context(), key, stored))
+			stored.Labels[coreconstants.ProjectLabel] = value
+			require.NoError(t, kube.Update(t.Context(), stored))
+			require.NoError(t, kube.Get(t.Context(), client.ObjectKeyFromObject(parent), parent))
+			parent.Labels[coreconstants.ProjectLabel] = value
+			require.NoError(t, kube.Update(t.Context(), parent))
+
+			createError, err := c.CreateFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, openapi.FileStorageSnapshotV2Create{
+				Metadata: coreapi.ResourceWriteMetadata{Name: "new-backup"},
+			}, http.StatusInternalServerError)
+			require.NoError(t, err)
+			listError, err := c.ListFileStorageSnapshotsExpectError(t.Context(), snapshotHTTPParentID, http.StatusInternalServerError)
+			require.NoError(t, err)
+			readError, err := c.GetFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, created.Metadata.Id, http.StatusInternalServerError)
+			require.NoError(t, err)
+			deleteError, err := c.DeleteFileStorageSnapshotExpectError(t.Context(), snapshotHTTPParentID, created.Metadata.Id, http.StatusInternalServerError)
+			require.NoError(t, err)
+
+			for _, body := range []*coreapi.Error{createError, listError, readError, deleteError} {
+				require.NotNil(t, body.TraceId)
+				require.Equal(t, &coreapi.Error{
+					Error:            coreapi.ServerError,
+					ErrorDescription: "an internal error has occurred, please contact support",
+					TraceId:          body.TraceId,
+				}, body)
+			}
+
+			require.NoError(t, kube.Get(t.Context(), key, stored))
+			require.Nil(t, stored.DeletionTimestamp)
+			require.Empty(t, logs.FilterMessage("response openapi schema validation failure").All())
 		})
 	}
 }
