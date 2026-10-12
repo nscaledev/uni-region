@@ -33,6 +33,12 @@ shared layer that:
 The preferred API direction is `v2`. Older `v1` shapes remain as deprecated
 compatibility surface and should be migrated away from as quickly as practical.
 
+Manual File Storage Snapshots have a nested v2 create, list, get, and delete API.
+Region records durable intent. File Storage deletion foreground-cascades to its
+blocking snapshots before removing the backing storage. See the
+[Manual Snapshot lifecycle contract](pkg/handler/storage/README.md#manual-snapshot-lifecycle)
+for authorization, expiration visibility, and deterministic identity reuse.
+
 ### A Note on Security
 
 At present this service is still monolithic. It combines region discovery and

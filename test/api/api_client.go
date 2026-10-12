@@ -557,6 +557,89 @@ func (c *APIClient) ListFileStorageSnapshots(ctx context.Context, parentID strin
 	)
 }
 
+// CreateFileStorageSnapshot creates durable Manual Snapshot intent and expects 202.
+func (c *APIClient) CreateFileStorageSnapshot(ctx context.Context, parentID string, request regionopenapi.FileStorageSnapshotV2Create) (*regionopenapi.FileStorageSnapshotV2Read, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling snapshot request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodPost, c.endpoints.CreateFileStorageSnapshot(parentID), bytes.NewReader(body), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("creating file storage snapshot: %w", err)
+	}
+
+	var snapshot regionopenapi.FileStorageSnapshotV2Read
+	if err := json.Unmarshal(response, &snapshot); err != nil {
+		return nil, fmt.Errorf("unmarshaling file storage snapshot: %w", err)
+	}
+
+	return &snapshot, nil
+}
+
+// DeleteFileStorageSnapshot records deletion intent. Missing or expired children
+// return ErrResourceNotFound; non-expired terminating children remain accepted.
+func (c *APIClient) DeleteFileStorageSnapshot(ctx context.Context, parentID, snapshotID string) error {
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	resp, _, err := c.DoRegionRequest(ctx, http.MethodDelete, c.endpoints.DeleteFileStorageSnapshot(parentID, snapshotID), nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting file storage snapshot: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("file storage snapshot '%s': %w", snapshotID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting file storage snapshot: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// CreateFileStorageSnapshotExpectError returns the canonical error body for a typed create request.
+func (c *APIClient) CreateFileStorageSnapshotExpectError(ctx context.Context, parentID string, request regionopenapi.FileStorageSnapshotV2Create, expectedStatus int) (*coreapi.Error, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling snapshot request: %w", err)
+	}
+
+	return c.CreateFileStorageSnapshotRawJSONExpectError(ctx, parentID, body, expectedStatus)
+}
+
+// CreateFileStorageSnapshotRawJSONExpectError sends deliberately malformed JSON
+// payloads for schema tests and returns the typed canonical error body.
+func (c *APIClient) CreateFileStorageSnapshotRawJSONExpectError(ctx context.Context, parentID string, request json.RawMessage, expectedStatus int) (*coreapi.Error, error) {
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodPost, c.endpoints.CreateFileStorageSnapshot(parentID), bytes.NewReader(request), expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("creating file storage snapshot: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(response, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
+// DeleteFileStorageSnapshotExpectError returns the standard error body for an expected rejection.
+func (c *APIClient) DeleteFileStorageSnapshotExpectError(ctx context.Context, parentID, snapshotID string, expectedStatus int) (*coreapi.Error, error) {
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodDelete, c.endpoints.DeleteFileStorageSnapshot(parentID, snapshotID), nil, expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("deleting file storage snapshot: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(response, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
 // GetFileStorageSnapshot gets a Manual Snapshot by ID under its parent.
 // Returns ErrResourceNotFound if the snapshot is not visible under that parent.
 func (c *APIClient) GetFileStorageSnapshot(ctx context.Context, parentID, snapshotID string) (*regionopenapi.FileStorageSnapshotV2Read, error) {

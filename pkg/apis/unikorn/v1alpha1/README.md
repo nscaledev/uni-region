@@ -102,7 +102,10 @@ stored objects rely on for linkage, migration, and operational coordination.
 - Snapshot status stores conditions, provider capture time, and absolute
   protected path. The resource has no phase field or internal observation latch.
 - The [storage handler](../../../handler/storage/README.md#manual-snapshot-reads)
-  documents the public Manual Snapshot read contract.
+  documents the public Manual Snapshot read contract. Its
+  [lifecycle contract](../../../handler/storage/README.md#manual-snapshot-lifecycle)
+  describes creation-time blocking owner references, foreground parent cascade,
+  deterministic ID reuse, and customer expiration visibility.
 - `FileStorage.Spec.NFS` stores POSIX ACL and atime update interval desired state
   as required, defaulted values. The CRD defaults missing values to `false` and
   `0` before validation. An atime value of `0` means read-driven updates are

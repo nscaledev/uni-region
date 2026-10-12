@@ -45,8 +45,10 @@ The useful way to read it is not as a directory tree, but as one system:
   under the same Region Volume ID.
   OpenStack also supports server attachment behavior.
 - `FileStorageSnapshot` is the installable storage contract for project-scoped
-  customer Manual Snapshots, with [nested v2 reads](./handler/storage/README.md#manual-snapshot-reads)
-  under their File Storage parent.
+  customer Manual Snapshots, with [nested v2 creation, deletion](./handler/storage/README.md#manual-snapshot-lifecycle),
+  and [reads](./handler/storage/README.md#manual-snapshot-reads) under their File
+  Storage parent. Region records intent. File Storage deletion foreground-cascades
+  to blocking snapshots before parent deprovisioning.
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
   Nova attach/detach implementation exist; the Volume provisioner projects

@@ -98,6 +98,18 @@ func (e *Endpoints) GetFileStorageSnapshot(filestorageID, snapshotID string) str
 	return fmt.Sprintf("/api/v2/filestorage/%s/snapshots/%s", url.PathEscape(filestorageID), url.PathEscape(snapshotID))
 }
 
+// CreateFileStorageSnapshot returns the nested Manual Snapshot create endpoint.
+func (e *Endpoints) CreateFileStorageSnapshot(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s/snapshots",
+		url.PathEscape(filestorageID))
+}
+
+// DeleteFileStorageSnapshot returns the nested Manual Snapshot delete endpoint.
+func (e *Endpoints) DeleteFileStorageSnapshot(filestorageID, snapshotID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s/snapshots/%s",
+		url.PathEscape(filestorageID), url.PathEscape(snapshotID))
+}
+
 // UpdateFileStorage returns the endpoint for updating a specific file storage resource.
 func (e *Endpoints) UpdateFileStorage(filestorageID string) string {
 	return fmt.Sprintf("/api/v2/filestorage/%s",
