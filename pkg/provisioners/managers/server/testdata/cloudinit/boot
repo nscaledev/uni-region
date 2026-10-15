@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs cloud-init's four boot stages in systemd's order with the NoCloud seed
+# in /tmp/ci/seed. "--reboot" first clears what a reboot clears (tmpfs /run).
+# Failed stages are recorded in /tmp/ci/failed for ci-collect.
+# Usage: ci-boot [--reboot] <instance-id>
+set -u
+
+if [ "$1" = "--reboot" ]; then
+	rm -rf /run/cloud-init /run/sshd /tmp/ci/shim.log
+	shift
+fi
+
+mkdir -p /var/lib/cloud/seed/nocloud /run/sshd
+cp /tmp/ci/seed/user-data /var/lib/cloud/seed/nocloud/user-data
+printf 'instance-id: %s\n' "$1" > /var/lib/cloud/seed/nocloud/meta-data
+
+rm -f /tmp/ci/failed
+
+for stage in "init --local" "init" "modules --mode config" "modules --mode final"; do
+	# shellcheck disable=SC2086
+	if ! cloud-init $stage >/dev/null 2>&1; then
+		echo "$stage" >> /tmp/ci/failed
+	fi
+done
