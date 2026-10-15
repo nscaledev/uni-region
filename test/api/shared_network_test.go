@@ -270,6 +270,59 @@ var _ = Describe("Shared network resolver", func() {
 		})
 	})
 
+	Context("When the created network lands in error", func() {
+		Describe("Given create succeeds but provisioning fails", func() {
+			It("fails fast with the diagnosis instead of waiting out the timeout", func() {
+				endpoints := NewEndpoints()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer GinkgoRecover()
+
+					switch {
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
+					case r.Method == http.MethodPost && r.URL.RequestURI() == endpoints.CreateNetwork():
+						w.WriteHeader(http.StatusCreated)
+						Expect(json.NewEncoder(w).Encode(map[string]any{
+							"metadata": map[string]any{"id": "network-new", "name": SharedTestNetworkName, "provisioningStatus": "provisioning"},
+						})).To(Succeed())
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetNetwork("network-new"):
+						Expect(json.NewEncoder(w).Encode(map[string]any{
+							"metadata": map[string]any{"id": "network-new", "name": SharedTestNetworkName, "provisioningStatus": "error"},
+						})).To(Succeed())
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig: coreconfig.BaseConfig{
+						BaseURL:        server.URL,
+						RequestTimeout: time.Second,
+					},
+					RegionBaseURL:     server.URL,
+					OrgID:             orgID,
+					ProjectID:         projectID,
+					RegionID:          regionID,
+					SharedNetworkCIDR: cidr,
+				})
+
+				done := make(chan []string, 1)
+				go func() {
+					defer GinkgoRecover()
+					done <- InterceptGomegaFailures(func() { MustResolveSharedNetwork(client, context.Background()) })
+				}()
+
+				var failures []string
+				Eventually(done, 30*time.Second).Should(Receive(&failures), "resolver should fail fast, not wait out the provisioning timeout")
+				Expect(failures).To(ContainElement(SatisfyAll(
+					ContainSubstring("error state"),
+					ContainSubstring("make reset-shared-network"),
+				)))
+			})
+		})
+	})
+
 	Context("When the shared network does not yet exist", func() {
 		Describe("Given an empty network list in the org", func() {
 			It("creates it once with the shared name and configured CIDR", func() {

@@ -20,8 +20,11 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -76,9 +79,43 @@ func MustResolveSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.
 	Expect(network).NotTo(BeNil())
 
 	WaitForNetworkVisible(c, ctx, network.Metadata.Id)
-	WaitForNetworkProvisioned(c, ctx, network.Metadata.Id)
 
-	return network
+	return waitForSharedNetworkProvisioned(c, ctx, network.Metadata.Id, network.Metadata.Name)
+}
+
+// waitForSharedNetworkProvisioned polls until the network is provisioned, failing
+// fast with a diagnosis the moment it reaches a terminal error or deprovisioning
+// state rather than waiting out the full timeout.
+func waitForSharedNetworkProvisioned(c *APIClient, ctx context.Context, networkID, name string) *regionopenapi.NetworkV2Read {
+	var settled *regionopenapi.NetworkV2Read
+
+	Eventually(func() coreapi.ResourceProvisioningStatus {
+		net, err := c.GetNetwork(ctx, networkID)
+		if err != nil {
+			GinkgoWriter.Printf("Error retrieving shared network %s: %v\n", networkID, err)
+			return ""
+		}
+
+		settled = net
+
+		status := net.Metadata.ProvisioningStatus
+		if status == coreapi.ResourceProvisioningStatusError || status == coreapi.ResourceProvisioningStatusDeprovisioning {
+			StopTrying(sharedNetworkErrorMessage(name, c.config.RegionID, status)).Now()
+		}
+
+		return status
+	}).WithTimeout(5*time.Minute).WithPolling(5*time.Second).
+		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "shared network should provision")
+
+	return settled
+}
+
+// sharedNetworkErrorMessage names the likeliest causes of a shared network's error
+// state, which the region API does not expose a reason for.
+func sharedNetworkErrorMessage(name, region string, status coreapi.ResourceProvisioningStatus) string {
+	return fmt.Sprintf("shared network %q is in error state (%s); the region API exposes no reason — "+
+		"most commonly VLAN pool exhaustion in region %s or a CIDR overlap with a VAST VIP pool. "+
+		"Reset it with 'make reset-shared-network'.", name, status, region)
 }
 
 // reuseSharedNetwork returns an already-existing shared network, waiting for it to
@@ -88,22 +125,14 @@ func reuseSharedNetwork(c *APIClient, ctx context.Context, existing *regionopena
 	case coreapi.ResourceProvisioningStatusProvisioned:
 		return existing
 	case coreapi.ResourceProvisioningStatusPending, coreapi.ResourceProvisioningStatusProvisioning:
-		WaitForNetworkProvisioned(c, ctx, existing.Metadata.Id)
-
-		settled, err := c.GetNetwork(ctx, existing.Metadata.Id)
-		Expect(err).NotTo(HaveOccurred(), "failed to re-read shared network after provisioning")
-
-		return settled
+		return waitForSharedNetworkProvisioned(c, ctx, existing.Metadata.Id, existing.Metadata.Name)
 	case coreapi.ResourceProvisioningStatusError, coreapi.ResourceProvisioningStatusDeprovisioning:
 		// The region API carries no reason for the error state, so name the
 		// likeliest causes. This fails the run; the return is reached only when a
 		// test intercepts the failure, and keeps a dead network from falling
 		// through to the provisioning wait.
 		Expect(existing.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned),
-			"shared network %q is in error state (%s); the region API exposes no reason — most commonly "+
-				"VLAN pool exhaustion in region %s or a CIDR overlap with a VAST VIP pool. "+
-				"Reset it with 'make reset-shared-network'.",
-			existing.Metadata.Name, existing.Metadata.ProvisioningStatus, c.config.RegionID)
+			sharedNetworkErrorMessage(existing.Metadata.Name, c.config.RegionID, existing.Metadata.ProvisioningStatus))
 
 		return existing
 	}
