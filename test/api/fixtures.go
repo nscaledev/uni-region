@@ -281,6 +281,12 @@ func (b *NetworkPayloadBuilder) WithName(name string) *NetworkPayloadBuilder {
 	return b
 }
 
+// WithPrefix overrides the network's IPv4 prefix.
+func (b *NetworkPayloadBuilder) WithPrefix(prefix string) *NetworkPayloadBuilder {
+	b.network.Spec.Prefix = prefix
+	return b
+}
+
 // Build returns the typed NetworkV2Create struct.
 func (b *NetworkPayloadBuilder) Build() regionopenapi.NetworkV2Create {
 	return b.network
@@ -772,25 +778,27 @@ func WaitForNetworkGone(c *APIClient, ctx context.Context, networkID string) {
 	})
 }
 
-// SkipUnlessOpenStackRegion skips the spec unless the configured region is visible
-// and backed by OpenStack.
-func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+// IsOpenStackRegion reports whether the configured region is visible and backed by
+// OpenStack. It does not skip, so it is safe to call from suite setup.
+func IsOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) bool {
 	regions, err := c.ListRegions(ctx, config.OrgID)
 	Expect(err).NotTo(HaveOccurred(), "failed to resolve region provider")
 
-	for _, region := range regions {
-		if region.Metadata.Id != config.RegionID {
-			continue
+	for i := range regions {
+		if regions[i].Metadata.Id == config.RegionID {
+			return regions[i].Spec.Type == regionopenapi.RegionTypeOpenstack
 		}
-
-		if region.Spec.Type != regionopenapi.RegionTypeOpenstack {
-			Skip("tests require an OpenStack-backed region")
-		}
-
-		return
 	}
 
-	Skip("tests require TEST_REGION_ID to be visible")
+	return false
+}
+
+// SkipUnlessOpenStackRegion skips the spec unless the configured region is visible
+// and backed by OpenStack.
+func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+	if !IsOpenStackRegion(c, ctx, config) {
+		Skip("tests require an OpenStack-backed region visible as TEST_REGION_ID")
+	}
 }
 
 // SkipUnlessInternalAPIConfigured skips the spec unless internal API mTLS credentials

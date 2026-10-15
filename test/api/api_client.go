@@ -888,8 +888,12 @@ func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.Net
 	}
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
 	if err != nil {
+		if resp != nil {
+			return nil, &StatusError{StatusCode: resp.StatusCode, Body: string(respBody), Err: err}
+		}
+
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
 
