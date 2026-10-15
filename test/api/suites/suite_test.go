@@ -39,7 +39,27 @@ var (
 	config          *api.TestConfig
 )
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// Node-once: reclaim resources (and their VLANs) leaked by a previously killed
+	// run, then resolve the long-lived shared network before any specs execute, so
+	// parallel processes never race to create it. The 6-hour age floor keeps the
+	// sweep clear of concurrent or in-flight runs.
+	cfg, err := api.LoadTestConfig()
+	Expect(err).NotTo(HaveOccurred(), "Failed to load test configuration")
+
+	setupClient := api.NewAPIClientWithConfig(cfg)
+	setupCtx := context.Background()
+
+	api.SweepStaleTestResources(setupClient, setupCtx, cfg)
+	api.SweepStaleFakeDataCenterResources(setupClient, setupCtx, cfg)
+
+	if api.IsOpenStackRegion(setupClient, setupCtx, cfg) {
+		api.MustResolveSharedNetwork(setupClient, setupCtx)
+	}
+
+	return nil
+}, func(_ []byte) {
+	// Every process: load config and build the clients the specs use.
 	var err error
 	config, err = api.LoadTestConfig()
 	Expect(err).NotTo(HaveOccurred(), "Failed to load test configuration")
@@ -53,12 +73,6 @@ var _ = BeforeSuite(func() {
 		secondaryConfig.AuthToken = config.SecondaryAuthToken
 		secondaryClient = api.NewAPIClientWithConfig(&secondaryConfig)
 	}
-
-	// Reclaim resources (and their VLANs) leaked by a previously killed run
-	// before any specs execute. Runs irrespective of spec randomization; the
-	// 6-hour age floor keeps it clear of concurrent or in-flight runs.
-	api.SweepStaleTestResources(regionClient, ctx, config)
-	api.SweepStaleFakeDataCenterResources(regionClient, ctx, config)
 })
 
 var _ = BeforeEach(func() {
