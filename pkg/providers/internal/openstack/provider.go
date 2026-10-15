@@ -3393,7 +3393,13 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	if openstackServer != nil {
+		if serverDeleteHeld(openstackServer) {
+			return holdServerDelete(ctx, server, openstackServer)
+		}
+
 		log.V(1).Info("deleting server")
+
+		releaseServerDelete(server)
 
 		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil {
 			return err
@@ -3433,6 +3439,51 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	return nil
+}
+
+const (
+	novaTaskStateSpawning        = "spawning"
+	novaTaskStateRebuildSpawning = "rebuild_spawning"
+)
+
+// holdServerDelete records the hold on the Server's DeletionHeld condition and
+// logs every held pass so a live controller is distinguishable from a wedged one.
+func holdServerDelete(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server) error {
+	log := log.FromContext(ctx)
+
+	log.Info("server deletion held by provider state",
+		"novaServerID", openstackServer.ID, "novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
+
+	server.SetDeletionHeldCondition(true, unikornv1.DeletionHeldConditionReasonProviderBuilding,
+		fmt.Sprintf("provider server is %s with task %s", openstackServer.Status, openstackServer.TaskState))
+
+	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning,
+		"waiting for the provider to finish building the server before deleting it")
+}
+
+// releaseServerDelete marks a previously held delete as sent. A server that was
+// never held gets no condition.
+func releaseServerDelete(server *unikornv1.Server) {
+	if _, err := unikornv1.GetDeletionHeldCondition(server); err != nil {
+		return
+	}
+
+	server.SetDeletionHeldCondition(false, unikornv1.DeletionHeldConditionReasonReleased, "provider delete sent")
+}
+
+// serverDeleteHeld reports whether Nova is deploying the server's Ironic node.
+// Nova only touches Ironic once the task state is spawning, and cannot tear a
+// node down mid-deploy, so the delete waits. A build still queued in
+// nova-compute is Nova's to abort cleanly.
+func serverDeleteHeld(openstackServer *servers.Server) bool {
+	switch openstackServer.Status {
+	case novaStatusBuild:
+		return openstackServer.TaskState == novaTaskStateSpawning
+	case novaStatusRebuild:
+		return openstackServer.TaskState == novaTaskStateRebuildSpawning
+	default:
+		return false
+	}
 }
 
 func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
