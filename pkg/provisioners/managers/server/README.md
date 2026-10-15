@@ -52,6 +52,110 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
 
+## Managed cloud-init augmentation
+
+A server with an SSH certificate authority gets one managed part appended to
+its user-data in a MIME multipart, even when it has no user-data of its own:
+a `text/x-shellscript` named
+`00-unikorn-ssh-certificate-authority` that writes the CA key and an
+`sshd_config.d` drop-in, then reloads sshd.
+
+Why a shell script, not cloud-config:
+
+- cloud-config parts are merged, and cloud-init's default merge replaces
+  lists, so a cloud-config part wiped the customer's `runcmd` and
+  `write_files` (INST-1542). A `merge_how` rule does not save it: with
+  `dict(no_replace)`, a customer key left empty (`runcmd:`) keeps its null and
+  drops ours.
+- Scripts are never merged. cloud-init runs them once per instance through
+  `scripts_user`, the same module and time as `runcmd`. A reboot does not
+  re-run it, so operators may remove the CA or edit sshd and it stays that way.
+  A rebuild from a fresh image runs it again; so does a new instance-id
+  (e.g. a new server made from a snapshot). A rebuild from a snapshot of the
+  same server keeps the instance-id and cloud-init's record, so it does not.
+- Its name sorts before the customer's `scripts_user` scripts (`runcmd`,
+  `part-NNN`), so it runs first among them. cloud-init marks `scripts_user`
+  as done before running any script, so if a customer script that ran first
+  rebooted, ours would never run. Customer per-boot, per-instance and
+  per-once scripts run in earlier modules whatever their name: one that
+  reboots once delays ours by a boot; one that reboots every boot or never
+  ends stops ours, as it stops the rest of their boot.
+- Cost: it runs in cloud-init's final stage, after sshd has started (the old
+  `write_files` ran before), so CA logins work only once first boot finishes.
+  A boothook would run earlier, but from inside cloud-init's init stage, which
+  systemd orders before sshd: restarting sshd from there can deadlock boot.
+
+Customer user-data must reach cloud-init exactly as sent:
+
+- A single payload is labelled `text/x-not-multipart`, so cloud-init detects
+  its type itself. We never choose a type for the customer. It is
+  quoted-printable in binary mode, so every byte, line endings included,
+  survives: unencoded, cloud-init reads it as Latin-1 and corrupts any
+  non-ASCII text, losing the whole cloud-config. Mostly-ASCII text grows a
+  little (base64 would add a third), which matters near the provider's
+  user-data size limit.
+- MIME user-data is split into its top-level parts, copied raw
+  (`NextRawPart`); a MIME message that is not multipart is one part. Decoding
+  quoted-printable and writing it back changed the bytes and could break all
+  user-data. Like cloud-init, we treat user-data as MIME only if
+  `mime-version:` is in its first 4096 bytes and, as Python's email parser
+  requires, its first line is a header. If the first line is blank instead,
+  the parser drops it, and so do we.
+- Stored MIME user-data that Go cannot parse (the API rejects it now) is
+  wrapped whole rather than failing, so the server still reconciles.
+
+Validation at the API (`ValidateUserData`, `ValidateManagedUserData`) accepts
+what cloud-init's own detection accepts (longest prefix first, case
+insensitive, leading whitespace ignored), and rejects `#part-handler`
+(unstable in cloud-init) where used openly: as the payload or as a top-level
+part. A part's type is read as cloud-init reads it: the declared type, sniffed
+from the body only for `text/plain`, `text/x-not-multipart` and
+`text/x-shellscript` (a missing or broken header counts as `text/plain`).
+Multipart without `MIME-Version` is rejected, since cloud-init ignores it, and
+so is user-data that is not UTF-8, which cloud-init's handlers cannot use.
+Rejection is at the API only; the provisioner passes stored user-data
+through so existing servers still reconcile.
+
+Known gaps:
+
+- A part-handler buried in gzip, a transfer encoding, a nested multipart, an
+  archive or an `#include` is not rejected. It can only harm the customer's
+  own server, e.g. by taking over our part.
+- A customer part named `00-unikorn-ssh-certificate-authority` is overwritten
+  by ours, and one named to sort before it runs first.
+- Stored multipart without `MIME-Version` on a CA server (accepted before)
+  is now wrapped whole, so on a rebuild or recreate cloud-init ignores it, as
+  it always did without a CA.
+- Go's multipart reader takes the line ending of the first boundary for all
+  of them; Python accepts any. Mixed CRLF and LF boundaries split differently.
+- We always send `multipart/mixed`. A customer `multipart/digest` whose parts
+  have no `Content-Type` is read differently with a CA.
+- A customer may set their own `TrustedUserCAKeys` (sshd takes the first value
+  it reads) or drop `scripts_user` from cloud-init's module lists; both are
+  their call.
+
+## Cloud-init tests
+
+`make test-cloud-init` runs the tests tagged `cloudinit` against real
+cloud-init in an image built from `testdata/cloudinit` (Ubuntu 24.04, exact
+package versions; a build failure after the archive drops a version is the
+signal to bump them on purpose). They check what cloud-init does with our
+output, never its shape:
+
+- Boot tests run cloud-init's four stages in a container, once with the
+  customer's user-data alone and once with ours added. Each input has a
+  hard-coded expected outcome for the first boot, so two equally broken boots
+  cannot pass; then markers, files across the filesystem, status, warnings and
+  failed stages must match, and `sshd -T` must show the CA. A reboot clears
+  `/run` as a real one does.
+- Fast tests run cloud-init's Python on payloads: detection parity with
+  cloud-init's own prefix table, part-handler rejection, and that every
+  customer part reaches a cloud-init handler unchanged.
+
+Limits: a container is not a VM (no systemd; `systemctl` and `service` are
+shims that log calls), NoCloud stands in for OpenStack, and only one
+cloud-init version is tested.
+
 ## Caveats
 
 - Reference maintenance here is easy to underappreciate, but it is central to

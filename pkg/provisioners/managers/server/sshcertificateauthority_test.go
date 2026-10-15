@@ -23,6 +23,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/mail"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -145,14 +146,14 @@ func TestServerCreateOptions(t *testing.T) {
 
 		options, err := serverprovisioner.ServerCreateOptionsForTest(t.Context(), testServer(withTestSSHCertificateAuthority(resource)), cli)
 		require.NoError(t, err)
-		require.Contains(t, string(options.UserData), "#cloud-config")
-		require.Contains(t, string(options.UserData), "write_files:")
-		require.Contains(t, string(options.UserData), "runcmd:")
-		require.NotContains(t, string(options.UserData), "WriteFiles:")
-		require.NotContains(t, string(options.UserData), "RunCmd:")
-		require.Contains(t, string(options.UserData), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMI0BxP3V7j7iB5nV5d8zWwM9W4a8W2R7x5gNBy3M2Q7")
-		require.Contains(t, string(options.UserData), "test-ca")
-		require.Contains(t, string(options.UserData), "TrustedUserCAKeys /etc/ssh/trusted-user-ca-keys.pub")
+
+		parts := parseTestMultipartUserData(t, options.UserData)
+		require.Len(t, parts, 1)
+		require.Equal(t, "text/x-shellscript", parts[0].ContentType)
+		require.True(t, strings.HasPrefix(string(parts[0].Content), "#!/bin/sh\n"))
+		require.Contains(t, string(parts[0].Content), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMI0BxP3V7j7iB5nV5d8zWwM9W4a8W2R7x5gNBy3M2Q7")
+		require.Contains(t, string(parts[0].Content), "test-ca")
+		require.Contains(t, string(parts[0].Content), "TrustedUserCAKeys /etc/ssh/trusted-user-ca-keys.pub")
 	})
 
 	t.Run("WithSSHCertificateAuthorityAndCloudConfigUserData", func(t *testing.T) {
@@ -168,9 +169,10 @@ func TestServerCreateOptions(t *testing.T) {
 
 		parts := parseTestMultipartUserData(t, options.UserData)
 		require.Len(t, parts, 2)
-		require.Equal(t, "text/cloud-config", parts[0].ContentType)
+		require.Equal(t, "text/x-not-multipart", parts[0].ContentType)
+		// NextPart decodes the quoted-printable.
 		require.Equal(t, string(server.Spec.UserData), string(parts[0].Content))
-		require.Equal(t, "text/cloud-config", parts[1].ContentType)
+		require.Equal(t, "text/x-shellscript", parts[1].ContentType)
 		require.Contains(t, string(parts[1].Content), "test-ca")
 	})
 
@@ -189,7 +191,7 @@ func TestServerCreateOptions(t *testing.T) {
 		require.Len(t, parts, 2)
 		require.Equal(t, "text/x-shellscript", parts[0].ContentType)
 		require.Contains(t, string(parts[0].Content), "#!/bin/sh")
-		require.Equal(t, "text/cloud-config", parts[1].ContentType)
+		require.Equal(t, "text/x-shellscript", parts[1].ContentType)
 		require.Contains(t, string(parts[1].Content), "test-ca")
 	})
 }
