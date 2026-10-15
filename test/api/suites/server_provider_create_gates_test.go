@@ -59,9 +59,7 @@ var _ = Describe("Server provider-create gates", func() {
 			flavorID = config.ServerFlavorID
 			imageID = config.ServerImageID
 
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			networkID = network.Metadata.Id
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
 		})
 
 		Describe("Given an unsatisfied provider-create gate", func() {

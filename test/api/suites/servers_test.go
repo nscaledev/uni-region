@@ -120,9 +120,7 @@ var _ = Describe("Server Management", func() {
 			api.SkipUnlessInternalAPIConfigured(regionClient)
 			api.SkipUnlessServerFixtureConfigured(config)
 
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			networkID = network.Metadata.Id
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
 		})
 
 		Describe("Given malformed cloud-init user data", func() {
@@ -165,9 +163,7 @@ var _ = Describe("Server Management", func() {
 			api.SkipUnlessServerFixtureConfigured(config)
 			skipUnlessServerInfrastructureRefConfigured()
 
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
-			networkID = network.Metadata.Id
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
 		})
 
 		Describe("Given an infrastructure reference", func() {
