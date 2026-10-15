@@ -50,6 +50,20 @@ func BlockUntilDependenciesReadyForTest(ctx context.Context, server *unikornv1.S
 	return (&Provisioner{server: server}).blockUntilDependenciesReady(ctx, cli, identity)
 }
 
+func CloudInitPrefixesForTest() map[string]string {
+	prefixes := map[string]string{}
+
+	for _, p := range cloudInitPrefixes() {
+		prefixes[p.prefix] = p.contentType
+	}
+
+	return prefixes
+}
+
+func DetectContentTypeForTest(userData []byte) string {
+	return detectContentType(userData)
+}
+
 func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, cli client.Client) (*types.ServerCreateOptions, error) {
 	provisioner := &Provisioner{
 		server: server,

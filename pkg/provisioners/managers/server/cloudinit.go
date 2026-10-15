@@ -23,26 +23,47 @@ import (
 	"io"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
 	"net/textproto"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
-
-	"sigs.k8s.io/yaml"
 )
 
-//nolint:tagliatelle // cloud-init field names are snake_case.
-type cloudConfig struct {
-	WriteFiles []cloudConfigWriteFile `json:"write_files,omitempty"`
-	RunCmd     [][]string             `json:"runcmd,omitempty"`
+const (
+	// notMultipartContentType asks cloud-init to detect the part's type
+	// itself, so we never have to label customer payloads.
+	// See the README's "Managed cloud-init augmentation" section.
+	notMultipartContentType = "text/x-not-multipart"
+	partHandlerContentType  = "text/part-handler"
+)
+
+type cloudInitPrefix struct {
+	prefix      string
+	contentType string
 }
 
-type cloudConfigWriteFile struct {
-	Path        string `json:"path"`
-	Owner       string `json:"owner,omitempty"`
-	Permissions string `json:"permissions,omitempty"`
-	Content     string `json:"content"`
+// cloudInitPrefixes mirrors cloud-init's INCLUSION_TYPES_MAP
+// (cloudinit/handlers/__init__.py), longest prefix first as cloud-init
+// matches. It MUST track cloud-init; the cloud-init tests check parity.
+func cloudInitPrefixes() []cloudInitPrefix {
+	return []cloudInitPrefix{
+		{"text/x-shellscript-per-instance", "text/x-shellscript-per-instance"},
+		{"text/x-shellscript-per-boot", "text/x-shellscript-per-boot"},
+		{"text/x-shellscript-per-once", "text/x-shellscript-per-once"},
+		{"#cloud-config-archive", "text/cloud-config-archive"},
+		{"#cloud-config-jsonp", "text/cloud-config-jsonp"},
+		{"## template: jinja", "text/jinja2"},
+		{"#cloud-boothook", "text/cloud-boothook"},
+		{"#include-once", "text/x-include-once-url"},
+		{"#part-handler", partHandlerContentType},
+		{"#cloud-config", "text/cloud-config"},
+		{"#include", "text/x-include-url"},
+		{"#!", "text/x-shellscript"},
+	}
 }
 
 // UserDataError reports why a user-data payload was rejected. It unwraps to
@@ -76,26 +97,12 @@ type userDataPart struct {
 	body   []byte
 }
 
-func cloudConfigPart(config *cloudConfig, fileName string) (*cloudInitPart, error) {
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to marshal cloud-config", coreerrors.ErrConsistency)
-	}
-
-	return &cloudInitPart{
-		ContentType: "text/cloud-config",
-		FileName:    fileName,
-		Content:     append([]byte("#cloud-config\n"), data...),
-	}, nil
-}
-
+// mergeCloudInitParts appends managed parts after the customer's user-data.
+// Customer part bodies MUST reach cloud-init byte for byte, and their
+// headers with the same values.
 func mergeCloudInitParts(userData []byte, managedParts ...cloudInitPart) ([]byte, error) {
 	if len(managedParts) == 0 {
 		return append([]byte(nil), userData...), nil
-	}
-
-	if len(userData) == 0 && len(managedParts) == 1 {
-		return append([]byte(nil), managedParts[0].Content...), nil
 	}
 
 	parts, err := userDataParts(userData)
@@ -104,8 +111,11 @@ func mergeCloudInitParts(userData []byte, managedParts ...cloudInitPart) ([]byte
 	}
 
 	for _, part := range managedParts {
+		header := textproto.MIMEHeader{"Content-Type": []string{part.ContentType}}
+		header.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, part.FileName))
+
 		parts = append(parts, userDataPart{
-			header: newUserDataPartHeader(part.ContentType, part.FileName),
+			header: header,
 			body:   part.Content,
 		})
 	}
@@ -113,66 +123,132 @@ func mergeCloudInitParts(userData []byte, managedParts ...cloudInitPart) ([]byte
 	return marshalMultipartUserData(parts)
 }
 
+var (
+	errGzip        = userDataError("gzip userData cannot be combined with managed cloud-init augmentation")
+	errPartHandler = userDataError("part-handler userData is not supported")
+)
+
 func userDataParts(userData []byte) ([]userDataPart, error) {
 	if len(userData) == 0 {
 		return nil, nil
 	}
 
-	if isMultipartUserData(userData) {
-		return parseMultipartUserData(userData)
+	if isGzipUserData(userData) {
+		return nil, errGzip
 	}
 
-	contentType, err := userDataContentType(userData)
-	if err != nil {
-		return nil, err
+	isMIME, payload := mimeUserData(userData)
+	if isMIME {
+		// Stored user-data the API would now reject is wrapped whole instead,
+		// so the server still reconciles.
+		if parts, err := parseMIMEUserData(userData); err == nil {
+			return parts, nil
+		}
 	}
 
-	return []userDataPart{{
-		header: newUserDataPartHeader(contentType, ""),
-		body:   append([]byte(nil), userData...),
-	}}, nil
+	// MUST be encoded, binary, to survive cloud-init byte for byte. See the
+	// README's "Managed cloud-init augmentation" section.
+	var body bytes.Buffer
+
+	writer := quotedprintable.NewWriter(&body)
+	writer.Binary = true
+
+	if _, err := writer.Write(payload); err != nil {
+		return nil, fmt.Errorf("%w: unable to encode userData", coreerrors.ErrConsistency)
+	}
+
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("%w: unable to encode userData", coreerrors.ErrConsistency)
+	}
+
+	header := textproto.MIMEHeader{"Content-Type": []string{notMultipartContentType}}
+	header.Set("Content-Transfer-Encoding", "quoted-printable")
+
+	return []userDataPart{{header: header, body: body.Bytes()}}, nil
 }
 
-func isMultipartUserData(userData []byte) bool {
-	// Fast path, and the fallback for payloads that declare multipart but have
-	// otherwise malformed headers, so those still surface multipart-specific
-	// parse errors rather than an unrecognized-format error.
-	if strings.HasPrefix(strings.ToLower(firstUserDataLine(userData)), "content-type: multipart/") {
+// mimeUserData reads user-data as cloud-init does: convert_string, then
+// Python's email parser. It is MIME only if it mentions MIME-Version and its
+// first line is a header. Otherwise payload is the body cloud-init sniffs:
+// all of it, less a blank first line, which the parser takes as the end of
+// no headers.
+func mimeUserData(userData []byte) (bool, []byte) {
+	if !mentionsMIMEVersion(userData) {
+		return false, userData
+	}
+
+	if startsWithHeader(userData) {
+		return true, userData
+	}
+
+	if line, rest, ok := bytes.Cut(userData, []byte{'\n'}); ok && len(bytes.TrimSuffix(line, []byte{'\r'})) == 0 {
+		return false, rest
+	}
+
+	return false, userData
+}
+
+// mentionsMIMEVersion matches cloud-init's convert_string: "mime-version:"
+// (ASCII case-insensitive) in the first 4096 bytes.
+func mentionsMIMEVersion(userData []byte) bool {
+	head := bytes.Clone(userData[:min(len(userData), 4096)])
+
+	for i, c := range head {
+		if 'A' <= c && c <= 'Z' {
+			head[i] = c + 'a' - 'A'
+		}
+	}
+
+	return bytes.Contains(head, []byte("mime-version:"))
+}
+
+// startsWithHeader matches Python's email feedparser headerRE on the first
+// line: "From ", a leading space or tab, or printable ASCII up to a colon.
+func startsWithHeader(userData []byte) bool {
+	line, _, _ := bytes.Cut(userData, []byte{'\n'})
+
+	if bytes.HasPrefix(line, []byte("From ")) || bytes.HasPrefix(line, []byte(" ")) || bytes.HasPrefix(line, []byte("\t")) {
 		return true
 	}
 
-	// MIME does not mandate header order, so Content-Type need not be the first
-	// line (e.g. MIME-Version first); parse the headers to detect those.
-	message, err := mail.ReadMessage(bytes.NewReader(userData))
-	if err != nil {
+	name, _, ok := bytes.Cut(line, []byte{':'})
+	if !ok {
 		return false
 	}
 
-	mediaType, _, err := mime.ParseMediaType(message.Header.Get("Content-Type"))
-	if err != nil {
-		return false
+	for _, c := range name {
+		if c < 0x21 || c > 0x7e {
+			return false
+		}
 	}
 
-	return strings.HasPrefix(mediaType, "multipart/")
+	return true
 }
 
-func parseMultipartUserData(userData []byte) ([]userDataPart, error) {
+// parseMIMEUserData splits a MIME payload into raw top-level parts; a message
+// that is not multipart is one part. Raw, not decoded: decoding
+// quoted-printable would rewrite the customer's bytes.
+func parseMIMEUserData(userData []byte) ([]userDataPart, error) {
 	message, err := mail.ReadMessage(bytes.NewReader(userData))
 	if err != nil {
-		return nil, userDataError("unable to parse multipart userData")
+		return nil, userDataError("unable to parse MIME userData")
 	}
 
-	mediaType, params, err := mime.ParseMediaType(message.Header.Get("Content-Type"))
-	if err != nil {
-		return nil, userDataError("unable to parse multipart userData content type")
+	header := textproto.MIMEHeader(message.Header)
+
+	if !strings.HasPrefix(declaredContentType(header), "multipart/") {
+		body, err := io.ReadAll(message.Body)
+		if err != nil {
+			return nil, userDataError("unable to read MIME userData")
+		}
+
+		return []userDataPart{{header: header, body: body}}, nil
 	}
 
-	if !strings.HasPrefix(mediaType, "multipart/") {
-		return nil, userDataError("userData is not multipart")
-	}
+	_, params, _ := mime.ParseMediaType(header.Get("Content-Type"))
 
-	boundary, ok := params["boundary"]
-	if !ok || boundary == "" {
+	boundary := params["boundary"]
+	if boundary == "" {
 		return nil, userDataError("multipart userData boundary missing")
 	}
 
@@ -180,7 +256,7 @@ func parseMultipartUserData(userData []byte) ([]userDataPart, error) {
 	parts := []userDataPart{}
 
 	for {
-		part, err := reader.NextPart()
+		part, err := reader.NextRawPart()
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -207,41 +283,123 @@ func isGzipUserData(userData []byte) bool {
 	return bytes.HasPrefix(userData, []byte{0x1f, 0x8b})
 }
 
-func userDataContentType(userData []byte) (string, error) {
-	if isGzipUserData(userData) {
-		return "", userDataError("gzip userData cannot be combined with managed cloud-init augmentation")
-	}
-
-	switch firstLine := firstUserDataLine(userData); {
-	case strings.HasPrefix(firstLine, "## template: jinja"):
-		return "text/jinja", nil
-	case strings.HasPrefix(firstLine, "#cloud-config"):
-		return "text/cloud-config", nil
-	case strings.HasPrefix(firstLine, "#!"):
-		return "text/x-shellscript", nil
-	case strings.HasPrefix(firstLine, "#cloud-boothook"):
-		return "text/cloud-boothook", nil
-	case strings.HasPrefix(firstLine, "#cloud-config-archive"):
-		return "text/cloud-config-archive", nil
-	case strings.HasPrefix(firstLine, "#include"):
-		return "text/x-include-url", nil
-	case strings.HasPrefix(firstLine, "#part-handler"):
-		return "text/part-handler", nil
-	default:
-		return "", userDataError("unsupported userData format: first line must identify a cloud-init payload (e.g. #cloud-config, #!, or a multipart Content-Type header)")
-	}
+// isPythonSpace matches Python's str.isspace, which cloud-init's lstrip uses.
+func isPythonSpace(r rune) bool {
+	return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x1f)
 }
 
-// UserDataContentType identifies the cloud-init content type for supported user-data payloads.
-func UserDataContentType(userData []byte) (string, error) {
-	return userDataContentType(userData)
+// pythonLower lowers the start of s, at least n bytes of output, as Python's
+// str.lower does: unicode.ToLower, except U+0130 becomes two runes. So
+// U+212A (Kelvin) lowers to "k", and U+0130 never lowers to "i".
+func pythonLower(s []byte, n int) string {
+	var b strings.Builder
+
+	for len(s) > 0 && b.Len() < n {
+		r, size := utf8.DecodeRune(s)
+		s = s[size:]
+
+		if r == '\u0130' {
+			b.WriteString("i\u0307")
+
+			continue
+		}
+
+		b.WriteRune(unicode.ToLower(r))
+	}
+
+	return b.String()
+}
+
+// detectContentType returns the type cloud-init's type_from_starts_with
+// would give the payload, or "" where it would give none. The payload MUST
+// be UTF-8.
+func detectContentType(userData []byte) string {
+	// 64 bytes is longer than any prefix.
+	payload := pythonLower(bytes.TrimLeftFunc(userData, isPythonSpace), 64)
+
+	for _, p := range cloudInitPrefixes() {
+		if strings.HasPrefix(payload, p.prefix) {
+			return p.contentType
+		}
+	}
+
+	return ""
+}
+
+// validateUserData checks a non-gzip payload is one cloud-init will handle.
+// #part-handler is rejected where used openly: as the payload or a top-level
+// part. See the README's "Managed cloud-init augmentation" section.
+func validateUserData(userData []byte) error {
+	// cloud-init's handlers cannot use text that is not UTF-8.
+	if !utf8.Valid(userData) {
+		return userDataError("userData must be UTF-8")
+	}
+
+	isMIME, payload := mimeUserData(userData)
+	if !isMIME {
+		switch detectContentType(payload) {
+		case "":
+			return userDataError("unsupported userData format: it must start with a cloud-init marker (e.g. #cloud-config, #!) or be MIME with a MIME-Version header")
+		case partHandlerContentType:
+			return errPartHandler
+		}
+
+		return nil
+	}
+
+	parts, err := parseMIMEUserData(userData)
+	if err != nil {
+		return err
+	}
+
+	for _, part := range parts {
+		if partContentType(part) == partHandlerContentType {
+			return errPartHandler
+		}
+	}
+
+	return nil
+}
+
+// declaredContentType reads a Content-Type as Python's email get_content_type
+// does, defaulting to text/plain.
+func declaredContentType(header textproto.MIMEHeader) string {
+	mediaType, _, _ := strings.Cut(header.Get("Content-Type"), ";")
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+
+	if strings.Count(mediaType, "/") != 1 {
+		return "text/plain"
+	}
+
+	return mediaType
+}
+
+// partContentType returns the type cloud-init gives a top-level part: its
+// declared type, sniffed from the body only for the types cloud-init sniffs.
+func partContentType(part userDataPart) string {
+	mediaType := declaredContentType(part.header)
+
+	switch mediaType {
+	case "text/plain", notMultipartContentType, "text/x-shellscript":
+		if contentType := detectContentType(part.body); contentType != "" {
+			return contentType
+		}
+	}
+
+	return mediaType
 }
 
 // ValidateManagedUserData checks that user-data can be safely combined with managed cloud-init augmentation.
 func ValidateManagedUserData(userData []byte) error {
-	_, err := userDataParts(userData)
+	if len(userData) == 0 {
+		return nil
+	}
 
-	return err
+	if isGzipUserData(userData) {
+		return errGzip
+	}
+
+	return validateUserData(userData)
 }
 
 // ValidateUserData checks that user-data is a payload this provisioner will accept.
@@ -249,31 +407,11 @@ func ValidateManagedUserData(userData []byte) error {
 // augmentation user-data is passed to the platform unmodified, so compressed
 // payloads remain valid.
 func ValidateUserData(userData []byte) error {
-	if isGzipUserData(userData) {
+	if len(userData) == 0 || isGzipUserData(userData) {
 		return nil
 	}
 
-	_, err := userDataParts(userData)
-
-	return err
-}
-
-func firstUserDataLine(userData []byte) string {
-	line, _, _ := bytes.Cut(userData, []byte{'\n'})
-
-	return strings.TrimSpace(string(line))
-}
-
-func newUserDataPartHeader(contentType, fileName string) textproto.MIMEHeader {
-	header := textproto.MIMEHeader{
-		"Content-Type": []string{contentType},
-	}
-
-	if fileName != "" {
-		header.Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
-	}
-
-	return header
+	return validateUserData(userData)
 }
 
 func marshalMultipartUserData(parts []userDataPart) ([]byte, error) {
