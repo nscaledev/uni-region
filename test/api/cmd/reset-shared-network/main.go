@@ -25,8 +25,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"time"
 
+	coreclient "github.com/unikorn-cloud/core/pkg/testing/client"
 	"github.com/unikorn-cloud/region/test/api"
 )
 
@@ -52,6 +55,27 @@ func main() {
 		id := networks[i].Metadata.Id
 		if err := client.DeleteNetwork(ctx, id); err != nil {
 			log.Fatalf("deleting shared network %s: %v", id, err)
+		}
+
+		// Deletion is asynchronous; wait for the network to disappear so the next run
+		// recreates it cleanly instead of hitting a deprovisioning network.
+		deadline := time.Now().Add(5 * time.Minute)
+
+		for {
+			_, err := client.GetNetwork(ctx, id)
+			if errors.Is(err, coreclient.ErrResourceNotFound) {
+				break
+			}
+
+			if err != nil {
+				log.Fatalf("waiting for shared network %s to delete: %v", id, err)
+			}
+
+			if time.Now().After(deadline) {
+				log.Fatalf("shared network %s still present 5m after delete", id)
+			}
+
+			time.Sleep(5 * time.Second)
 		}
 
 		log.Printf("deleted shared network %s (%s)", api.SharedTestNetworkName, id)

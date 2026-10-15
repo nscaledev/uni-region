@@ -121,6 +121,19 @@ func sharedNetworkErrorMessage(name, region string, status coreapi.ResourceProvi
 // reuseSharedNetwork returns an already-existing shared network, waiting for it to
 // provision if necessary and failing loudly if it is in error or deprovisioning.
 func reuseSharedNetwork(c *APIClient, ctx context.Context, existing *regionopenapi.NetworkV2Read) *regionopenapi.NetworkV2Read {
+	// A same-named network with a different prefix (a stale fixture from an earlier
+	// CIDR, or one created by hand) would otherwise be reused silently and fail File
+	// Storage attachment. The status prefix is only populated once known, so an
+	// as-yet-unset prefix is left for the provisioning wait below.
+	if c.config.SharedNetworkCIDR != "" && existing.Status.Prefix != "" &&
+		existing.Status.Prefix != c.config.SharedNetworkCIDR {
+		Expect(existing.Status.Prefix).To(Equal(c.config.SharedNetworkCIDR),
+			"shared network %q exists with CIDR %s but config wants %s; reset it with 'make reset-shared-network'",
+			existing.Metadata.Name, existing.Status.Prefix, c.config.SharedNetworkCIDR)
+
+		return existing
+	}
+
 	switch existing.Metadata.ProvisioningStatus {
 	case coreapi.ResourceProvisioningStatusProvisioned:
 		return existing
@@ -136,6 +149,12 @@ func reuseSharedNetwork(c *APIClient, ctx context.Context, existing *regionopena
 
 		return existing
 	}
+
+	// An unhandled status must not read as usable: a new or unexpected API value
+	// would otherwise let suites run against a network that is not provisioned.
+	Expect(existing.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+		"shared network %q has an unhandled provisioning status %q",
+		existing.Metadata.Name, existing.Metadata.ProvisioningStatus)
 
 	return existing
 }

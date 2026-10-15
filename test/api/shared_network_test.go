@@ -270,6 +270,78 @@ var _ = Describe("Shared network resolver", func() {
 		})
 	})
 
+	Context("When an existing shared network has a different CIDR", func() {
+		Describe("Given the list returns it with a mismatched prefix", func() {
+			It("fails loudly rather than reusing it", func() {
+				endpoints := NewEndpoints()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer GinkgoRecover()
+
+					switch {
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{"id": "network-existing", "name": SharedTestNetworkName, "provisioningStatus": "provisioned"},
+							"status":   map[string]any{"prefix": "10.0.0.0/8"},
+						}})).To(Succeed())
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig:        coreconfig.BaseConfig{BaseURL: server.URL, RequestTimeout: time.Second},
+					RegionBaseURL:     server.URL,
+					OrgID:             orgID,
+					ProjectID:         projectID,
+					RegionID:          regionID,
+					SharedNetworkCIDR: cidr,
+				})
+
+				failures := InterceptGomegaFailures(func() { MustResolveSharedNetwork(client, context.Background()) })
+
+				Expect(failures).To(ContainElement(SatisfyAll(
+					ContainSubstring("exists with CIDR"),
+					ContainSubstring("make reset-shared-network"),
+				)))
+			})
+		})
+	})
+
+	Context("When an existing shared network has an unhandled status", func() {
+		Describe("Given the list returns an unexpected provisioning status", func() {
+			It("fails loudly rather than treating it as usable", func() {
+				endpoints := NewEndpoints()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer GinkgoRecover()
+
+					switch {
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{"id": "network-existing", "name": SharedTestNetworkName, "provisioningStatus": "unknown"},
+						}})).To(Succeed())
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig:        coreconfig.BaseConfig{BaseURL: server.URL, RequestTimeout: time.Second},
+					RegionBaseURL:     server.URL,
+					OrgID:             orgID,
+					ProjectID:         projectID,
+					RegionID:          regionID,
+					SharedNetworkCIDR: cidr,
+				})
+
+				failures := InterceptGomegaFailures(func() { MustResolveSharedNetwork(client, context.Background()) })
+
+				Expect(failures).To(ContainElement(ContainSubstring("unhandled provisioning status")))
+			})
+		})
+	})
+
 	Context("When the created network lands in error", func() {
 		Describe("Given create succeeds but provisioning fails", func() {
 			It("fails fast with the diagnosis instead of waiting out the timeout", func() {
