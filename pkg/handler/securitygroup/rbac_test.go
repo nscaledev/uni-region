@@ -38,6 +38,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/handlertest"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -631,4 +632,84 @@ func TestSGUpdateV2BeingDeleted(t *testing.T) {
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsBadRequest(err), "expected bad request (being deleted), got: %v", err)
+}
+
+// staleSGClient stores the security group, snapshots it as the cached view,
+// then applies change to the stored copy.
+func staleSGClient(t *testing.T, change func(client.WithWatch, *regionv1.SecurityGroup)) (*securitygroup.Client, client.WithWatch) {
+	t.Helper()
+
+	resource := testSecurityGroupV2(sgSecurityGroupID)
+	resource.Finalizers = []string{"unikorn"}
+
+	store := newSGFakeClient(t, resource).Build()
+
+	stale := &regionv1.SecurityGroup{}
+	require.NoError(t, store.Get(t.Context(), client.ObjectKeyFromObject(resource), stale))
+
+	change(store, stale.DeepCopy())
+
+	return securitygroup.New(common.ClientArgs{
+		Client:       handlertest.StaleCache(store, stale),
+		DirectReader: store,
+		Namespace:    sgNamespace,
+	}), store
+}
+
+func getSG(t *testing.T, store client.Client) *regionv1.SecurityGroup {
+	t.Helper()
+
+	resource := &regionv1.SecurityGroup{}
+	require.NoError(t, store.Get(t.Context(), client.ObjectKey{Namespace: sgNamespace, Name: sgSecurityGroupID}, resource))
+
+	return resource
+}
+
+// TestSGDeleteV2StaleCacheRechecksLiveCopy covers a reference added just before
+// the delete, which the cache has not seen yet.
+func TestSGDeleteV2StaleCacheRechecksLiveCopy(t *testing.T) {
+	t.Parallel()
+
+	c, store := staleSGClient(t, func(store client.WithWatch, live *regionv1.SecurityGroup) {
+		live.Finalizers = append(live.Finalizers, "servers.region.unikorn-cloud.org/server-id")
+		require.NoError(t, store.Update(t.Context(), live))
+	})
+
+	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
+
+	err := c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID))
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected 403 forbidden, got: %v", err)
+	require.Nil(t, getSG(t, store).DeletionTimestamp)
+}
+
+// TestSGDeleteV2StaleCacheUnrelatedChangeDeletes covers a write that does not
+// affect the guard, such as a controller status update.
+func TestSGDeleteV2StaleCacheUnrelatedChangeDeletes(t *testing.T) {
+	t.Parallel()
+
+	c, store := staleSGClient(t, func(store client.WithWatch, live *regionv1.SecurityGroup) {
+		live.Annotations = map[string]string{"example": "changed"}
+		require.NoError(t, store.Update(t.Context(), live))
+	})
+
+	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
+
+	require.NoError(t, c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID)))
+	require.NotNil(t, getSG(t, store).DeletionTimestamp)
+}
+
+// TestSGDeleteV2StaleCacheRepeatDeleteIsIdempotent covers a retried delete
+// arriving before the cache has seen the first one.
+func TestSGDeleteV2StaleCacheRepeatDeleteIsIdempotent(t *testing.T) {
+	t.Parallel()
+
+	c, store := staleSGClient(t, func(store client.WithWatch, live *regionv1.SecurityGroup) {
+		require.NoError(t, store.Delete(t.Context(), live))
+	})
+
+	ctx := rbac.NewContext(t.Context(), sgProjectACL(identityapi.Read, identityapi.Delete))
+
+	require.NoError(t, c.DeleteV2(ctx, idstest.MustParseSecurityGroupID(sgSecurityGroupID)))
+	require.NotNil(t, getSG(t, store).DeletionTimestamp)
 }

@@ -46,6 +46,15 @@ rules:
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
+  - networks
+  - securitygroups
+  - sshcertificateauthorities
+  - volumes
+  verbs:
+  - get
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
   - servers/status
   verbs:
   - patch

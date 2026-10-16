@@ -417,7 +417,13 @@ func (c *Client) UpdateV2(ctx context.Context, volumeID regionids.VolumeID, requ
 
 // DeleteV2 deletes an unattached v2 Volume.
 func (c *Client) DeleteV2(ctx context.Context, volumeID regionids.VolumeID) error {
-	resource, err := c.GetV2Raw(ctx, volumeID.String())
+	return c.RetryConflictWithDirectRead(func(reader client.Reader) error {
+		return c.deleteV2(ctx, reader, volumeID)
+	})
+}
+
+func (c *Client) deleteV2(ctx context.Context, reader client.Reader, volumeID regionids.VolumeID) error {
+	resource, err := c.getV2Raw(ctx, reader, volumeID.String())
 	if err != nil {
 		return err
 	}
@@ -434,9 +440,18 @@ func (c *Client) DeleteV2(ctx context.Context, volumeID regionids.VolumeID) erro
 		return errors.HTTPForbidden("volume is attached and must be detached before deletion")
 	}
 
-	if err := c.Client.Delete(ctx, resource); err != nil {
+	preconditions := client.Preconditions{
+		UID:             ptr.To(resource.UID),
+		ResourceVersion: ptr.To(resource.ResourceVersion),
+	}
+
+	if err := c.Client.Delete(ctx, resource, preconditions); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if kerrors.IsConflict(err) {
+			return err
 		}
 
 		return fmt.Errorf("%w: unable to delete volume", err)

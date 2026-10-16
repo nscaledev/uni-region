@@ -33,7 +33,8 @@ It carries:
 
 - `client.Client` for cached Kubernetes access
 - `DirectReader` for uncached reads, used only where acting on a stale cached
-  copy would break an invariant
+  copy would break an invariant; `RetryConflictWithDirectRead` retries a
+  conflicted write once against it and returns `409` if that conflicts too
 - `Namespace` for process-local namespace scoping
 - `providers.Providers` for provider lookup
 - `identityapi.ClientWithResponsesInterface` for identity-side RBAC and tenancy

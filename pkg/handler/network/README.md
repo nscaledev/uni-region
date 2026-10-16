@@ -31,6 +31,13 @@ service-principal root.
   the hidden service-principal root and relies on cascading deletion
 - external references are represented as finalizers on the network and block
   delete until removed
+- reference add and remove always send an optimistic-lock patch, even when the
+  cached copy already looks right; a conflict is retried once against a direct
+  read, then returned as `409`
+- `v2` delete reads the network directly rather than from the cache, because
+  the reference check guards deletion of the service principal and a
+  precondition on the network cannot protect it; a reference added in the
+  window between that read and the delete is still missed
 
 ## Invariants And Guard Rails
 

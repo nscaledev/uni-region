@@ -540,7 +540,7 @@ func (c *Client) Update(ctx context.Context, networkID regionids.NetworkID, requ
 }
 
 func (c *Client) DeleteV2(ctx context.Context, networkID regionids.NetworkID) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
+	resource, err := c.getV2Raw(ctx, c.DirectReader, networkID.String())
 	if err != nil {
 		return err
 	}
@@ -576,48 +576,53 @@ func (c *Client) DeleteV2(ctx context.Context, networkID regionids.NetworkID) er
 // ReferenceCreateV2 adds a external reference to the resource that blocks deletion
 // until it has been removed.
 func (c *Client) ReferenceCreateV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
-	if err != nil {
-		return err
-	}
+	return c.updateReference(ctx, networkID, identityapi.Create, func(resource *regionv1.Network) error {
+		if resource.DeletionTimestamp != nil {
+			return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
+		}
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Create, resource); err != nil {
-		return err
-	}
+		controllerutil.AddFinalizer(resource, reference)
 
-	if resource.DeletionTimestamp != nil {
-		return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
-	}
-
-	if ok := controllerutil.AddFinalizer(resource, reference); !ok {
 		return nil
-	}
-
-	if err := c.Client.Update(ctx, resource); err != nil {
-		return fmt.Errorf("%w: failed to update network", err)
-	}
-
-	return nil
+	})
 }
 
 // ReferenceDeleteV2 removes an external reference from the resource.
 func (c *Client) ReferenceDeleteV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
-	if err != nil {
-		return err
-	}
+	return c.updateReference(ctx, networkID, identityapi.Delete, func(resource *regionv1.Network) error {
+		controllerutil.RemoveFinalizer(resource, reference)
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Delete, resource); err != nil {
-		return err
-	}
-
-	if ok := controllerutil.RemoveFinalizer(resource, reference); !ok {
 		return nil
-	}
+	})
+}
 
-	if err := c.Client.Update(ctx, resource); err != nil {
-		return fmt.Errorf("%w: failed to update project", err)
-	}
+// updateReference always writes, even when the cached copy already looks
+// right, so that a stale copy surfaces as a conflict rather than a no-op.
+func (c *Client) updateReference(ctx context.Context, networkID regionids.NetworkID, operation identityapi.AclOperation, mutate func(*regionv1.Network) error) error {
+	return c.RetryConflictWithDirectRead(func(reader client.Reader) error {
+		current, err := c.getV2Raw(ctx, reader, networkID.String())
+		if err != nil {
+			return err
+		}
 
-	return nil
+		if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", operation, current); err != nil {
+			return err
+		}
+
+		updated := current.DeepCopy()
+
+		if err := mutate(updated); err != nil {
+			return err
+		}
+
+		if err := c.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
+			if kerrors.IsConflict(err) {
+				return err
+			}
+
+			return fmt.Errorf("%w: failed to update network", err)
+		}
+
+		return nil
+	})
 }

@@ -38,6 +38,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/handlertest"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -558,4 +559,111 @@ func TestReferences(t *testing.T) {
 
 	resource = getNetwork(t, cli)
 	require.Empty(t, resource.Finalizers)
+}
+
+func referencesContext(t *testing.T) context.Context {
+	t.Helper()
+
+	return rbac.NewContext(t.Context(), &identityapi.Acl{
+		Global: &identityapi.AclEndpoints{
+			{
+				Name:       "region:networks:v2",
+				Operations: identityapi.AclOperations{identityapi.Read, identityapi.Delete},
+			},
+			{
+				Name:       "region:networks:v2/references",
+				Operations: identityapi.AclOperations{identityapi.Create, identityapi.Delete},
+			},
+		},
+	})
+}
+
+// staleNetworkClients applies before to the stored network, snapshots it as
+// the cached view, then applies after, so the cache lags the store by one write.
+func staleNetworkClients(t *testing.T, before, after func(*regionv1.Network)) (client.WithWatch, client.WithWatch) {
+	t.Helper()
+
+	store, ok := setupFixtures(t).(client.WithWatch)
+	require.True(t, ok)
+
+	update := func(mutate func(*regionv1.Network)) {
+		n := getNetwork(t, store)
+		mutate(n)
+		require.NoError(t, store.Update(t.Context(), n))
+	}
+
+	update(before)
+
+	stale := getNetwork(t, store)
+
+	update(after)
+
+	return store, handlertest.StaleCache(store, stale)
+}
+
+func addReference(n *regionv1.Network) { controllerutil.AddFinalizer(n, reference) }
+
+func removeReference(n *regionv1.Network) { controllerutil.RemoveFinalizer(n, reference) }
+
+func noChange(*regionv1.Network) {}
+
+// TestReferenceCreateV2StaleCacheStillAdds covers a remove followed by an add
+// before the cache has seen the remove.
+func TestReferenceCreateV2StaleCacheStillAdds(t *testing.T) {
+	t.Parallel()
+
+	store, cached := staleNetworkClients(t, addReference, removeReference)
+
+	c := network.New(common.ClientArgs{Client: cached, DirectReader: store, Namespace: namespace})
+
+	require.NoError(t, c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+	require.True(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceDeleteV2StaleCacheStillRemoves covers an add followed by a
+// remove before the cache has seen the add.
+func TestReferenceDeleteV2StaleCacheStillRemoves(t *testing.T) {
+	t.Parallel()
+
+	store, cached := staleNetworkClients(t, noChange, addReference)
+
+	c := network.New(common.ClientArgs{Client: cached, DirectReader: store, Namespace: namespace})
+
+	require.NoError(t, c.ReferenceDeleteV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+	require.False(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceCreateV2RepeatedConflictReturns409 verifies a conflict that
+// survives the live retry is reported as 409.
+func TestReferenceCreateV2RepeatedConflictReturns409(t *testing.T) {
+	t.Parallel()
+
+	store, ok := setupFixtures(t).(client.WithWatch)
+	require.True(t, ok)
+
+	conflicting := interceptor.NewClient(store, interceptor.Funcs{
+		Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			return apierrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "networks"}, obj.GetName(), nil)
+		},
+	})
+
+	c := network.New(common.ClientArgs{Client: conflicting, DirectReader: store, Namespace: namespace})
+
+	err := c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
+}
+
+// TestDeleteV2RefusesWhenLiveNetworkReferenced covers a reference added just
+// before the delete, which the cache has not seen yet.
+func TestDeleteV2RefusesWhenLiveNetworkReferenced(t *testing.T) {
+	t.Parallel()
+
+	store, cached := staleNetworkClients(t, noChange, addReference)
+
+	c := network.New(common.ClientArgs{Client: cached, DirectReader: store, Namespace: namespace})
+
+	err := c.DeleteV2(referencesContext(t), idstest.MustParseNetworkID(networkID))
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected 403 forbidden, got: %v", err)
 }

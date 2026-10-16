@@ -43,6 +43,7 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -263,7 +264,13 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAu
 }
 
 func (c *Client) DeleteV2(ctx context.Context, sshCertificateAuthorityID regionids.SSHCertificateAuthorityID) error {
-	resource, err := c.GetV2Raw(ctx, sshCertificateAuthorityID.String())
+	return c.RetryConflictWithDirectRead(func(reader client.Reader) error {
+		return c.deleteV2(ctx, reader, sshCertificateAuthorityID)
+	})
+}
+
+func (c *Client) deleteV2(ctx context.Context, reader client.Reader, sshCertificateAuthorityID regionids.SSHCertificateAuthorityID) error {
+	resource, err := c.getV2Raw(ctx, reader, sshCertificateAuthorityID.String())
 	if err != nil {
 		return err
 	}
@@ -285,9 +292,18 @@ func (c *Client) DeleteV2(ctx context.Context, sshCertificateAuthorityID regioni
 		return errors.HTTPForbidden("SSH certificate authority is in use and cannot be deleted")
 	}
 
-	if err := c.Client.Delete(ctx, resource); err != nil {
+	preconditions := client.Preconditions{
+		UID:             ptr.To(resource.UID),
+		ResourceVersion: ptr.To(resource.ResourceVersion),
+	}
+
+	if err := c.Client.Delete(ctx, resource, preconditions); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if kerrors.IsConflict(err) {
+			return err
 		}
 
 		return fmt.Errorf("%w: unable to delete SSH certificate authority", err)
