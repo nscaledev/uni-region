@@ -47,12 +47,17 @@ func main() {
 		log.Fatalf("listing networks: %v", err)
 	}
 
-	for i := range networks {
-		if networks[i].Metadata.Name != api.SharedTestNetworkName {
-			continue
-		}
+	// Delete every match, not just the first: a concurrent cold start can leave
+	// duplicate shared networks, and leaving one behind would be reused next run.
+	matches := api.SharedNetworkMatches(networks)
+	if len(matches) == 0 {
+		log.Printf("no shared network named %q in the configured org/project/region", api.SharedTestNetworkName)
 
-		id := networks[i].Metadata.Id
+		return
+	}
+
+	for i := range matches {
+		id := matches[i].Metadata.Id
 		if err := client.DeleteNetwork(ctx, id); err != nil {
 			log.Fatalf("deleting shared network %s: %v", id, err)
 		}
@@ -79,9 +84,5 @@ func main() {
 		}
 
 		log.Printf("deleted shared network %s (%s)", api.SharedTestNetworkName, id)
-
-		return
 	}
-
-	log.Printf("no shared network named %q in the configured org/project/region", api.SharedTestNetworkName)
 }

@@ -135,6 +135,88 @@ var _ = Describe("Shared network resolver", func() {
 		})
 	})
 
+	Context("When a duplicate shared network is recently created", func() {
+		Describe("Given a younger duplicate a concurrent run may still be using", func() {
+			It("converges on the oldest without deleting the recent duplicate", func() {
+				var deletedYounger bool
+
+				endpoints := NewEndpoints()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer GinkgoRecover()
+
+					switch {
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{
+							{"metadata": map[string]any{"id": "network-older", "name": SharedTestNetworkName, "provisioningStatus": "provisioned", "creationTime": "2026-01-01T00:00:00Z"}},
+							{"metadata": map[string]any{"id": "network-younger", "name": SharedTestNetworkName, "provisioningStatus": "provisioned", "creationTime": time.Now().UTC().Format(time.RFC3339)}},
+						})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteNetwork("network-younger"):
+						deletedYounger = true
+						w.WriteHeader(http.StatusAccepted)
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig:    coreconfig.BaseConfig{BaseURL: server.URL, RequestTimeout: time.Second},
+					RegionBaseURL: server.URL,
+					OrgID:         orgID,
+					ProjectID:     projectID,
+					RegionID:      regionID,
+				})
+
+				network := MustResolveSharedNetwork(client, context.Background())
+
+				Expect(network.Metadata.Id).To(Equal("network-older"))
+				Expect(deletedYounger).To(BeFalse(), "a recently created duplicate must not be deleted")
+			})
+		})
+	})
+
+	Context("When a provisioning network settles with a mismatched CIDR", func() {
+		Describe("Given its prefix is only known once provisioned", func() {
+			It("fails loudly rather than reusing it after the wait", func() {
+				endpoints := NewEndpoints()
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					defer GinkgoRecover()
+
+					switch {
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{"id": "network-prov", "name": SharedTestNetworkName, "provisioningStatus": "provisioning"},
+						}})).To(Succeed())
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetNetwork("network-prov"):
+						Expect(json.NewEncoder(w).Encode(map[string]any{
+							"metadata": map[string]any{"id": "network-prov", "name": SharedTestNetworkName, "provisioningStatus": "provisioned"},
+							"status":   map[string]any{"prefix": "10.0.0.0/8"},
+						})).To(Succeed())
+					default:
+						w.WriteHeader(http.StatusNotFound)
+					}
+				}))
+				DeferCleanup(server.Close)
+
+				client := NewAPIClientWithConfig(&TestConfig{
+					BaseConfig:        coreconfig.BaseConfig{BaseURL: server.URL, RequestTimeout: time.Second},
+					RegionBaseURL:     server.URL,
+					OrgID:             orgID,
+					ProjectID:         projectID,
+					RegionID:          regionID,
+					SharedNetworkCIDR: cidr,
+				})
+
+				failures := InterceptGomegaFailures(func() { MustResolveSharedNetwork(client, context.Background()) })
+
+				Expect(failures).To(ContainElement(SatisfyAll(
+					ContainSubstring("exists with CIDR"),
+					ContainSubstring("make reset-shared-network"),
+				)))
+			})
+		})
+	})
+
 	Context("When creating the shared network exceeds the network quota", func() {
 		Describe("Given the create call returns 403 with a quota body", func() {
 			It("fails naming the quota and the remedy", func() {
