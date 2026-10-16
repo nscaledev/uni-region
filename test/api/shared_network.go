@@ -160,7 +160,9 @@ func reuseSharedNetwork(c *APIClient, ctx context.Context, existing *regionopena
 // is only populated once known, so an as-yet-unset prefix is skipped and re-checked by the
 // caller once provisioned.
 func validateSharedNetworkCIDR(c *APIClient, n *regionopenapi.NetworkV2Read) {
-	if c.config.SharedNetworkCIDR == "" || n.Status.Prefix == "" || n.Status.Prefix == c.config.SharedNetworkCIDR {
+	// n is nil only if a preceding provisioning wait already failed (the network was
+	// never read); do not mask that failure with a nil dereference here.
+	if n == nil || c.config.SharedNetworkCIDR == "" || n.Status.Prefix == "" || n.Status.Prefix == c.config.SharedNetworkCIDR {
 		return
 	}
 
