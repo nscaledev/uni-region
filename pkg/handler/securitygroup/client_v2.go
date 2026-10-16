@@ -169,9 +169,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 }
 
 func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv1.SecurityGroup, error) {
+	return c.getV2Raw(ctx, c.Client, securityGroupID)
+}
+
+func (c *Client) getV2Raw(ctx context.Context, reader client.Reader, securityGroupID string) (*regionv1.SecurityGroup, error) {
 	result := &regionv1.SecurityGroup{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, result); err != nil {
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
@@ -414,7 +418,13 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID regionids.Securit
 }
 
 func (c *Client) DeleteV2(ctx context.Context, securityGroupID regionids.SecurityGroupID) error {
-	resource, err := c.GetV2Raw(ctx, securityGroupID.String())
+	return c.RetryConflictWithDirectRead(func(reader client.Reader) error {
+		return c.deleteV2(ctx, reader, securityGroupID)
+	})
+}
+
+func (c *Client) deleteV2(ctx context.Context, reader client.Reader, securityGroupID regionids.SecurityGroupID) error {
+	resource, err := c.getV2Raw(ctx, reader, securityGroupID.String())
 	if err != nil {
 		return err
 	}
@@ -431,9 +441,18 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID regionids.Securit
 		return errors.HTTPForbidden("security group is in use and cannot be deleted")
 	}
 
-	if err := c.Client.Delete(ctx, resource); err != nil {
+	preconditions := client.Preconditions{
+		UID:             ptr.To(resource.UID),
+		ResourceVersion: ptr.To(resource.ResourceVersion),
+	}
+
+	if err := c.Client.Delete(ctx, resource, preconditions); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if kerrors.IsConflict(err) {
+			return err
 		}
 
 		return fmt.Errorf("%w: unable to delete security group", err)

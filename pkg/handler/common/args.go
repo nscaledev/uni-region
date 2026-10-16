@@ -17,8 +17,11 @@ limitations under the License.
 package common
 
 import (
+	"github.com/unikorn-cloud/core/pkg/server/errors"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
+
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -30,6 +33,10 @@ type ClientArgs struct {
 	// Client gives cached access to Kubernetes.
 	Client client.Client
 
+	// DirectReader reads from the Kubernetes API server, bypassing the cache.
+	// Use it only where acting on a stale read would break an invariant.
+	DirectReader client.Reader
+
 	// Namespace is the namespace we are running in.
 	Namespace string
 
@@ -38,4 +45,21 @@ type ClientArgs struct {
 
 	// Identity is an identity client for RBAC access.
 	Identity identityapi.ClientWithResponsesInterface
+}
+
+// RetryConflictWithDirectRead runs attempt against the cache and, if it returns
+// a Kubernetes conflict, once more against a direct read, so a stale cached copy
+// does not fail the request. A second conflict is returned as a 409.
+func (c ClientArgs) RetryConflictWithDirectRead(attempt func(client.Reader) error) error {
+	err := attempt(c.Client)
+	if !kerrors.IsConflict(err) {
+		return err
+	}
+
+	err = attempt(c.DirectReader)
+	if kerrors.IsConflict(err) {
+		return errors.HTTPConflict().WithError(err)
+	}
+
+	return err
 }

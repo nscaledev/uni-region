@@ -34,6 +34,9 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/server"
 
+	"k8s.io/client-go/rest"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -69,7 +72,14 @@ func start() {
 		return
 	}
 
-	server, err := s.GetServer(ctx, client)
+	directReader, err := newDirectReader()
+	if err != nil {
+		logger.Error(err, "failed to create direct reader")
+
+		return
+	}
+
+	server, err := s.GetServer(ctx, client, directReader)
 	if err != nil {
 		logger.Error(err, "failed to setup Handler")
 
@@ -105,6 +115,20 @@ func start() {
 
 		return
 	}
+}
+
+func newDirectReader() (crclient.Reader, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	scheme, err := client.NewScheme(unikornv1.AddToScheme)
+	if err != nil {
+		return nil, err
+	}
+
+	return crclient.New(config, crclient.Options{Scheme: scheme})
 }
 
 func main() {

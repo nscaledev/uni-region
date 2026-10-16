@@ -260,6 +260,15 @@ but we do not have transactions.”
   - API-version gating
 - Because most resources live in one namespace, label discipline is critical.
   Scope, visibility, ancestry, and migration state all depend on it.
+- Reads go through an informer cache that lags writes by the watch delivery
+  delay, so a handler can see a copy older than its own or another actor's
+  last write. Guards that check state before writing must not trust that copy.
+  `v2` Security Group, Volume and SSH CA deletes carry UID and resource-version
+  preconditions; on a conflict they re-read directly, re-run the guard and try
+  once more, returning `409` only if that conflicts too. Network reference
+  updates always write so a stale copy surfaces as a conflict, and retry the
+  same way. `v2` Network delete reads directly instead, and other deletes still
+  act on the cached copy.
 - Cross-object invariants are only best-effort. Owner references, finalizers,
   allocation records, and saga compensation improve consistency, but they do not
   turn the system into an ACID store.
