@@ -169,9 +169,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 }
 
 func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv1.SecurityGroup, error) {
+	return c.getV2Raw(ctx, c.Client, securityGroupID)
+}
+
+func (c *Client) getV2Raw(ctx context.Context, reader client.Reader, securityGroupID string) (*regionv1.SecurityGroup, error) {
 	result := &regionv1.SecurityGroup{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, result); err != nil {
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}

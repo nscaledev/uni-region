@@ -30,6 +30,10 @@ type ClientArgs struct {
 	// Client gives cached access to Kubernetes.
 	Client client.Client
 
+	// DirectReader reads from the Kubernetes API server, bypassing the cache.
+	// Use it only where acting on a stale read would break an invariant.
+	DirectReader client.Reader
+
 	// Namespace is the namespace we are running in.
 	Namespace string
 

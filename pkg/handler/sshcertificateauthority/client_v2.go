@@ -165,9 +165,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Sshcertifica
 }
 
 func (c *Client) GetV2Raw(ctx context.Context, sshCertificateAuthorityID string) (*regionv1.SSHCertificateAuthority, error) {
+	return c.getV2Raw(ctx, c.Client, sshCertificateAuthorityID)
+}
+
+func (c *Client) getV2Raw(ctx context.Context, reader client.Reader, sshCertificateAuthorityID string) (*regionv1.SSHCertificateAuthority, error) {
 	result := &regionv1.SSHCertificateAuthority{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: sshCertificateAuthorityID}, result); err != nil {
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: sshCertificateAuthorityID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}

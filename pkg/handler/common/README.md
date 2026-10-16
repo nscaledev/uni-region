@@ -32,6 +32,8 @@ handlers keep their allocation requirements, compensation, and error handling.
 It carries:
 
 - `client.Client` for cached Kubernetes access
+- `DirectReader` for uncached reads, used only where acting on a stale cached
+  copy would break an invariant
 - `Namespace` for process-local namespace scoping
 - `providers.Providers` for provider lookup
 - `identityapi.ClientWithResponsesInterface` for identity-side RBAC and tenancy

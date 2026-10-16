@@ -163,9 +163,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 }
 
 func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Network, error) {
+	return c.getV2Raw(ctx, c.Client, networkID)
+}
+
+func (c *Client) getV2Raw(ctx context.Context, reader client.Reader, networkID string) (*regionv1.Network, error) {
 	result := &regionv1.Network{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: networkID}, result); err != nil {
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: networkID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}

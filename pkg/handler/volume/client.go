@@ -170,9 +170,13 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2VolumesParam
 
 // GetV2Raw retrieves and authorizes a v2 Volume.
 func (c *Client) GetV2Raw(ctx context.Context, volumeID string) (*regionv1.Volume, error) {
+	return c.getV2Raw(ctx, c.Client, volumeID)
+}
+
+func (c *Client) getV2Raw(ctx context.Context, reader client.Reader, volumeID string) (*regionv1.Volume, error) {
 	result := &regionv1.Volume{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: volumeID}, result); err != nil {
+	if err := reader.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: volumeID}, result); err != nil {
 		if kerrors.IsNotFound(err) {
 			return nil, errors.HTTPNotFound().WithError(err)
 		}
