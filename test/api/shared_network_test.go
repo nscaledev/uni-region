@@ -90,10 +90,10 @@ var _ = Describe("Shared network resolver", func() {
 		})
 	})
 
-	Context("When another run creates the shared network during our create", func() {
-		Describe("Given our create returns conflict and a re-list finds it", func() {
-			It("reuses the network the other run created", func() {
-				var listCalls int
+	Context("When duplicate shared networks exist from a concurrent cold start", func() {
+		Describe("Given the list returns two networks with the shared name", func() {
+			It("converges on the oldest and deletes the younger duplicate", func() {
+				var deletedYounger bool
 
 				endpoints := NewEndpoints()
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,14 +101,15 @@ var _ = Describe("Shared network resolver", func() {
 
 					switch {
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
-						listCalls++
-						if listCalls == 1 {
-							Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
-							return
-						}
-						Expect(json.NewEncoder(w).Encode([]map[string]any{provisionedNetwork("network-raced")})).To(Succeed())
-					case r.Method == http.MethodPost && r.URL.RequestURI() == endpoints.CreateNetwork():
-						w.WriteHeader(http.StatusConflict)
+						Expect(json.NewEncoder(w).Encode([]map[string]any{
+							{"metadata": map[string]any{"id": "network-older", "name": SharedTestNetworkName, "provisioningStatus": "provisioned", "creationTime": "2026-10-01T00:00:00Z"}},
+							{"metadata": map[string]any{"id": "network-younger", "name": SharedTestNetworkName, "provisioningStatus": "provisioned", "creationTime": "2026-10-10T00:00:00Z"}},
+						})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteNetwork("network-younger"):
+						deletedYounger = true
+						w.WriteHeader(http.StatusAccepted)
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetNetwork("network-younger"):
+						w.WriteHeader(http.StatusNotFound)
 					default:
 						w.WriteHeader(http.StatusNotFound)
 					}
@@ -120,16 +121,16 @@ var _ = Describe("Shared network resolver", func() {
 						BaseURL:        server.URL,
 						RequestTimeout: time.Second,
 					},
-					RegionBaseURL:     server.URL,
-					OrgID:             orgID,
-					ProjectID:         projectID,
-					RegionID:          regionID,
-					SharedNetworkCIDR: cidr,
+					RegionBaseURL: server.URL,
+					OrgID:         orgID,
+					ProjectID:     projectID,
+					RegionID:      regionID,
 				})
 
 				network := MustResolveSharedNetwork(client, context.Background())
 
-				Expect(network.Metadata.Id).To(Equal("network-raced"))
+				Expect(network.Metadata.Id).To(Equal("network-older"))
+				Expect(deletedYounger).To(BeTrue(), "the younger duplicate should be deleted")
 			})
 		})
 	})

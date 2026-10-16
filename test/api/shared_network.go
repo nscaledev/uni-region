@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -41,7 +42,7 @@ const SharedTestNetworkName = "uni-region-e2e-shared"
 // org, project, and region, creating it once if absent. It registers no cleanup: the
 // network persists between runs.
 func MustResolveSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.NetworkV2Read {
-	if existing := findSharedNetwork(c, ctx); existing != nil {
+	if existing := resolveSharedNetwork(c, ctx); existing != nil {
 		return reuseSharedNetwork(c, ctx, existing)
 	}
 
@@ -53,22 +54,13 @@ func MustResolveSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.
 	network, err := c.CreateNetwork(ctx, createReq)
 	if err != nil {
 		var statusErr *StatusError
-		if errors.As(err, &statusErr) {
-			switch statusErr.StatusCode {
-			case http.StatusConflict:
-				// Another run created it between our list and create; reuse it.
-				raced := findSharedNetwork(c, ctx)
-				Expect(raced).NotTo(BeNil(), "shared network create conflicted but it was not found on re-list")
+		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusForbidden {
+			Expect(err).NotTo(HaveOccurred(),
+				"shared network create was refused by quota (%s). The pre-suite sweep reclaims only "+
+					"test-named networks over 6h, so a leaked or shared network may hold a slot — "+
+					"free one or raise the quota.", statusErr.Body)
 
-				return reuseSharedNetwork(c, ctx, raced)
-			case http.StatusForbidden:
-				Expect(err).NotTo(HaveOccurred(),
-					"shared network create was refused by quota (%s). The pre-suite sweep reclaims only "+
-						"test-named networks over 6h, so a leaked or shared network may hold a slot — "+
-						"free one or raise the quota.", statusErr.Body)
-
-				return nil
-			}
+			return nil
 		}
 
 		Expect(err).NotTo(HaveOccurred(), "failed to create shared network")
@@ -80,7 +72,16 @@ func MustResolveSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.
 
 	WaitForNetworkVisible(c, ctx, network.Metadata.Id)
 
-	return waitForSharedNetworkProvisioned(c, ctx, network.Metadata.Id, network.Metadata.Name)
+	// The create is not atomic with the lookup above and the region API permits
+	// duplicate names, so a concurrent cold start may have created one too. Converge
+	// on the oldest and drop any younger duplicates — including our own if we lost the
+	// race. Eventual-consistency may hide a just-created peer, so fall back to ours.
+	winner := resolveSharedNetwork(c, ctx)
+	if winner == nil {
+		winner = network
+	}
+
+	return reuseSharedNetwork(c, ctx, winner)
 }
 
 // waitForSharedNetworkProvisioned polls until the network is provisioned, failing
@@ -159,17 +160,40 @@ func reuseSharedNetwork(c *APIClient, ctx context.Context, existing *regionopena
 	return existing
 }
 
-// findSharedNetwork returns the shared network if it already exists in the configured
-// org/project/region, or nil if it does not.
-func findSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.NetworkV2Read {
+// resolveSharedNetwork returns the oldest network named SharedTestNetworkName in the
+// configured scope, or nil if none exists. The region API allows duplicate names, so
+// concurrent cold starts can create more than one; keeping the oldest makes every run
+// pick the same network, and the younger duplicates are deleted so they do not leak.
+func resolveSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.NetworkV2Read {
+	matches := findSharedNetworks(c, ctx)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	for i := range matches[1:] {
+		MustDeleteNetwork(c, ctx, matches[i+1].Metadata.Id)
+	}
+
+	return &matches[0]
+}
+
+// findSharedNetworks returns every network named SharedTestNetworkName in the configured
+// org/project/region, oldest first.
+func findSharedNetworks(c *APIClient, ctx context.Context) []regionopenapi.NetworkV2Read {
 	networks, err := c.ListNetworks(ctx, c.config.OrgID, c.config.ProjectID, c.config.RegionID)
 	Expect(err).NotTo(HaveOccurred(), "failed to list networks resolving the shared network")
 
+	var matches []regionopenapi.NetworkV2Read
+
 	for i := range networks {
 		if networks[i].Metadata.Name == SharedTestNetworkName {
-			return &networks[i]
+			matches = append(matches, networks[i])
 		}
 	}
 
-	return nil
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Metadata.CreationTime.Before(matches[j].Metadata.CreationTime)
+	})
+
+	return matches
 }
