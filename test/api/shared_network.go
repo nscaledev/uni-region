@@ -1,0 +1,221 @@
+/*
+Copyright 2026 Nscale.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+//nolint:revive,staticcheck // dot imports are standard for Ginkgo/Gomega test code
+package api
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"sort"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
+)
+
+// SharedTestNetworkName is the stable name of the long-lived network reused across
+// precondition suites. It deliberately sits outside the auto-uni-region- sweep prefix:
+// the sweep skips it for free, and the stable name is the find-by-name key. A future
+// reader must not "fix" it by adding the prefix — see ADR INST-1550.
+const SharedTestNetworkName = "uni-region-e2e-shared"
+
+// MustResolveSharedNetwork returns the long-lived shared network for the configured
+// org, project, and region, creating it once if absent. It registers no cleanup: the
+// network persists between runs.
+func MustResolveSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.NetworkV2Read {
+	if existing := resolveSharedNetwork(c, ctx); existing != nil {
+		return reuseSharedNetwork(c, ctx, existing)
+	}
+
+	createReq := NewNetworkPayload(c.config.OrgID, c.config.ProjectID, c.config.RegionID).
+		WithName(SharedTestNetworkName).
+		WithPrefix(c.config.SharedNetworkCIDR).
+		Build()
+
+	network, err := c.CreateNetwork(ctx, createReq)
+	if err != nil {
+		var statusErr *StatusError
+		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusForbidden {
+			Expect(err).NotTo(HaveOccurred(),
+				"shared network create was refused by quota (%s). The pre-suite sweep reclaims only "+
+					"test-named networks over 6h, so a leaked or shared network may hold a slot — "+
+					"free one or raise the quota.", statusErr.Body)
+
+			return nil
+		}
+
+		Expect(err).NotTo(HaveOccurred(), "failed to create shared network")
+
+		return nil
+	}
+
+	Expect(network).NotTo(BeNil())
+
+	WaitForNetworkVisible(c, ctx, network.Metadata.Id)
+
+	// The create is not atomic with the lookup above and the region API permits
+	// duplicate names, so a concurrent cold start may have created one too. Converge
+	// on the oldest and drop any younger duplicates — including our own if we lost the
+	// race. Eventual-consistency may hide a just-created peer, so fall back to ours.
+	winner := resolveSharedNetwork(c, ctx)
+	if winner == nil {
+		winner = network
+	}
+
+	return reuseSharedNetwork(c, ctx, winner)
+}
+
+// waitForSharedNetworkProvisioned polls until the network is provisioned, failing
+// fast with a diagnosis the moment it reaches a terminal error or deprovisioning
+// state rather than waiting out the full timeout.
+func waitForSharedNetworkProvisioned(c *APIClient, ctx context.Context, networkID, name string) *regionopenapi.NetworkV2Read {
+	var settled *regionopenapi.NetworkV2Read
+
+	Eventually(func() coreapi.ResourceProvisioningStatus {
+		net, err := c.GetNetwork(ctx, networkID)
+		if err != nil {
+			GinkgoWriter.Printf("Error retrieving shared network %s: %v\n", networkID, err)
+			return ""
+		}
+
+		settled = net
+
+		status := net.Metadata.ProvisioningStatus
+		if status == coreapi.ResourceProvisioningStatusError || status == coreapi.ResourceProvisioningStatusDeprovisioning {
+			StopTrying(sharedNetworkErrorMessage(name, c.config.RegionID, status)).Now()
+		}
+
+		return status
+	}).WithTimeout(5*time.Minute).WithPolling(5*time.Second).
+		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "shared network should provision")
+
+	return settled
+}
+
+// sharedNetworkErrorMessage names the likeliest causes of a shared network's error
+// state, which the region API does not expose a reason for.
+func sharedNetworkErrorMessage(name, region string, status coreapi.ResourceProvisioningStatus) string {
+	return fmt.Sprintf("shared network %q is in error state (%s); the region API exposes no reason — "+
+		"most commonly VLAN pool exhaustion in region %s or a CIDR overlap with a VAST VIP pool. "+
+		"Reset it with 'make reset-shared-network'.", name, status, region)
+}
+
+// reuseSharedNetwork returns an already-existing shared network, waiting for it to
+// provision if necessary and failing loudly if it is in error or deprovisioning.
+func reuseSharedNetwork(c *APIClient, ctx context.Context, existing *regionopenapi.NetworkV2Read) *regionopenapi.NetworkV2Read {
+	validateSharedNetworkCIDR(c, existing)
+
+	switch existing.Metadata.ProvisioningStatus {
+	case coreapi.ResourceProvisioningStatusProvisioned:
+		return existing
+	case coreapi.ResourceProvisioningStatusPending, coreapi.ResourceProvisioningStatusProvisioning:
+		settled := waitForSharedNetworkProvisioned(c, ctx, existing.Metadata.Id, existing.Metadata.Name)
+		// The prefix is only populated once provisioned, so the guard above skipped a
+		// still-provisioning network; re-check now that the prefix is known.
+		validateSharedNetworkCIDR(c, settled)
+
+		return settled
+	case coreapi.ResourceProvisioningStatusError, coreapi.ResourceProvisioningStatusDeprovisioning:
+		// The region API carries no reason for the error state, so name the
+		// likeliest causes. This fails the run; the return is reached only when a
+		// test intercepts the failure, and keeps a dead network from falling
+		// through to the provisioning wait.
+		Expect(existing.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+			sharedNetworkErrorMessage(existing.Metadata.Name, c.config.RegionID, existing.Metadata.ProvisioningStatus))
+
+		return existing
+	}
+
+	// An unhandled status must not read as usable: a new or unexpected API value
+	// would otherwise let suites run against a network that is not provisioned.
+	Expect(existing.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned),
+		"shared network %q has an unhandled provisioning status %q",
+		existing.Metadata.Name, existing.Metadata.ProvisioningStatus)
+
+	return existing
+}
+
+// validateSharedNetworkCIDR fails loudly if an existing shared network's prefix differs
+// from the configured CIDR. A stale fixture from an earlier CIDR, or one created by hand,
+// would otherwise be reused silently and fail File Storage attachment. The status prefix
+// is only populated once known, so an as-yet-unset prefix is skipped and re-checked by the
+// caller once provisioned.
+func validateSharedNetworkCIDR(c *APIClient, n *regionopenapi.NetworkV2Read) {
+	// n is nil only if a preceding provisioning wait already failed (the network was
+	// never read); do not mask that failure with a nil dereference here.
+	if n == nil || c.config.SharedNetworkCIDR == "" || n.Status.Prefix == "" || n.Status.Prefix == c.config.SharedNetworkCIDR {
+		return
+	}
+
+	Expect(n.Status.Prefix).To(Equal(c.config.SharedNetworkCIDR),
+		"shared network %q exists with CIDR %s but config wants %s; reset it with 'make reset-shared-network'",
+		n.Metadata.Name, n.Status.Prefix, c.config.SharedNetworkCIDR)
+}
+
+// resolveSharedNetwork returns the oldest network named SharedTestNetworkName in the
+// configured scope, or nil if none exists. The region API allows duplicate names, so
+// concurrent cold starts can create more than one; every run converges on the oldest.
+// Younger duplicates are deleted only once older than StaleTestResourceTTL, by which point
+// no in-flight run could still be using one — deleting a recently created duplicate could
+// pull it out from under a concurrent run.
+func resolveSharedNetwork(c *APIClient, ctx context.Context) *regionopenapi.NetworkV2Read {
+	matches := findSharedNetworks(c, ctx)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	for i := range matches[1:] {
+		dup := &matches[i+1]
+		if time.Since(dup.Metadata.CreationTime) > StaleTestResourceTTL {
+			MustDeleteNetwork(c, ctx, dup.Metadata.Id)
+		}
+	}
+
+	return &matches[0]
+}
+
+// findSharedNetworks returns every network named SharedTestNetworkName in the configured
+// org/project/region, oldest first.
+func findSharedNetworks(c *APIClient, ctx context.Context) []regionopenapi.NetworkV2Read {
+	networks, err := c.ListNetworks(ctx, c.config.OrgID, c.config.ProjectID, c.config.RegionID)
+	Expect(err).NotTo(HaveOccurred(), "failed to list networks resolving the shared network")
+
+	return SharedNetworkMatches(networks)
+}
+
+// SharedNetworkMatches returns the networks named SharedTestNetworkName, oldest first. It is
+// shared by the resolver and the reset command so both select duplicates the same way.
+func SharedNetworkMatches(networks regionopenapi.NetworksV2Read) []regionopenapi.NetworkV2Read {
+	var matches []regionopenapi.NetworkV2Read
+
+	for i := range networks {
+		if networks[i].Metadata.Name == SharedTestNetworkName {
+			matches = append(matches, networks[i])
+		}
+	}
+
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Metadata.CreationTime.Before(matches[j].Metadata.CreationTime)
+	})
+
+	return matches
+}

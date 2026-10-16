@@ -309,6 +309,12 @@ test-api-parallel: test-api-setup
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
 	$(GOBIN)/ginkgo run --procs=4 $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
+.PHONY: reset-shared-network
+reset-shared-network:
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	go run ./test/api/cmd/reset-shared-network
+
 .PHONY: test-api-ci
 test-api-ci: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
