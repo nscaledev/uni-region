@@ -78,6 +78,8 @@ var _ = Describe("Stale test resource sweep", func() {
 						}})).To(Succeed())
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListVolumes(orgID, projectID, regionID, ""):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListLoadBalancers(orgID, projectID, regionID):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
 					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteFileStorage(fileStorageID):
 						Expect(serverDeleted.Load()).To(BeTrue())
 						fileStorageDeleted.Store(true)
@@ -160,6 +162,8 @@ var _ = Describe("Stale test resource sweep", func() {
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListVolumes(orgID, projectID, regionID, ""):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListLoadBalancers(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
 					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteFileStorage(fileStorageID):
 						deleteCalls.Add(1)
