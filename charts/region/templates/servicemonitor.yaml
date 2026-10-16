@@ -1,0 +1,32 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- range $component := list "identity-controller" "load-balancer-controller" "monitor" "network-controller" "security-group-controller" "server-controller" "volume-controller" }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}-metrics
+  labels:
+    {{- include "unikorn.labels" $ | nindent 4 }}
+    unikorn-cloud.org/metrics: "true"
+spec:
+  selector:
+    app: {{ $.Release.Name }}-{{ $component }}
+  ports:
+  - name: prometheus
+    port: 8080
+    targetPort: prometheus
+{{- end }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "unikorn.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      unikorn-cloud.org/metrics: "true"
+  endpoints:
+  - port: prometheus
+{{- end }}

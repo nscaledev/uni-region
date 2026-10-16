@@ -88,11 +88,15 @@ func (s *Server) SetupLogging() {
 	s.CoreOptions.SetupLogging()
 }
 
-// SetupOpenTelemetry adds a span processor that will print root spans to the
-// logs by default, and optionally ship the spans to an OTLP listener.
+// SetupOpenTelemetry optionally ships spans to an OTLP listener, and exports
+// metrics for scraping.
 // TODO: move config into an otel specific options struct.
 func (s *Server) SetupOpenTelemetry(ctx context.Context) error {
-	return s.CoreOptions.SetupOpenTelemetry(ctx)
+	if err := s.CoreOptions.SetupTracing(ctx); err != nil {
+		return err
+	}
+
+	return s.CoreOptions.SetupMetrics()
 }
 
 func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Server, error) {
@@ -113,6 +117,12 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 		}
 
 		if err := pprofServer.ListenAndServe(); err != nil {
+			fmt.Println(err)
+		}
+	}()
+
+	go func() {
+		if err := s.CoreOptions.ServeMetrics(ctx, ":8080"); err != nil {
 			fmt.Println(err)
 		}
 	}()
