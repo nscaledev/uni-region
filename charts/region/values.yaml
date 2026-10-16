@@ -261,6 +261,10 @@ identity:
 #   secretNamespace: ~
 #   secretName: ~
 
+# Enable the ServiceMonitor that scrapes the server, controllers and monitor.
+serviceMonitor:
+  enabled: false
+
 # Sets the OTLP endpoint for shipping spans.
 # otlp:
 #   endpoint: jaeger-collector.default:4318
