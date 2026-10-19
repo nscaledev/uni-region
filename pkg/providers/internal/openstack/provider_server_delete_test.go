@@ -74,7 +74,7 @@ func newTeardownOpenstack(t *testing.T, steps ...teardownRequest) string {
 		}
 
 		if strings.Contains(r.URL.Path, "/servers") {
-			if version := r.Header.Get("X-OpenStack-Nova-API-Version"); version != "2.90" {
+			if version := r.Header.Get("X-Openstack-Nova-Api-Version"); version != "2.90" {
 				t.Errorf("Nova microversion = %q, want 2.90", version)
 			}
 		}
@@ -141,29 +141,6 @@ func teardownServer() *unikornv1.Server {
 	server.Labels = contractServerLabels()
 
 	return server
-}
-
-func TestDeleteServerWaitsForNova(t *testing.T) {
-	t.Parallel()
-
-	endpoint := newTeardownOpenstack(t,
-		novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
-		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
-		novaServer("ERROR", "deleting"), novaDelete(http.StatusNoContent),
-		novaLookup(`{"servers":[]}`), portLookup(false),
-	)
-	cli := contractRetryClient(t, contractIdentity(), contractOpenstackIdentity())
-	server := teardownServer()
-
-	for range 3 {
-		// Reconstruct the provider on every pass: progress must come from Nova.
-		err := teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server)
-		require.ErrorIs(t, err, provisioners.ErrYield)
-	}
-
-	require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
-	_, err := unikornv1.GetDeletionHeldCondition(server)
-	require.Error(t, err, "never-held servers must not acquire the build hold condition")
 }
 
 func TestDeleteServerRetriesFailedDelete(t *testing.T) {

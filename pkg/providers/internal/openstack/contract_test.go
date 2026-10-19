@@ -415,6 +415,7 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 	endpoint := newTeardownOpenstack(t,
 		novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
 		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
+		novaServer("ERROR", "deleting"), novaDelete(http.StatusNoContent),
 		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
 		teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusConflict, ""},
 		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
@@ -423,43 +424,59 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 	identity := contractIdentity()
 	identity.UID = "identity-uid"
 	identity.Finalizers = []string{coreconstants.Finalizer}
+
+	const networkID = "11111111-1111-4111-a111-111111111111"
+
+	reference := "servers.region.unikorn-cloud.org/" + contractServerID
 	network := &regionv1.Network{ObjectMeta: metav1.ObjectMeta{
-		Name: "network-1", Namespace: contractNamespace, UID: "network-uid",
+		Name: networkID, Namespace: contractNamespace, UID: "network-uid",
 		Labels:          map[string]string{constants.IdentityLabel: contractIdentityID},
-		Finalizers:      []string{coreconstants.Finalizer, "servers.region.unikorn-cloud.org/" + contractServerID},
+		Finalizers:      []string{coreconstants.Finalizer, reference},
 		OwnerReferences: []metav1.OwnerReference{{APIVersion: regionv1.SchemeGroupVersion.String(), Kind: "Identity", Name: identity.Name, UID: identity.UID, BlockOwnerDeletion: ptr.To(true)}},
 	}}
+	group := &regionv1.SecurityGroup{ObjectMeta: metav1.ObjectMeta{
+		Name: "dropped-group", Namespace: contractNamespace,
+		Labels:     map[string]string{constants.IdentityLabel: contractIdentityID},
+		Finalizers: []string{coreconstants.Finalizer, reference},
+	}}
 
-	cli := contractRetryClient(t, identity, contractOpenstackIdentity(), network)
-	for pass := range 4 {
+	cli := contractRetryClient(t, identity, contractOpenstackIdentity(), network, group)
+	for pass := range 5 {
 		prov := serverprovisioner.New(nil, contractMockProviders(t, teardownProvider(cli, endpoint)))
 		server, ok := prov.Object().(*regionv1.Server)
 		require.True(t, ok)
 
 		*server = *teardownServer()
+		server.Spec.Networks = []regionv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(networkID)}}
 		server.Finalizers = []string{coreconstants.Finalizer}
 		server.OwnerReferences = []metav1.OwnerReference{{APIVersion: regionv1.SchemeGroupVersion.String(), Kind: "Network", Name: network.Name, UID: network.UID, BlockOwnerDeletion: ptr.To(true)}}
 
 		err := prov.Deprovision(coreclient.NewContext(t.Context(), cli))
 
 		switch pass {
-		case 0, 1:
+		case 0, 1, 2:
 			require.ErrorIs(t, err, provisioners.ErrYield)
-		case 2:
+		case 3:
 			require.Error(t, err)
 			require.NotErrorIs(t, err, provisioners.ErrYield)
 		default:
 			require.NoError(t, err)
 		}
 
+		_, err = regionv1.GetDeletionHeldCondition(server)
+		require.Error(t, err, "never-held servers must not acquire the build hold condition")
+
 		updated := &regionv1.Network{}
 		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(network), updated))
+		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(group), group))
 
-		if pass < 3 {
+		if pass < 4 {
 			require.Equal(t, network.Finalizers, updated.Finalizers, "pending or failed provider cleanup retains the network reference")
 		} else {
 			require.Equal(t, []string{coreconstants.Finalizer}, updated.Finalizers)
 		}
+
+		require.Equal(t, updated.Finalizers, group.Finalizers, "consumed and dropped resources retain references until cleanup succeeds")
 		// Provisioners leave own finalizers and blocking ownership to the reconciler/GC.
 		require.Equal(t, []string{coreconstants.Finalizer}, server.Finalizers)
 		require.True(t, *server.OwnerReferences[0].BlockOwnerDeletion)

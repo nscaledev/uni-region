@@ -53,22 +53,12 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
 
-Deprovisioning propagates provider `ErrYield` or errors before clearing any
-consumed-resource references. OpenStack success means Nova absence and owned
-Neutron cleanup, not DELETE acceptance. Pending teardown retains the Server's
-own finalizer and the blocking Server → Network → Identity ownership chain;
-the reconciler and Kubernetes GC finish that ordering after provider success.
-Current consumption references remain throughout provisioning; the removal
-helper releases only resources no longer consumed, while deprovision success
-clears all remaining consumption references.
-
-The failed-create retry path also propagates deletion yield before state reads
-or runtime reset. Across persistence/restart it retains `ProviderCreateRetrying`,
-the attempt count and satisfied create gates, and emits no readiness event.
-Confirmed cleanup resumes the existing absence check/reset once, then waits for
-the reset create gates before another attempt. A surviving Nova server can
-therefore intentionally delay parent deletion and recreation; see
-[provider recovery and limits](../../../providers/internal/openstack/README.md#teardown-qualification-and-recovery).
+Deprovisioning retains consumed-resource references and the Server's finalizer
+until provider deletion succeeds. During failed-create retry, deletion yields
+also preserve `ProviderCreateRetrying`, attempt count, runtime state and satisfied
+create gates across restart, without emitting readiness events. Cleanup success
+resumes the existing absence check/reset before gates can admit another attempt.
+See the [OpenStack recovery and limits](../../../providers/internal/openstack/README.md#teardown-qualification-and-recovery).
 
 ## Caveats
 

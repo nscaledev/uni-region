@@ -32,7 +32,6 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
-	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 	serverprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
@@ -280,48 +279,6 @@ func TestProvision_ProviderCreateRetryDeleteYields(t *testing.T) {
 	require.ErrorIs(t, prov.Provision(coreclient.NewContext(t.Context(), cli)), provisioners.ErrYield)
 	require.Equal(t, int32(1), server.Status.ProviderCreateFailures)
 	requireNoEvent(t, recorder)
-}
-
-func TestDeprovision_DeleteYieldRetainsReferences(t *testing.T) {
-	t.Parallel()
-
-	server := retryServer()
-	server.Finalizers = []string{coreconstants.Finalizer}
-
-	const networkID = "11111111-1111-4111-a111-111111111111"
-	server.Spec.Networks = []regionv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(networkID)}}
-	reference := "servers.region.unikorn-cloud.org/" + server.Name
-	network := &regionv1.Network{ObjectMeta: metav1.ObjectMeta{
-		Name: networkID, Namespace: server.Namespace,
-		Labels:     map[string]string{constants.IdentityLabel: retryIdentityID},
-		Finalizers: []string{coreconstants.Finalizer, reference},
-	}}
-	group := &regionv1.SecurityGroup{ObjectMeta: metav1.ObjectMeta{
-		Name: "dropped-group", Namespace: server.Namespace,
-		Labels:     map[string]string{constants.IdentityLabel: retryIdentityID},
-		Finalizers: []string{coreconstants.Finalizer, reference},
-	}}
-	cli := retryClient(t, retryIdentity(), server, network, group)
-	provider := mocktypes.NewMockProvider(gomock.NewController(t))
-	provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), server).Return(provisioners.ErrYield)
-	prov := retryProvisioner(t, server, nil, provider)
-	require.ErrorIs(t, prov.Deprovision(coreclient.NewContext(t.Context(), cli)), provisioners.ErrYield)
-
-	for _, object := range []client.Object{network, group} {
-		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(object), object))
-		require.Equal(t, []string{coreconstants.Finalizer, reference}, object.GetFinalizers())
-	}
-
-	provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), server).Return(nil)
-	prov = retryProvisioner(t, server, nil, provider)
-	require.NoError(t, prov.Deprovision(coreclient.NewContext(t.Context(), cli)))
-
-	for _, object := range []client.Object{network, group} {
-		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(object), object))
-		require.Equal(t, []string{coreconstants.Finalizer}, object.GetFinalizers())
-	}
-
-	require.Equal(t, []string{coreconstants.Finalizer}, server.Finalizers, "the reconciler owns the Server's finalizer")
 }
 
 // TestProvision_ProviderCreateRetryKeepsDeletingWithGate proves a satisfied gate

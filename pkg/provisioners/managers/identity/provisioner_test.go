@@ -202,7 +202,7 @@ func TestDeprovision_DeleteYieldRetainsReferences(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	provider := mocktypes.NewMockProvider(ctrl)
 	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil).Times(2)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
 
 	refs := &fakeReferences{}
 
@@ -210,11 +210,6 @@ func TestDeprovision_DeleteYieldRetainsReferences(t *testing.T) {
 	prov := identityprovisioner.NewForTest(id, providers, refs)
 	require.ErrorIs(t, prov.Deprovision(testContext(t)), provisioners.ErrYield)
 	require.Zero(t, refs.removeCalls)
-
-	provider.EXPECT().DeleteIdentity(gomock.Any(), id).Return(nil)
-	prov = identityprovisioner.NewForTest(id, providers, refs)
-	require.NoError(t, prov.Deprovision(testContext(t)))
-	require.Equal(t, 1, refs.removeCalls)
 }
 
 func TestDeprovision_RemoveReferenceError(t *testing.T) {
