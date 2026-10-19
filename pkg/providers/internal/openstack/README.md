@@ -308,6 +308,23 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   attached data volumes, flavor, metadata, and placement, but recreates the
   root disk. It stays on the same compute host; evacuation is a separate
   operator workflow.
+- Server delete is held while Nova reports the server as `BUILD` with
+  `task_state` `spawning`, or `REBUILD` with `rebuild_spawning`. Ironic has no
+  teardown transition from `deploying`; Nova's Ironic driver asks for one
+  anyway, is refused, abandons the build and clears the instance's host, so the
+  node finishes deploying with no instance and a later delete never reaches
+  Ironic ([Nova bug 1477490](https://bugs.launchpad.net/nova/+bug/1477490)).
+  Nova claims the Ironic node only once the task state is `spawning`; a build
+  still queued in nova-compute (`scheduling`, `networking`,
+  `block_device_mapping`) aborts cleanly on delete without reaching Ironic, so
+  it is deleted at once. Every other status is deleted whatever its
+  `task_state`. The hold is read from one `GetServer`, so a delete can land in
+  the instant after Nova saves `spawning`; that window is one API round trip.
+  A held pass sets the Server's `DeletionHeld` condition True with the Nova
+  state in its message, so its transition time is when the hold began, and logs
+  at Info on every pass so a live controller is distinguishable from a wedged
+  one. The condition goes False, reason `Released`, once the delete is sent. A
+  server that was never held has no `DeletionHeld` condition.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
