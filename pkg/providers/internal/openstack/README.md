@@ -330,8 +330,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - Accepted Nova DELETE, including a concurrent-delete 404, yields until a fresh
   lookup confirms absence. Only then are the floating IP and port deleted, in
   that order. Neutron DELETE 404 is idempotent success; other provider errors
-  retain cleanup ownership. This relies on the
-  [deployment prerequisites](#teardown-qualification-and-recovery).
+  retain cleanup ownership. This assumes the microversion-2.90 name-filtered
+  lookup is complete and Nova keeps instances discoverable until network
+  teardown finishes. It requires `[api] list_records_by_skipping_down_cells = False`
+  on every Nova API replica and `reclaim_instance_interval = 0` on API and
+  compute services. Credential retention depends on the existing Server
+  ownership and reference chain; it does not recover orphaned instances or
+  fence late creates/rebuilds.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
@@ -733,22 +738,6 @@ not. Nothing destructive keys off it: the create-retry gate goes through
 observation may only refuse an action, never authorise one, so the create path's
 "is there already a server with exactly this name" question takes a fresh read at
 decision time rather than consulting a batch someone else took.
-
-## Teardown Qualification And Recovery
-
-Before rollout, verify the microversion-2.90 name-filtered lookup remains complete
-under cell failures and Nova keeps the instance discoverable until network
-teardown finishes. Require `[api] list_records_by_skipping_down_cells = False`
-on every Nova API replica and `reclaim_instance_interval = 0` on API and compute
-services; configuration inspection alone does not prove the cleanup contract.
-Exercise delayed network cleanup, controller restart and transient failures,
-then verify successful cleanup and replacement provisioning.
-
-This ordering retains credentials through the existing Server ownership and
-reference chain. It does not recover provider instances whose Region Server is
-already gone, or fence late creates/rebuilds. Those guarantees require separate
-provider discovery and cleanup coordination. Do not force-remove finalizers to
-bypass an unfinished provider teardown.
 
 ## Octavia Load Balancers
 

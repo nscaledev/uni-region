@@ -58,7 +58,6 @@ until provider deletion succeeds. During failed-create retry, deletion yields
 also preserve `ProviderCreateRetrying`, attempt count, runtime state and satisfied
 create gates across restart, without emitting readiness events. Cleanup success
 resumes the existing absence check/reset before gates can admit another attempt.
-See the [OpenStack recovery and limits](../../../providers/internal/openstack/README.md#teardown-qualification-and-recovery).
 
 ## Caveats
 
