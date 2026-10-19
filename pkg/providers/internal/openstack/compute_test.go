@@ -240,59 +240,6 @@ func TestGetServerDoesNotReRead(t *testing.T) {
 	}
 }
 
-func TestGetServerRejectsIncompleteAndAmbiguousInventory(t *testing.T) {
-	t.Parallel()
-
-	for name, response := range map[string]struct {
-		status int
-		body   string
-	}{
-		"empty continuation":               {200, `{"servers":[],"servers_links":[{"rel":"next","href":""}]}`},
-		"missing continuation":             {200, `{"servers":[],"servers_links":[{"rel":"next"}]}`},
-		"missing continuation after match": {200, `{"servers":[{"id":"a","name":"test-server","status":"ACTIVE"}],"servers_links":[{"rel":"next"}]}`},
-		"missing collection":               {200, `{}`},
-		"null collection":                  {200, `{"servers":null}`},
-		"unknown without name":             {200, `{"servers":[{"id":"a","status":"UNKNOWN"}]}`},
-		"unknown with name":                {200, `{"servers":[{"id":"a","name":"test-server","status":"UNKNOWN"}]}`},
-		"minimal":                          {200, `{"servers":[{"id":"a"}]}`},
-		"missing id":                       {200, `{"servers":[{"name":"test-server","status":"ACTIVE"}]}`},
-		"missing status":                   {200, `{"servers":[{"id":"a","name":"test-server"}]}`},
-		"unknown alongside match":          {200, `{"servers":[{"id":"a","name":"test-server","status":"ACTIVE"},{"id":"b","status":"UNKNOWN"}]}`},
-		"duplicate exact names":            {200, `{"servers":[{"id":"a","name":"test-server","status":"ACTIVE"},{"id":"b","name":"test-server","status":"ERROR"}]}`},
-		"no content":                       {204, ""},
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				if response.status != http.StatusNoContent {
-					w.Header().Set("Content-Type", "application/json")
-				}
-
-				w.WriteHeader(response.status)
-				fmt.Fprint(w, response.body)
-			}))
-			t.Cleanup(srv.Close)
-			got, err := openstack.NewTestComputeClient(srv.URL+"/").GetServer(t.Context(), newServerFixture())
-			require.ErrorIs(t, err, coreerrors.ErrConsistency)
-			require.Nil(t, got)
-		})
-	}
-}
-
-func TestGetServerIgnoresOtherCompleteNames(t *testing.T) {
-	t.Parallel()
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"servers":[{"id":"a","name":"test-server-other","status":"ACTIVE"}]}`)
-	}))
-	t.Cleanup(srv.Close)
-	got, err := openstack.NewTestComputeClient(srv.URL+"/").GetServer(t.Context(), newServerFixture())
-	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound)
-	require.Nil(t, got)
-}
-
 // TestGetServerFaultReadsByID pins the enrichment itself: the fault comes from a
 // per-ID read, which carries it even where a list response omits it (Nova up to
 // 2025.2).

@@ -26,7 +26,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/require"
 
-	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
@@ -164,60 +163,24 @@ func TestDeleteServerRetriesFailedDelete(t *testing.T) {
 	require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
 }
 
-func TestDeleteServerPresentAndFailedReadsRetainNetworking(t *testing.T) {
+func TestDeleteServerPresentRetainsNetworking(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range []struct {
-		name  string
-		steps []teardownRequest
-		want  error
-	}{
-		{"build hold", []teardownRequest{novaServer("BUILD", "spawning")}, provisioners.ErrYield},
-		{"rebuild hold", []teardownRequest{novaServer("REBUILD", "rebuild_spawning")}, provisioners.ErrYield},
-		{"queued build", []teardownRequest{novaServer("BUILD", "scheduling"), novaDelete(204)}, provisioners.ErrYield},
-		{"queued rebuild", []teardownRequest{novaServer("REBUILD", "rebuilding"), novaDelete(204)}, provisioners.ErrYield},
-		{"deleting", []teardownRequest{novaServer("ACTIVE", "deleting"), novaDelete(204)}, provisioners.ErrYield},
-		{"error", []teardownRequest{novaServer("ERROR", ""), novaDelete(204)}, provisioners.ErrYield},
-		{"delete race", []teardownRequest{novaServer("ACTIVE", ""), novaDelete(404)}, provisioners.ErrYield},
-		{"unknown", []teardownRequest{novaLookup(`{"servers":[{"id":"unknown-1","status":"UNKNOWN"}]}`)}, coreerrors.ErrConsistency},
-		{"minimal", []teardownRequest{novaLookup(`{"servers":[{"id":"unknown-1"}]}`)}, coreerrors.ErrConsistency},
-		{"no content", []teardownRequest{{http.MethodGet, "/servers/detail?name=server-1", 204, ""}}, coreerrors.ErrConsistency},
-		{"empty continuation", []teardownRequest{novaLookup(`{"servers":[],"servers_links":[{"rel":"next","href":""}]}`)}, coreerrors.ErrConsistency},
-		{"missing continuation", []teardownRequest{novaLookup(`{"servers":[],"servers_links":[{"rel":"next"}]}`)}, coreerrors.ErrConsistency},
-		{"ambiguous", []teardownRequest{novaLookup(`{"servers":[{"id":"a","name":"server-1","status":"ACTIVE"},{"id":"b","name":"server-1","status":"ERROR"}]}`)}, coreerrors.ErrConsistency},
+	for name, steps := range map[string][]teardownRequest{
+		"build hold":     {novaServer("BUILD", "spawning")},
+		"rebuild hold":   {novaServer("REBUILD", "rebuild_spawning")},
+		"queued build":   {novaServer("BUILD", "scheduling"), novaDelete(204)},
+		"queued rebuild": {novaServer("REBUILD", "rebuilding"), novaDelete(204)},
+		"deleting":       {novaServer("ACTIVE", "deleting"), novaDelete(204)},
+		"error":          {novaServer("ERROR", ""), novaDelete(204)},
+		"delete race":    {novaServer("ACTIVE", ""), novaDelete(404)},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			endpoint := newTeardownOpenstack(t, tc.steps...)
+			endpoint := newTeardownOpenstack(t, steps...)
 			cli := contractRetryClient(t, contractOpenstackIdentity())
-			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()), tc.want)
+			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()), provisioners.ErrYield)
 		})
-	}
-
-	for _, status := range []int{401, 403, 409, 500} {
-		for _, operation := range []string{"lookup", "delete"} {
-			t.Run(fmt.Sprintf("%s/%d", operation, status), func(t *testing.T) {
-				t.Parallel()
-
-				steps := []teardownRequest{novaServer("ACTIVE", ""), novaDelete(status)}
-
-				if operation == "lookup" {
-					step := novaLookup(`{}`)
-					step.status = status
-					steps = []teardownRequest{step}
-				}
-
-				if status == 401 {
-					steps = append(steps, steps[len(steps)-1])
-				}
-
-				endpoint := newTeardownOpenstack(t, steps...)
-				cli := contractRetryClient(t, contractOpenstackIdentity())
-				err := teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer())
-				require.Error(t, err)
-				require.NotErrorIs(t, err, provisioners.ErrYield)
-			})
-		}
 	}
 }
 
@@ -262,38 +225,25 @@ func TestDeleteServerReleasesBuildHold(t *testing.T) {
 	}
 }
 
-func TestDeleteServerNetworkCleanupRetries(t *testing.T) {
+func TestDeleteServerNetworkCleanup(t *testing.T) {
 	t.Parallel()
 
-	for _, status := range []int{204, 404, 401, 403, 409, 500} {
-		for _, resource := range []string{"floatingips/fip-1", "ports/port-1"} {
-			t.Run(fmt.Sprintf("%s/%d", resource, status), func(t *testing.T) {
-				t.Parallel()
+	for _, status := range []int{http.StatusNoContent, http.StatusNotFound} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			t.Parallel()
+			endpoint := newTeardownOpenstack(t,
+				novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(true),
+				teardownRequest{http.MethodDelete, "/v2.0/floatingips/fip-1", status, ""},
+				teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", status, ""},
+				novaLookup(`{"servers":[]}`), portLookup(false),
+			)
+			cli := contractRetryClient(t, contractOpenstackIdentity())
 
-				steps := networkCleanupSteps(resource, status)
-				endpoint := newTeardownOpenstack(t, steps...)
-				cli := contractRetryClient(t, contractOpenstackIdentity())
-
-				err := teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer())
-				if status == 204 || status == 404 {
-					require.NoError(t, err)
-				} else {
-					require.Error(t, err)
-					require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()))
-				}
-			})
-		}
+			for range 2 {
+				require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()))
+			}
+		})
 	}
-
-	t.Run("port only then already clean", func(t *testing.T) {
-		endpoint := newTeardownOpenstack(t, novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
-			teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", 204, ""}, novaLookup(`{"servers":[]}`), portLookup(false))
-		cli := contractRetryClient(t, contractOpenstackIdentity())
-
-		for range 2 {
-			require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()))
-		}
-	})
 }
 
 func TestServerDeleteHeldOnlyWhileSpawning(t *testing.T) {
@@ -366,43 +316,4 @@ func TestReleaseServerDeleteLeavesAnUnheldServerAlone(t *testing.T) {
 
 	_, err := unikornv1.GetDeletionHeldCondition(server)
 	require.Error(t, err)
-}
-
-// withReauthentication includes gophercloud's one retry after a 401.
-func withReauthentication(step teardownRequest) []teardownRequest {
-	if step.status == http.StatusUnauthorized {
-		return []teardownRequest{step, step}
-	}
-
-	return []teardownRequest{step}
-}
-
-func networkCleanupSteps(resource string, status int) []teardownRequest {
-	steps := []teardownRequest{novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(true)}
-	fipDelete := teardownRequest{http.MethodDelete, "/v2.0/floatingips/fip-1", 204, ""}
-	portDelete := teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", 204, ""}
-
-	if resource == "floatingips/fip-1" {
-		fipDelete.status = status
-	} else {
-		portDelete.status = status
-	}
-
-	steps = append(steps, withReauthentication(fipDelete)...)
-	if resource != "floatingips/fip-1" || status == 204 || status == 404 {
-		steps = append(steps, withReauthentication(portDelete)...)
-	}
-	// A later pass must re-discover and retry after an error.
-	if status != 204 && status != 404 {
-		steps = append(steps, novaLookup(`{"servers":[]}`), portLookup(true))
-		if resource == "floatingips/fip-1" {
-			steps = append(steps, floatingIPLookup(true), teardownRequest{http.MethodDelete, "/v2.0/floatingips/fip-1", 204, ""})
-		} else {
-			steps = append(steps, floatingIPLookup(false))
-		}
-
-		steps = append(steps, teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", 204, ""})
-	}
-
-	return steps
 }

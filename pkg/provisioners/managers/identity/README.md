@@ -8,9 +8,6 @@ Distinctive behaviour:
 - adds and removes the identity-side project reference edge via
   `identity/pkg/client`
 - delegates actual cloud identity creation/deletion to the provider
-- propagates provider deletion yields/errors without releasing the identity-service
-  project reference; the reconciler retains its finalizer until success.
-  See the [OpenStack teardown requirements](../../../providers/internal/openstack/README.md#teardown-qualification-and-recovery).
 
 This is one of the clearest controller-side lifecycle bridges:
 

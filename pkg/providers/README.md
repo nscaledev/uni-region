@@ -99,9 +99,9 @@ packages are the concrete provider implementations.
     consumers are gone: at delete time it is either realized-and-complete or
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
-- OpenStack deletion retains ownership until fresh Nova absence and owned
-  networking cleanup are confirmed; identity deletion also inventories the
-  entire project. See the [deployment prerequisites](./internal/openstack/README.md#teardown-qualification-and-recovery).
+- OpenStack Server deletion retains ownership until a fresh Nova lookup confirms
+  absence and owned networking cleanup completes. See the
+  [deployment prerequisites](./internal/openstack/README.md#teardown-qualification-and-recovery).
 - `DetachVolume` verifies claimed attachment teardown against both compute and
   block-storage state before the caller releases its claim. Per-Volume
   finalizers block Server deletion until this active detach completes, so the

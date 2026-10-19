@@ -1544,27 +1544,6 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 		return err
 	}
 
-	// Nova can still need tenant credentials after a Region Server disappears.
-	// Read the whole project before any destructive identity operation.
-	remaining, err := compute.ListServers(ctx)
-	if err != nil {
-		var responseErr gophercloud.ErrUnexpectedResponseCode
-		if errors.As(err, &responseErr) && responseErr.Actual >= http.StatusInternalServerError && responseErr.Actual < 600 {
-			return fmt.Errorf("%w: %w", provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning,
-				"waiting for the provider server inventory to become available"), err)
-		}
-
-		return err
-	}
-
-	if len(remaining) != 0 {
-		log.FromContext(ctx).Info("identity deletion waiting for provider servers",
-			"projectID", *openstackIdentity.Spec.ProjectID, "remainingServers", len(remaining))
-
-		return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning,
-			fmt.Sprintf("waiting for %d provider servers in project %s to be deleted", len(remaining), *openstackIdentity.Spec.ProjectID))
-	}
-
 	if openstackIdentity.Spec.SSHKeyName != nil {
 		if err := compute.DeleteKeypair(ctx, keyPairName); err != nil {
 			if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {

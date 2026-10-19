@@ -25,7 +25,6 @@ import (
 	"go.uber.org/mock/gomock"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
-	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
@@ -193,23 +192,6 @@ func TestDeprovision_ProviderDeleteError(t *testing.T) {
 	err := prov.Deprovision(testContext(t))
 	require.ErrorIs(t, err, errProviderSentinel)
 	require.Equal(t, 0, refs.removeCalls, "reference must not be removed when provider delete fails")
-}
-
-func TestDeprovision_DeleteYieldRetainsReferences(t *testing.T) {
-	t.Parallel()
-
-	id := testIdentity()
-	ctrl := gomock.NewController(t)
-	provider := mocktypes.NewMockProvider(ctrl)
-	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
-
-	refs := &fakeReferences{}
-
-	provider.EXPECT().DeleteIdentity(gomock.Any(), id).Return(provisioners.ErrYield)
-	prov := identityprovisioner.NewForTest(id, providers, refs)
-	require.ErrorIs(t, prov.Deprovision(testContext(t)), provisioners.ErrYield)
-	require.Zero(t, refs.removeCalls)
 }
 
 func TestDeprovision_RemoveReferenceError(t *testing.T) {
