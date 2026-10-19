@@ -41,8 +41,13 @@ func PrincipalFromHeader(r *http.Request) principal.Principal {
 	var p principal.Principal
 
 	data, err := base64.RawURLEncoding.DecodeString(r.Header.Get("X-Principal"))
-	if err == nil {
-		_ = json.Unmarshal(data, &p)
+	if err != nil {
+		return principal.Principal{}
+	}
+
+	// Unmarshal can fill some fields before it fails, so discard them on error.
+	if err := json.Unmarshal(data, &p); err != nil {
+		return principal.Principal{}
 	}
 
 	return p
