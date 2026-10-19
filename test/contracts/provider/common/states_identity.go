@@ -192,6 +192,38 @@ func (im *IdentityStateManager) setupProvisionedNetwork(ctx context.Context, net
 	return nil
 }
 
+// setupNetworkV2 creates a network the v2 API serves: only its labels and prefix are read back.
+func (im *IdentityStateManager) setupNetworkV2(ctx context.Context, networkID, projectID, regionID, organizationID string) error {
+	_, ipNet, err := net.ParseCIDR("192.168.0.0/24")
+	if err != nil {
+		return fmt.Errorf("failed to parse CIDR: %w", err)
+	}
+
+	network := &unikornv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      networkID,
+			Namespace: im.namespace,
+			Labels: map[string]string{
+				coreconstants.NameLabel:           "pool-network",
+				coreconstants.OrganizationLabel:   organizationID,
+				coreconstants.ProjectLabel:        projectID,
+				constants.RegionLabel:             regionID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+		},
+		Spec: unikornv1.NetworkSpec{
+			Provider: unikornv1.ProviderOpenstack,
+			Prefix:   &unikornv1core.IPv4Prefix{IPNet: *ipNet},
+		},
+	}
+
+	if err := im.client.Create(ctx, network); err != nil {
+		return fmt.Errorf("failed to create network %s: %w", networkID, err)
+	}
+
+	return nil
+}
+
 // cleanupIdentitiesAndNetworks cleans up all identity and network resources.
 func (im *IdentityStateManager) cleanupIdentitiesAndNetworks(ctx context.Context) error {
 	// Clean up networks

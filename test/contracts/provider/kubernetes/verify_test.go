@@ -174,15 +174,30 @@ var _ = Describe("Region Provider Verification", func() {
 					Consumer:       "uni-kubernetes",
 					MatchingBranch: true,
 				},
+				&provider.ConsumerVersionSelector{
+					Consumer:   "nscale-environments",
+					MainBranch: true,
+				},
+				&provider.ConsumerVersionSelector{
+					Consumer:       "nscale-environments",
+					MatchingBranch: true,
+				},
+				// The Envir releases still supported in the broker (the current and previous one).
+				&provider.ConsumerVersionSelector{
+					Consumer:           "nscale-environments",
+					DeployedOrReleased: true,
+				},
 			}
 
 			// Add explicit branch selector only for webhook-triggered verification
 			consumerBranch := strings.TrimSpace(os.Getenv("CONSUMER_BRANCH"))
 			if consumerBranch != "" {
-				selectors = append(selectors, &provider.ConsumerVersionSelector{
-					Consumer: "uni-kubernetes",
-					Branch:   consumerBranch,
-				})
+				for _, consumer := range []string{"uni-kubernetes", "nscale-environments"} {
+					selectors = append(selectors, &provider.ConsumerVersionSelector{
+						Consumer: consumer,
+						Branch:   consumerBranch,
+					})
+				}
 				fmt.Printf("Webhook mode: Including explicit branch selector for consumer branch '%s'\n", consumerBranch)
 			} else {
 				fmt.Printf("Normal mode: Using MainBranch and MatchingBranch selectors only\n")
@@ -234,7 +249,7 @@ var _ = Describe("Region Provider Verification", func() {
 })
 
 // createStateHandlers creates the state handlers map for pact verification.
-// Registers state handlers for uni-kubernetes consumer contract tests.
+// Registers state handlers for the uni-kubernetes and nscale-environments consumer contract tests.
 func createStateHandlers(ctx context.Context, stateManager *commonstate.StateManager) models.StateHandlers {
 	return models.StateHandlers{
 		// State handler for "region exists"
@@ -297,6 +312,21 @@ func createStateHandlers(ctx context.Context, stateManager *commonstate.StateMan
 		commonstate.StateRegionHasExternalNetworks: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleRegionHasExternalNetworksState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handlers for the nscale-environments network reads
+		commonstate.StateNetworkExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleNetworkExistsInProjectState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		commonstate.StateNoNetworkExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleNoNetworkExistsInProjectState(ctx, setup, state.Parameters)
 
 			return nil, err
 		},

@@ -43,12 +43,23 @@ func MockACLMiddleware(_ []string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Extract organization ID and project ID from request path
 			// Pattern: /api/v1/organizations/{orgID}/projects/{projectID}/...
+			// v2 paths carry no organization, so fall back to the propagated X-Principal.
+			headerPrincipal := commonmiddleware.PrincipalFromHeader(r)
+
 			orgID := commonmiddleware.ExtractOrganizationID(r.URL.Path)
+			if orgID == "" {
+				orgID = headerPrincipal.OrganizationID
+			}
+
 			if orgID == "" {
 				orgID = "test-org"
 			}
 
 			projectID := commonmiddleware.ExtractProjectID(r.URL.Path)
+			if projectID == "" {
+				projectID = headerPrincipal.ProjectID
+			}
+
 			if projectID == "" {
 				projectID = "test-project"
 			}
@@ -68,6 +79,7 @@ func MockACLMiddleware(_ []string) func(http.Handler) http.Handler {
 				{Name: "region:servers:v2/provider-create-gates", Operations: identityapi.AclOperations{identityapi.Update}},
 				{Name: "region:identities", Operations: identityapi.AclOperations{identityapi.Read, identityapi.Create, identityapi.Update, identityapi.Delete}},
 				{Name: "region:networks", Operations: identityapi.AclOperations{identityapi.Read, identityapi.Create, identityapi.Update, identityapi.Delete}},
+				{Name: "region:networks:v2", Operations: identityapi.AclOperations{identityapi.Read}},
 			}
 
 			// Create project ACL
