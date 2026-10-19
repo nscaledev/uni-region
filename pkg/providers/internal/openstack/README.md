@@ -317,14 +317,34 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   Nova claims the Ironic node only once the task state is `spawning`; a build
   still queued in nova-compute (`scheduling`, `networking`,
   `block_device_mapping`) aborts cleanly on delete without reaching Ironic, so
-  it is deleted at once. Every other status is deleted whatever its
-  `task_state`. The hold is read from one `GetServer`, so a delete can land in
+  its delete is requested at once. Every other status permits a delete request;
+  an existing `task_state=deleting` waits without resending DELETE.
+  The hold is read from one `GetServer`, so a delete can land in
   the instant after Nova saves `spawning`; that window is one API round trip.
   A held pass sets the Server's `DeletionHeld` condition True with the Nova
   state in its message, so its transition time is when the hold began, and logs
   at Info on every pass so a live controller is distinguishable from a wedged
-  one. The condition goes False, reason `Released`, once the delete is sent. A
-  server that was never held has no `DeletionHeld` condition.
+  one. The condition goes False, reason `Released`, when the build hold ends,
+  including when deletion is already underway or absence is confirmed. It does
+  not assert that DELETE was sent or teardown completed, and remains released
+  if later Neutron cleanup fails. A server that was never held has no
+  `DeletionHeld` condition.
+- Server delete returns `ErrYield` while any matching Nova server is present,
+  including `ERROR`. Accepted DELETE and a concurrent DELETE's 404 yield;
+  only a later successful fresh lookup establishing absence reaches Neutron.
+  Floating-IP cleanup precedes port cleanup; already-absent resources and
+  Neutron DELETE 404 are idempotent success. Other provider errors retain
+  cleanup ownership. Duplicate exact names, UNKNOWN/minimal records, malformed
+  inventories, and empty pages advertising continuation fail closed rather
+  than authorizing networking cleanup. Compute microversion remains `2.90`.
+- Identity delete constructs a fresh tenant-scoped compute client and reads
+  every page of the unfiltered project inventory before deleting keypairs,
+  server groups, Keystone users/projects, or `OpenstackIdentity`. Any remaining
+  server yields with project ID and count, regardless of name, status, or the
+  existence of a Region Server CR. Inventory errors preserve credentials.
+  The existing no-op for an identity whose user was never realized remains.
+  These guards require the [deployment qualification](./TEARDOWN.md) below;
+  ordinary list absence is only authoritative on a qualified deployment.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
@@ -716,16 +736,43 @@ would bound it properly, at the cost of changing a signature the create path als
 depends on.
 
 Because an unfiltered list is walked by marker, a server created between two
-pages can be missed and read as absent for that cycle. Harmless here — the absent
-path stamps an observation and touches no condition, and it self-heals on the next
-poll — but it is a way to reach that path which a filtered read of one name could
-not. Nothing destructive keys off it: the create-retry gate goes through
-`UpdateServerState`'s own fresh read, never the batch.
+pages can be missed and read as absent for that cycle. On the monitor path the
+absent observation self-heals on the next poll. Identity teardown also consumes
+`ListServers`, but takes its own fresh inventory at the point of action rather
+than reusing `ObserveServers`' snapshot. A successful empty inventory gates
+credential removal on a qualified deployment. It is a point-in-time read and
+does not fence concurrent or late creates. The create-retry gate still goes
+through `UpdateServerState`'s own fresh name-filtered read, never the batch.
 
 `UpdateServerState` keeps its own per-server filtered read, and must. An
 observation may only refuse an action, never authorise one, so the create path's
 "is there already a server with exactly this name" question takes a fresh read at
 decision time rather than consulting a batch someone else took.
+
+## Teardown Qualification And Recovery
+
+Before rollout, require `[api] list_records_by_skipping_down_cells = False` on
+every Nova API replica and `reclaim_instance_interval = 0` consistently on API
+and compute services. Verify the actual microversion-2.90 name-filtered lookup
+and `limit=250` paginated inventory under a relevant cell failure: omission or
+successful empty/truncated results fail qualification. Also verify Nova remains
+discoverable until its network teardown completes. Configuration inspection
+alone cannot establish these guarantees. Record the delayed-cleanup reproduction
+and replacement-placement result in the [qualification checklist](./TEARDOWN.md).
+
+A surviving Nova instance deliberately blocks identity/VPC deletion. Diagnose
+using the project ID/count in the pending result, the Nova server ID in server
+deletion logs, and a fresh project inventory. Restore provider access or arrange
+separately authorized operator cleanup, then let reconciliation retry. Do not
+force-remove finalizers, revoke credentials, or bulk-delete ambiguous orphans.
+
+This contract does not establish quiescence of timed-out or late creates or
+rebuilds, incarnation correlation, or workloads represented only in Ironic.
+Region 404, Ironic `available`, and Fleet orphan annotations are not completion
+signals. Existing orphans need separate recovery. A crash after Keystone user
+deletion but before project/CR cleanup can prevent tenant reauthentication;
+restart-safe recovery from that pre-existing partial identity teardown remains
+separate work. Restart coverage here concerns pending Nova deletion only.
 
 ## Octavia Load Balancers
 

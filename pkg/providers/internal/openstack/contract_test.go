@@ -80,12 +80,18 @@ const (
 // newContractFakeOpenstack serves the minimal OpenStack surface the contract
 // needs: keystone auth, version discovery, and empty server/port lists so
 // every lookup resolves to a positive not-found.
-func newContractFakeOpenstack(t *testing.T) *httptest.Server {
+func newContractFakeOpenstack(t *testing.T, handlers ...func(http.ResponseWriter, *http.Request) bool) *httptest.Server {
 	t.Helper()
 
 	var ts *httptest.Server
 
 	ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, handler := range handlers {
+			if handler(w, r) {
+				return
+			}
+		}
+
 		if r.Method == http.MethodPost {
 			// Treat all POSTs as Keystone authentication requests.
 			w.Header().Set("X-Subject-Token", "test-token")
@@ -401,4 +407,64 @@ func TestUpdateServerStateNotFoundContractCreateRetry(t *testing.T) {
 	contractRequireEvent(t, recorder, "ProviderCreateRetryReady")
 	require.NotNil(t, srv.Status.Observed)
 	require.False(t, srv.Status.Observed.Errored)
+}
+
+func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
+	t.Parallel()
+
+	endpoint := newTeardownOpenstack(t,
+		novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
+		novaServer("ACTIVE", "deleting"),
+		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
+		teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusConflict, ""},
+		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
+		teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusNoContent, ""},
+	)
+	identity := contractIdentity()
+	identity.UID = "identity-uid"
+	identity.Finalizers = []string{coreconstants.Finalizer}
+	network := &regionv1.Network{ObjectMeta: metav1.ObjectMeta{
+		Name: "network-1", Namespace: contractNamespace, UID: "network-uid",
+		Labels:          map[string]string{constants.IdentityLabel: contractIdentityID},
+		Finalizers:      []string{coreconstants.Finalizer, "servers.region.unikorn-cloud.org/" + contractServerID},
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: regionv1.SchemeGroupVersion.String(), Kind: "Identity", Name: identity.Name, UID: identity.UID, BlockOwnerDeletion: ptr.To(true)}},
+	}}
+
+	cli := contractRetryClient(t, identity, contractOpenstackIdentity(), network)
+	for pass := range 4 {
+		prov := serverprovisioner.New(nil, contractMockProviders(t, teardownProvider(cli, endpoint)))
+		server, ok := prov.Object().(*regionv1.Server)
+		require.True(t, ok)
+
+		*server = *teardownServer()
+		server.Finalizers = []string{coreconstants.Finalizer}
+		server.OwnerReferences = []metav1.OwnerReference{{APIVersion: regionv1.SchemeGroupVersion.String(), Kind: "Network", Name: network.Name, UID: network.UID, BlockOwnerDeletion: ptr.To(true)}}
+
+		err := prov.Deprovision(coreclient.NewContext(t.Context(), cli))
+
+		switch pass {
+		case 0, 1:
+			require.ErrorIs(t, err, provisioners.ErrYield)
+		case 2:
+			require.Error(t, err)
+			require.NotErrorIs(t, err, provisioners.ErrYield)
+		default:
+			require.NoError(t, err)
+		}
+
+		updated := &regionv1.Network{}
+		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(network), updated))
+
+		if pass < 3 {
+			require.Equal(t, network.Finalizers, updated.Finalizers, "pending or failed provider cleanup retains the network reference")
+		} else {
+			require.Equal(t, []string{coreconstants.Finalizer}, updated.Finalizers)
+		}
+		// Provisioners leave own finalizers and blocking ownership to the reconciler/GC.
+		require.Equal(t, []string{coreconstants.Finalizer}, server.Finalizers)
+		require.True(t, *server.OwnerReferences[0].BlockOwnerDeletion)
+		require.Equal(t, network.OwnerReferences, updated.OwnerReferences)
+		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(identity), identity))
+		require.Equal(t, []string{coreconstants.Finalizer}, identity.Finalizers)
+	}
 }

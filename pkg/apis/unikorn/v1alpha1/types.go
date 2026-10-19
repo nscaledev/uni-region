@@ -1171,8 +1171,8 @@ type ServerPublicIPAllocationSpec struct {
 type ActiveConditionReason string
 
 // ConditionDeletionHeld is True while the controller is holding the provider
-// delete because the provider state does not allow it. Its LastTransitionTime
-// is when the hold began; it is set False once the delete is sent.
+// delete because the provider is building. Its LastTransitionTime is when the
+// hold began; False means the build-state hold ended, not teardown completion.
 const ConditionDeletionHeld unikornv1core.ConditionType = "DeletionHeld"
 
 // DeletionHeldConditionReason is the closed vocabulary of DeletionHeld reasons.
@@ -1182,8 +1182,7 @@ const (
 	// DeletionHeldConditionReasonProviderBuilding means the provider is still
 	// deploying the server and a delete would strand its node.
 	DeletionHeldConditionReasonProviderBuilding DeletionHeldConditionReason = "ProviderBuilding"
-	// DeletionHeldConditionReasonReleased means the provider delete has been
-	// sent after a hold.
+	// DeletionHeldConditionReasonReleased means the build-state hold ended.
 	DeletionHeldConditionReasonReleased DeletionHeldConditionReason = "Released"
 )
 

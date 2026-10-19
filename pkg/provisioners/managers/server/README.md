@@ -6,7 +6,8 @@ Distinctive behaviour:
 
 - maintains explicit reference edges from a server to consumed networks,
   security groups, and optional SSH certificate authority
-- blocks on identity readiness before provider create/delete
+- blocks on identity readiness before provider create; delegates delete
+  unconditionally so the provider can handle unrealized identities idempotently
 - blocks provider create while any configured `providerCreateGates` remain
   unsatisfied. The wait is a typed `provisioners.Yield` naming the outstanding
   gates on the `Available` condition: gates are satisfied by a separate service,
@@ -51,6 +52,23 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - provider-side server lifecycle is delegated
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
+
+Deprovisioning propagates provider `ErrYield` or errors before clearing any
+consumed-resource references. OpenStack success means Nova absence and owned
+Neutron cleanup, not DELETE acceptance. Pending teardown retains the Server's
+own finalizer and the blocking Server → Network → Identity ownership chain;
+the reconciler and Kubernetes GC finish that ordering after provider success.
+Current consumption references remain throughout provisioning; the removal
+helper releases only resources no longer consumed, while deprovision success
+clears all remaining consumption references.
+
+The failed-create retry path also propagates deletion yield before state reads
+or runtime reset. Across persistence/restart it retains `ProviderCreateRetrying`,
+the attempt count and satisfied create gates, and emits no readiness event.
+Confirmed cleanup resumes the existing absence check/reset once, then waits for
+the reset create gates before another attempt. A surviving Nova server can
+therefore intentionally delay parent deletion and recreation; see
+[provider recovery and limits](../../../providers/internal/openstack/README.md#teardown-qualification-and-recovery).
 
 ## Caveats
 

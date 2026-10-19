@@ -20,6 +20,7 @@ package openstack
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -264,10 +265,55 @@ func (c *ComputeClient) UpdateQuotas(ctx context.Context, projectID string) erro
 // note on what paging does and does not bound.
 const serverListPageSize = 250
 
+// serverInventoryPage rejects missing collections and truncated empty pages
+// before the SDK can interpret them as the end of the inventory.
+func serverInventoryPage(result pagination.PageResult) pagination.Page {
+	page := servers.ServerPage{LinkedPageBase: pagination.LinkedPageBase{PageResult: result}}
+	// The SDK skips extraction (and Err) for 204. Require collection validation
+	// even for that response so it cannot authorize cleanup without an inventory.
+	if page.StatusCode == http.StatusNoContent {
+		page.StatusCode = 0
+	}
+
+	body, ok := result.Body.(map[string]any)
+	if !ok {
+		page.Err = fmt.Errorf("%w: missing server inventory", errors.ErrConsistency)
+		return page
+	}
+
+	items, ok := body["servers"].([]any)
+	if !ok {
+		page.Err = fmt.Errorf("%w: missing server collection", errors.ErrConsistency)
+		return page
+	}
+
+	var links struct {
+		Links []gophercloud.Link `json:"servers_links"` //nolint:tagliatelle // Nova's wire format.
+	}
+
+	if err := page.ExtractInto(&links); err != nil {
+		page.Err = err
+		return page
+	}
+
+	for _, link := range links.Links {
+		if link.Rel != "next" {
+			continue
+		}
+
+		if strings.TrimSpace(link.Href) == "" || len(items) == 0 {
+			page.Err = fmt.Errorf("%w: incomplete server inventory continuation", errors.ErrConsistency)
+			return page
+		}
+	}
+
+	return page
+}
+
 // ListServers returns every server in the credential's project. Unfiltered on
-// purpose: the project holds only servers this service provisioned, so there is
-// nothing to exclude, and dropping the name filter avoids the regular expression
-// Nova evaluates per row for GetServer. Observation only — see ObserveServers.
+// purpose: both observation and identity teardown need all records, including
+// ERROR and UNKNOWN servers. A fresh empty inventory gates credential removal
+// only on qualified deployments; it does not fence concurrent creates.
 func (c *ComputeClient) ListServers(ctx context.Context) ([]servers.Server, error) {
 	_, span := traceStart(ctx, "GET /compute/v2/servers")
 	defer span.End()
@@ -276,7 +322,7 @@ func (c *ComputeClient) ListServers(ctx context.Context) ([]servers.Server, erro
 
 	// EachPage and not AllPages: decode and discard each page rather than holding
 	// them all. See serverListPageSize.
-	err := servers.List(c.client, servers.ListOpts{Limit: serverListPageSize}).
+	err := servers.List(c.client, servers.ListOpts{Limit: serverListPageSize}).WithPageCreator(serverInventoryPage).
 		EachPage(ctx, func(_ context.Context, page pagination.Page) (bool, error) {
 			items, err := servers.ExtractServers(page)
 			if err != nil {
@@ -306,7 +352,7 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 		Name: name,
 	}
 
-	page, err := servers.List(c.client, opts).AllPages(ctx)
+	page, err := servers.List(c.client, opts).WithPageCreator(serverInventoryPage).AllPages(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -316,13 +362,29 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 		return nil, err
 	}
 
-	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
-	}
+	return findExactServer(result, name)
+}
 
-	index := slices.IndexFunc(result, func(x servers.Server) bool {
-		return x.Name == name
-	})
+func findExactServer(result []servers.Server, name string) (*servers.Server, error) {
+	index := -1
+
+	for i, item := range result {
+		// Down cells can return UNKNOWN or minimal records without names. Reject
+		// them before exact matching so an incomplete read cannot imply absence.
+		if item.ID == "" || item.Name == "" || item.Status == "" || strings.EqualFold(item.Status, "UNKNOWN") {
+			return nil, fmt.Errorf("%w: incomplete server inventory (server %s)", errors.ErrConsistency, item.ID)
+		}
+
+		if item.Name != name {
+			continue
+		}
+
+		if index >= 0 {
+			return nil, fmt.Errorf("%w: multiple servers named %s", errors.ErrConsistency, name)
+		}
+
+		index = i
+	}
 
 	if index < 0 {
 		return nil, errors.ErrResourceNotFound
