@@ -162,6 +162,14 @@ test-unit:
 	go test -coverpkg ./... -coverprofile cover.out ./...
 	go tool cover -html cover.out -o cover.html
 
+CLOUDINIT_TEST_IMAGE ?= unikorn-region-cloudinit-test
+
+# Runs managed cloud-init augmentation against real cloud-init (needs docker).
+.PHONY: test-cloud-init
+test-cloud-init:
+	docker build -t $(CLOUDINIT_TEST_IMAGE) pkg/provisioners/managers/server/testdata/cloudinit
+	CLOUDINIT_TEST_IMAGE=$(CLOUDINIT_TEST_IMAGE) go test -count=1 -tags cloudinit -parallel 6 ./pkg/provisioners/managers/server/
+
 # Build a binary and install it.
 $(PREFIX)/%: $(BINDIR)/%
 	install -m 750 $< $@
@@ -207,7 +215,7 @@ touch:
 .PHOMY: lint
 lint: $(GENDIR)
 	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(LINT_VERSION)
-	$(GOBIN)/golangci-lint run --timeout=10m ./...
+	$(GOBIN)/golangci-lint run --timeout=10m --build-tags cloudinit ./...
 	helm lint --strict charts/region
 
 # Validate the server OpenAPI schema is legit.
