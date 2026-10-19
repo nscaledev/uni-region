@@ -343,7 +343,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   server yields with project ID and count, regardless of name, status, or the
   existence of a Region Server CR. Inventory errors preserve credentials.
   The existing no-op for an identity whose user was never realized remains.
-  These guards require the [deployment qualification](./TEARDOWN.md) below;
+  These guards require the [deployment prerequisites](#teardown-qualification-and-recovery) below;
   ordinary list absence is only authoritative on a qualified deployment.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
@@ -757,8 +757,9 @@ and compute services. Verify the actual microversion-2.90 name-filtered lookup
 and `limit=250` paginated inventory under a relevant cell failure: omission or
 successful empty/truncated results fail qualification. Also verify Nova remains
 discoverable until its network teardown completes. Configuration inspection
-alone cannot establish these guarantees. Record the delayed-cleanup reproduction
-and replacement-placement result in the [qualification checklist](./TEARDOWN.md).
+alone cannot establish these guarantees. The deployment must also preserve
+credentials through delayed network cleanup, controller restart and transient
+provider failures, then permit successful cleanup and replacement provisioning.
 
 A surviving Nova instance deliberately blocks identity/VPC deletion. Diagnose
 using the project ID/count in the pending result, the Nova server ID in server

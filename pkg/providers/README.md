@@ -105,7 +105,7 @@ packages are the concrete provider implementations.
   ownership. Identity deletion independently inventories all project servers
   before removing credentials, including servers whose Region CR is lost.
   This completion contract requires the documented
-  [OpenStack qualification](./internal/openstack/TEARDOWN.md); it does not
+  [OpenStack deployment prerequisites](./internal/openstack/README.md#teardown-qualification-and-recovery); it does not
   fence concurrent or late creates or prove remote quiescence.
 - `DetachVolume` verifies claimed attachment teardown against both compute and
   block-storage state before the caller releases its claim. Per-Volume
