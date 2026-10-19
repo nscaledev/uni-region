@@ -1548,6 +1548,12 @@ func (p *Provider) DeleteIdentity(ctx context.Context, identity *unikornv1.Ident
 	// Read the whole project before any destructive identity operation.
 	remaining, err := compute.ListServers(ctx)
 	if err != nil {
+		var responseErr gophercloud.ErrUnexpectedResponseCode
+		if errors.As(err, &responseErr) && responseErr.Actual >= http.StatusInternalServerError && responseErr.Actual < 600 {
+			return fmt.Errorf("%w: %w", provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning,
+				"waiting for the provider server inventory to become available"), err)
+		}
+
 		return err
 	}
 
@@ -3416,10 +3422,10 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 
 		releaseServerDelete(server)
 
-		if openstackServer.TaskState != "deleting" {
-			if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				return err
-			}
+		// Nova can retain deleting after failed synchronous cleanup; let it
+		// distinguish a retry from an already-running asynchronous deletion.
+		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
 		}
 
 		log.Info("waiting for provider server deletion", "novaServerID", openstackServer.ID)

@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 
@@ -93,7 +94,6 @@ func TestDeleteIdentityInventoryFailureRetainsCredentials(t *testing.T) {
 	for name, response := range map[string]teardownRequest{
 		"unauthorized":                 {http.MethodGet, "/servers/detail?limit=250", 401, `{}`},
 		"forbidden":                    {http.MethodGet, "/servers/detail?limit=250", 403, `{}`},
-		"timeout":                      {http.MethodGet, "/servers/detail?limit=250", 504, `{}`},
 		"malformed":                    identityInventory(`{"servers":`),
 		"wrong type":                   identityInventory(`{"servers":"invalid"}`),
 		"missing collection":           identityInventory(`{}`),
@@ -116,6 +116,29 @@ func TestDeleteIdentityInventoryFailureRetainsCredentials(t *testing.T) {
 			err := teardownProvider(cli, endpoint).DeleteIdentity(t.Context(), contractIdentity())
 			require.Error(t, err)
 			require.NotErrorIs(t, err, provisioners.ErrYield)
+			requireIdentityRetained(t, cli)
+		})
+	}
+}
+
+func TestDeleteIdentityInventoryOutageYields(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{500, 502, 503, 504} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			t.Parallel()
+
+			endpoint := newTeardownOpenstack(t,
+				teardownRequest{http.MethodGet, "/servers/detail?limit=250", status, `{}`},
+			)
+			cli := contractRetryClient(t, identityForTeardown())
+			err := teardownProvider(cli, endpoint).DeleteIdentity(t.Context(), contractIdentity())
+			require.ErrorIs(t, err, provisioners.ErrYield)
+
+			var pending *provisioners.Error
+
+			require.ErrorAs(t, err, &pending)
+			require.Equal(t, unikornv1core.ConditionReasonDeprovisioning, pending.Reason())
 			requireIdentityRetained(t, cli)
 		})
 	}
@@ -165,12 +188,10 @@ func TestDeleteIdentityPaginatedInventory(t *testing.T) {
 			cli := contractRetryClient(t, identityForTeardown())
 
 			err := teardownProvider(cli, endpoint).DeleteIdentity(t.Context(), contractIdentity())
+			require.ErrorIs(t, err, provisioners.ErrYield)
+
 			if status == 200 {
-				require.ErrorIs(t, err, provisioners.ErrYield)
 				require.Contains(t, err.Error(), "2")
-			} else {
-				require.Error(t, err)
-				require.NotErrorIs(t, err, provisioners.ErrYield)
 			}
 
 			require.Equal(t, 2, pages)
@@ -187,6 +208,7 @@ func TestDeleteIdentityAfterInventoryEmpty(t *testing.T) {
 			t.Parallel()
 
 			steps := []teardownRequest{
+				{http.MethodGet, "/servers/detail?limit=250", 503, `{}`},
 				identityInventory(`{"servers":[{"id":"nova-1","name":"orphan","status":"ERROR"}]}`),
 				identityInventory(`{"servers":[]}`),
 				{http.MethodDelete, "/os-keypairs/unikorn-openstack-provider", 409, ""},
@@ -205,6 +227,8 @@ func TestDeleteIdentityAfterInventoryEmpty(t *testing.T) {
 					"password": []byte("manager-password"), "project-id": []byte("manager-project"),
 				},
 			}))
+			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteIdentity(t.Context(), contractIdentity()), provisioners.ErrYield)
+			requireIdentityRetained(t, cli)
 			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteIdentity(t.Context(), contractIdentity()), provisioners.ErrYield)
 			requireIdentityRetained(t, cli)
 			require.Error(t, teardownProvider(cli, endpoint).DeleteIdentity(t.Context(), contractIdentity()))

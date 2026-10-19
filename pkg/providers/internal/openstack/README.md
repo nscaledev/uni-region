@@ -317,8 +317,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   Nova claims the Ironic node only once the task state is `spawning`; a build
   still queued in nova-compute (`scheduling`, `networking`,
   `block_device_mapping`) aborts cleanly on delete without reaching Ironic, so
-  its delete is requested at once. Every other status permits a delete request;
-  an existing `task_state=deleting` waits without resending DELETE.
+  its delete is requested at once. Every other status permits a delete request,
+  including `task_state=deleting`: Nova can retain that state after synchronous
+  cleanup fails on a down compute host. Nova suppresses duplicate asynchronous
+  deletions while allowing synchronous cleanup retries.
   The hold is read from one `GetServer`, so a delete can land in
   the instant after Nova saves `spawning`; that window is one API round trip.
   A held pass sets the Server's `DeletionHeld` condition True with the Nova
@@ -341,7 +343,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   every page of the unfiltered project inventory before deleting keypairs,
   server groups, Keystone users/projects, or `OpenstackIdentity`. Any remaining
   server yields with project ID and count, regardless of name, status, or the
-  existence of a Region Server CR. Inventory errors preserve credentials.
+  existence of a Region Server CR. Inventory errors preserve credentials;
+  HTTP 5xx yields in `Deprovisioning` for a fixed-interval retry. Malformed
+  inventories and permission failures remain errors.
   The existing no-op for an identity whose user was never realized remains.
   These guards require the [deployment prerequisites](#teardown-qualification-and-recovery) below;
   ordinary list absence is only authoritative on a qualified deployment.

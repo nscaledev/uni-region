@@ -148,8 +148,8 @@ func TestDeleteServerWaitsForNova(t *testing.T) {
 
 	endpoint := newTeardownOpenstack(t,
 		novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
-		novaServer("ACTIVE", "deleting"),
-		novaServer("ERROR", "deleting"),
+		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
+		novaServer("ERROR", "deleting"), novaDelete(http.StatusNoContent),
 		novaLookup(`{"servers":[]}`), portLookup(false),
 	)
 	cli := contractRetryClient(t, contractIdentity(), contractOpenstackIdentity())
@@ -166,6 +166,27 @@ func TestDeleteServerWaitsForNova(t *testing.T) {
 	require.Error(t, err, "never-held servers must not acquire the build hold condition")
 }
 
+func TestDeleteServerRetriesFailedDelete(t *testing.T) {
+	t.Parallel()
+
+	// Nova can retain deleting after synchronous cleanup fails on a down host.
+	endpoint := newTeardownOpenstack(t,
+		novaServer("ACTIVE", ""), novaDelete(http.StatusInternalServerError),
+		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
+		novaLookup(`{"servers":[]}`), portLookup(false),
+	)
+	cli := contractRetryClient(t, contractOpenstackIdentity())
+	server := teardownServer()
+
+	err := teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
+
+	err = teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server)
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
+}
+
 func TestDeleteServerPresentAndFailedReadsRetainNetworking(t *testing.T) {
 	t.Parallel()
 
@@ -178,7 +199,7 @@ func TestDeleteServerPresentAndFailedReadsRetainNetworking(t *testing.T) {
 		{"rebuild hold", []teardownRequest{novaServer("REBUILD", "rebuild_spawning")}, provisioners.ErrYield},
 		{"queued build", []teardownRequest{novaServer("BUILD", "scheduling"), novaDelete(204)}, provisioners.ErrYield},
 		{"queued rebuild", []teardownRequest{novaServer("REBUILD", "rebuilding"), novaDelete(204)}, provisioners.ErrYield},
-		{"deleting", []teardownRequest{novaServer("ACTIVE", "deleting")}, provisioners.ErrYield},
+		{"deleting", []teardownRequest{novaServer("ACTIVE", "deleting"), novaDelete(204)}, provisioners.ErrYield},
 		{"error", []teardownRequest{novaServer("ERROR", ""), novaDelete(204)}, provisioners.ErrYield},
 		{"delete race", []teardownRequest{novaServer("ACTIVE", ""), novaDelete(404)}, provisioners.ErrYield},
 		{"unknown", []teardownRequest{novaLookup(`{"servers":[{"id":"unknown-1","status":"UNKNOWN"}]}`)}, coreerrors.ErrConsistency},
@@ -230,13 +251,13 @@ func TestDeleteServerReleasesBuildHold(t *testing.T) {
 		t.Run(fmt.Sprintf("absent=%t", absent), func(t *testing.T) {
 			t.Parallel()
 
-			steps := []teardownRequest{novaServer("BUILD", "spawning"), novaServer("ACTIVE", "deleting")}
+			steps := []teardownRequest{novaServer("BUILD", "spawning"), novaServer("ACTIVE", "deleting"), novaDelete(204)}
 
 			if absent {
 				portError := portLookup(false)
 				portError.status = http.StatusInternalServerError
 				steps[1] = novaLookup(`{"servers":[]}`)
-				steps = append(steps, portError)
+				steps[2] = portError
 			}
 
 			endpoint := newTeardownOpenstack(t, steps...)

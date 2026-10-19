@@ -414,7 +414,7 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 
 	endpoint := newTeardownOpenstack(t,
 		novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
-		novaServer("ACTIVE", "deleting"),
+		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
 		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
 		teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusConflict, ""},
 		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
