@@ -184,6 +184,12 @@ var _ = Describe("Region Provider Verification", func() {
 					Consumer:       "uni-kubernetes",
 					MatchingBranch: true,
 				},
+				// Envir's main stays pending: Envir's can-i-deploy runs after its CI (workflow_run) and
+				// doesn't gate Envir merges, so a strict main would let an Envir merge turn this CI red.
+				&provider.ConsumerVersionSelector{
+					Consumer:   "nscale-environments",
+					MainBranch: true,
+				},
 				&provider.ConsumerVersionSelector{
 					Consumer:       "nscale-environments",
 					MatchingBranch: true,
@@ -207,18 +213,14 @@ var _ = Describe("Region Provider Verification", func() {
 			Expect(verifyBroker(selectors, true)).To(Succeed(), "Provider verification should succeed")
 		})
 
-		// Pending pacts never fail the build, so a new consumer's broken interactions would stay green. Envir's
-		// main and released pacts are therefore verified without pending. That is safe because an Envir pact
-		// only reaches Envir main after Envir's can-i-deploy finds it verified against uni-region main, so a
-		// failure here means this uni-region change breaks Envir. An Envir branch changing its pact is still
-		// verified through the pending run above. With no Envir pact on main yet there is nothing to verify.
-		It("should verify Envir's main and released contracts without pending", func() {
+		// Pending pacts never fail the build, so a broken interaction would stay green. Envir's released pacts
+		// are what customers run, so they are verified without pending: a failure here means this uni-region
+		// change breaks a supported Envir release. Envir's main and branches stay in the pending run above.
+		// FailIfNoPactsFound stays off: until AIPLAT-903 records releases there is nothing to select.
+		It("should verify Envir's released contracts without pending", func() {
 			Expect(verifyBroker([]provider.Selector{
-				&provider.ConsumerVersionSelector{
-					Consumer:   "nscale-environments",
-					MainBranch: true,
-				},
-				// The Envir releases still supported in the broker: N, N-1 and N-2.
+				// Envir releases recorded in the broker and still supported (N, N-1, N-2 once AIPLAT-903
+				// records them).
 				&provider.ConsumerVersionSelector{
 					Consumer:           "nscale-environments",
 					DeployedOrReleased: true,

@@ -386,10 +386,12 @@ PROVIDER_VERSION ?= $(REVISION)
 PACT_GOFLAGS="-tags=integration"
 
 # Provider state handlers delete every Network, Identity and Region in the test namespace, so local runs
-# target only the KIND_CLUSTER kind cluster, through a kubeconfig of its own, never the ambient context.
+# target only a kind cluster of their own (named as in CI, without the region controllers that
+# integration-install deploys to KIND_CLUSTER), through its own kubeconfig, never the ambient context.
 # `kind get kubeconfig` fails when that cluster doesn't exist, so a missing cluster stops the run.
-CONTRACTS_KUBECONFIG = $(CURDIR)/.kind-$(KIND_CLUSTER).kubeconfig
-CONTRACTS_KIND_KUBECONFIG = kind get kubeconfig --name $(KIND_CLUSTER) > "$(CONTRACTS_KUBECONFIG)"
+CONTRACTS_KIND_CLUSTER ?= contract-testing
+CONTRACTS_KUBECONFIG = $(CURDIR)/.kind-$(CONTRACTS_KIND_CLUSTER).kubeconfig
+CONTRACTS_KIND_KUBECONFIG = kind get kubeconfig --name $(CONTRACTS_KIND_CLUSTER) > "$(CONTRACTS_KUBECONFIG)"
 
 # Run provider contract verification tests
 .PHONY: test-contracts-provider
@@ -449,7 +451,7 @@ test-contracts-provider-local:
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	GIT_BRANCH="$(GIT_BRANCH)" \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1 -p 1
+	go test ./test/contracts/provider/... -v -count=1 -p 1 -args -ginkgo.focus="local files"
 
 # Run provider verification and publish results to Pact Broker (works on both macOS and Linux)
 # Sets CI=true which triggers auto-publishing to Pact Broker
