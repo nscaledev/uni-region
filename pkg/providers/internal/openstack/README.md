@@ -329,14 +329,20 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   of later cleanup success; never-held servers have no `DeletionHeld` condition.
 - Accepted Nova DELETE, including a concurrent-delete 404, yields until a fresh
   lookup confirms absence. Only then are the floating IP and port deleted, in
-  that order. Neutron DELETE 404 is idempotent success; other provider errors
-  retain cleanup ownership. This assumes the microversion-2.90 name-filtered
+  that order. After the port is absent, another Nova lookup must confirm absence
+  before deletion succeeds. A create discovered during network cleanup yields;
+  later reconciles delete matching instances through the same path, including
+  separate instances from retried creates. Failed lookups retain ownership.
+  Neutron DELETE 404 is idempotent success; other provider errors retain cleanup
+  ownership. This assumes the microversion-2.90 name-filtered
   lookup is complete and Nova keeps instances discoverable until network
   teardown finishes. It requires `[api] list_records_by_skipping_down_cells = False`
   on every Nova API replica and `reclaim_instance_interval = 0` on API and
   compute services. Credential retention depends on the existing Server
-  ownership and reference chain; it does not recover orphaned instances or
-  fence late creates/rebuilds.
+  ownership and reference chain. The final lookup catches creates that became
+  visible during network cleanup; it does not recover instances after the
+  Region Server is gone or establish a general fence for later Region creates
+  or rebuilds.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.

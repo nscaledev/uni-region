@@ -3448,7 +3448,17 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		}
 	}
 
-	return nil
+	// A create can become visible while networking is removed. Keep ownership
+	// until a lookup after port removal confirms no matching server remains.
+	if _, err := compute.GetServer(ctx, server); err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a provider server discovered during network cleanup")
 }
 
 const (
