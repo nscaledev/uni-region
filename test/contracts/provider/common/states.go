@@ -376,10 +376,11 @@ func (sm *StateManager) HandleNetworkIsProvisionedState(ctx context.Context, set
 	return sm.cleanupAllResources(ctx)
 }
 
-// HandleNetworkExistsInProjectState seeds one v2 network in the project and region.
+// HandleNetworkExistsInProjectState seeds one v2 network in the project and region. Setup cleans first,
+// so a skipped teardown or a different interaction order can't make the create fail with AlreadyExists.
 func (sm *StateManager) HandleNetworkExistsInProjectState(ctx context.Context, setup bool, params map[string]interface{}) error {
-	if !setup {
-		return sm.cleanupAllResources(ctx)
+	if err := sm.cleanupAllResources(ctx); err != nil || !setup {
+		return err
 	}
 
 	actualParams := unwrapPactParams(params)

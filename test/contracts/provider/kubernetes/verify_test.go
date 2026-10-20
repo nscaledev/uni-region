@@ -156,14 +156,24 @@ var _ = Describe("Region Provider Verification", func() {
 	})
 
 	Describe("Verifying pacts from Pact Broker", func() {
+		verifyBroker := func(selectors []provider.Selector, enablePending bool) error {
+			return provider.NewVerifier().VerifyProvider(testingT, provider.VerifyRequest{
+				ProviderBaseURL: serverURL,
+				Provider:        "uni-region",
+				BrokerURL:       pactBrokerURL,
+				BrokerUsername:  brokerUsername,
+				BrokerPassword:  brokerPassword,
+				// Publish verification results back to broker
+				PublishVerificationResults: os.Getenv("CI") == "true" || os.Getenv("PUBLISH_VERIFICATION") == "true",
+				ProviderVersion:            getProviderVersion(),
+				ProviderBranch:             getProviderBranch(),
+				ConsumerVersionSelectors:   selectors,
+				EnablePending:              enablePending,
+				StateHandlers:              createStateHandlers(ctx, stateManager),
+			})
+		}
+
 		It("should verify all consumer contracts", func() {
-			// Configure the verifier to fetch pacts from the broker
-			verifier := provider.NewVerifier()
-
-			// Create state handlers map
-			// we create the state handlers map here so we can use it in the verifier tests.
-			stateHandlers := createStateHandlers(ctx, stateManager)
-
 			// Build base selectors for normal CI verification
 			selectors := []provider.Selector{
 				&provider.ConsumerVersionSelector{
@@ -175,17 +185,8 @@ var _ = Describe("Region Provider Verification", func() {
 					MatchingBranch: true,
 				},
 				&provider.ConsumerVersionSelector{
-					Consumer:   "nscale-environments",
-					MainBranch: true,
-				},
-				&provider.ConsumerVersionSelector{
 					Consumer:       "nscale-environments",
 					MatchingBranch: true,
-				},
-				// The Envir releases still supported in the broker: N, N-1 and N-2.
-				&provider.ConsumerVersionSelector{
-					Consumer:           "nscale-environments",
-					DeployedOrReleased: true,
 				},
 			}
 
@@ -203,23 +204,26 @@ var _ = Describe("Region Provider Verification", func() {
 				fmt.Printf("Normal mode: Using MainBranch and MatchingBranch selectors only\n")
 			}
 
-			// Run verification
-			err := verifier.VerifyProvider(testingT, provider.VerifyRequest{
-				ProviderBaseURL: serverURL,
-				Provider:        "uni-region",
-				BrokerURL:       pactBrokerURL,
-				BrokerUsername:  brokerUsername,
-				BrokerPassword:  brokerPassword,
-				// Publish verification results back to broker
-				PublishVerificationResults: os.Getenv("CI") == "true" || os.Getenv("PUBLISH_VERIFICATION") == "true",
-				ProviderVersion:            getProviderVersion(),
-				ProviderBranch:             getProviderBranch(),
-				ConsumerVersionSelectors:   selectors,
-				EnablePending:              true,
-				StateHandlers:              stateHandlers,
-			})
+			Expect(verifyBroker(selectors, true)).To(Succeed(), "Provider verification should succeed")
+		})
 
-			Expect(err).NotTo(HaveOccurred(), "Provider verification should succeed")
+		// Pending pacts never fail the build, so a new consumer's broken interactions would stay green. Envir's
+		// main and released pacts are therefore verified without pending. That is safe because an Envir pact
+		// only reaches Envir main after Envir's can-i-deploy finds it verified against uni-region main, so a
+		// failure here means this uni-region change breaks Envir. An Envir branch changing its pact is still
+		// verified through the pending run above. With no Envir pact on main yet there is nothing to verify.
+		It("should verify Envir's main and released contracts without pending", func() {
+			Expect(verifyBroker([]provider.Selector{
+				&provider.ConsumerVersionSelector{
+					Consumer:   "nscale-environments",
+					MainBranch: true,
+				},
+				// The Envir releases still supported in the broker: N, N-1 and N-2.
+				&provider.ConsumerVersionSelector{
+					Consumer:           "nscale-environments",
+					DeployedOrReleased: true,
+				},
+			}, false)).To(Succeed(), "Envir's contracts must verify")
 		})
 	})
 

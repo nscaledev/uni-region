@@ -385,6 +385,12 @@ PACT_BROKER_PASSWORD ?= pact
 PROVIDER_VERSION ?= $(REVISION)
 PACT_GOFLAGS="-tags=integration"
 
+# Provider state handlers delete every Network, Identity and Region in the test namespace, so local runs
+# target only the KIND_CLUSTER kind cluster, through a kubeconfig of its own, never the ambient context.
+# `kind get kubeconfig` fails when that cluster doesn't exist, so a missing cluster stops the run.
+CONTRACTS_KUBECONFIG = $(CURDIR)/.kind-$(KIND_CLUSTER).kubeconfig
+CONTRACTS_KIND_KUBECONFIG = kind get kubeconfig --name $(KIND_CLUSTER) > "$(CONTRACTS_KUBECONFIG)"
+
 # Run provider contract verification tests
 .PHONY: test-contracts-provider
 test-contracts-provider:
@@ -392,9 +398,10 @@ test-contracts-provider:
 	@echo "Provider Version: $(PROVIDER_VERSION)"
 	@echo "Provider Branch: $(GIT_BRANCH)"
 	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
-	KUBECONFIG="$(HOME)/.kube/config" \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
@@ -411,9 +418,10 @@ test-contracts-provider-verbose:
 	@echo "Provider Version: $(PROVIDER_VERSION)"
 	@echo "Provider Branch: $(GIT_BRANCH)"
 	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
-	KUBECONFIG="$(HOME)/.kube/config" \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
@@ -433,9 +441,10 @@ test-contracts-provider-local:
 		echo "Usage: make test-contracts-provider-local PACT_FILE=/path/to/pact.json"; \
 		exit 1; \
 	fi
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
-	KUBECONFIG="$(HOME)/.kube/config" \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_FILE="$(PACT_FILE)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	GIT_BRANCH="$(GIT_BRANCH)" \
@@ -476,8 +485,10 @@ test-contracts-provider-webhook:
 	@echo "Provider Version: $(PROVIDER_VERSION)"
 	@echo "Provider Branch: $(GIT_BRANCH)"
 	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
