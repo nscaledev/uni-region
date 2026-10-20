@@ -30,7 +30,9 @@ paths:
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
-      x-hidden: true
+      summary: List regions
+      tags:
+      - Regions
       description: |-
         List all regions.
       security:
@@ -75,7 +77,9 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
-      x-hidden: true
+      summary: List flavors
+      tags:
+      - Flavors
       description: |-
         Lists all compute flavors.
       security:
