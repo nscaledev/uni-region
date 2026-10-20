@@ -675,3 +675,19 @@ func (r *Region) VLANSpec() *VLANSpec {
 
 	return nil
 }
+
+// SetDeletionHeldCondition marks the provider delete as held, or released once
+// it has been sent.
+func (c *Server) SetDeletionHeldCondition(held bool, reason DeletionHeldConditionReason, message string) {
+	status := corev1.ConditionFalse
+	if held {
+		status = corev1.ConditionTrue
+	}
+
+	unikornv1core.UpdateCondition(&c.Status.Conditions, ConditionDeletionHeld, status, string(reason), message)
+}
+
+// GetDeletionHeldCondition reads the DeletionHeld condition.
+func GetDeletionHeldCondition(r unikornv1core.StatusConditionReader) (*unikornv1core.TypedCondition[DeletionHeldConditionReason], error) {
+	return unikornv1core.GetTypedCondition[DeletionHeldConditionReason](r, ConditionDeletionHeld)
+}

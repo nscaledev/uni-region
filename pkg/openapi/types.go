@@ -1242,7 +1242,8 @@ type ServerV2CreateSpec struct {
 
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
-	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
+	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
+	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
 	// it clears the stored value. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
@@ -1295,7 +1296,8 @@ type ServerV2Spec struct {
 
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
-	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
+	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
+	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
 	// it clears the stored value. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
