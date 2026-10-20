@@ -182,7 +182,7 @@ var _ = Describe("Region Provider Verification", func() {
 					Consumer:       "nscale-environments",
 					MatchingBranch: true,
 				},
-				// The Envir releases still supported in the broker (the current and previous one).
+				// The Envir releases still supported in the broker: N, N-1 and N-2.
 				&provider.ConsumerVersionSelector{
 					Consumer:           "nscale-environments",
 					DeployedOrReleased: true,
