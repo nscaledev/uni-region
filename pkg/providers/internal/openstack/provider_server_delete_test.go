@@ -149,7 +149,7 @@ func TestDeleteServerRetriesFailedDelete(t *testing.T) {
 	endpoint := newTeardownOpenstack(t,
 		novaServer("ACTIVE", ""), novaDelete(http.StatusInternalServerError),
 		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
-		novaLookup(`{"servers":[]}`), portLookup(false),
+		novaLookup(`{"servers":[]}`), portLookup(false), novaLookup(`{"servers":[]}`),
 	)
 	cli := contractRetryClient(t, contractOpenstackIdentity())
 	server := teardownServer()
@@ -235,7 +235,8 @@ func TestDeleteServerNetworkCleanup(t *testing.T) {
 				novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(true),
 				teardownRequest{http.MethodDelete, "/v2.0/floatingips/fip-1", status, ""},
 				teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", status, ""},
-				novaLookup(`{"servers":[]}`), portLookup(false),
+				novaLookup(`{"servers":[]}`),
+				novaLookup(`{"servers":[]}`), portLookup(false), novaLookup(`{"servers":[]}`),
 			)
 			cli := contractRetryClient(t, contractOpenstackIdentity())
 
@@ -244,6 +245,83 @@ func TestDeleteServerNetworkCleanup(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDeleteServerRetainsLateCreate(t *testing.T) {
+	t.Parallel()
+
+	for name, networking := range map[string][]teardownRequest{
+		"port removed": {
+			portLookup(true), floatingIPLookup(false),
+			{http.MethodDelete, "/v2.0/ports/port-1", http.StatusNoContent, ""},
+		},
+		"port concurrently removed": {
+			portLookup(true), floatingIPLookup(false),
+			{http.MethodDelete, "/v2.0/ports/port-1", http.StatusNotFound, ""},
+		},
+		"port already absent": {portLookup(false)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			steps := append([]teardownRequest{novaLookup(`{"servers":[]}`)}, networking...)
+			steps = append(steps,
+				novaServer("ACTIVE", ""),
+				novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
+				novaLookup(`{"servers":[]}`), portLookup(false), novaLookup(`{"servers":[]}`),
+			)
+			endpoint := newTeardownOpenstack(t, steps...)
+			cli := contractRetryClient(t, contractOpenstackIdentity())
+			server := teardownServer()
+
+			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server), provisioners.ErrYield)
+			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server), provisioners.ErrYield)
+			require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
+		})
+	}
+}
+
+func TestDeleteServerRetainsOwnershipWhenFinalLookupFails(t *testing.T) {
+	t.Parallel()
+
+	lookupError := novaLookup(`{"error":{"message":"compute unavailable"}}`)
+	lookupError.status = http.StatusInternalServerError
+	endpoint := newTeardownOpenstack(t,
+		novaLookup(`{"servers":[]}`), portLookup(false), lookupError,
+	)
+	cli := contractRetryClient(t, contractOpenstackIdentity())
+
+	err := teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer())
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
+}
+
+func TestDeleteServerDrainsLateCreateRetries(t *testing.T) {
+	t.Parallel()
+
+	const retries = `{"servers":[
+		{"id":"nova-1","name":"server-1","status":"ERROR"},
+		{"id":"nova-2","name":"server-1","status":"ACTIVE"}
+	]}`
+
+	const remaining = `{"servers":[{"id":"nova-2","name":"server-1","status":"ACTIVE"}]}`
+
+	endpoint := newTeardownOpenstack(t,
+		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
+		teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusNoContent, ""},
+		novaLookup(retries),
+		novaLookup(retries), novaDelete(http.StatusNoContent),
+		novaLookup(remaining), teardownRequest{http.MethodDelete, "/servers/nova-2", http.StatusNoContent, ""},
+		novaLookup(`{"servers":[]}`), portLookup(false), novaLookup(`{"servers":[]}`),
+	)
+	cli := contractRetryClient(t, contractOpenstackIdentity())
+	server := teardownServer()
+
+	for range 3 {
+		require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server), provisioners.ErrYield)
+	}
+
+	require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
 }
 
 func TestServerDeleteHeldOnlyWhileSpawning(t *testing.T) {

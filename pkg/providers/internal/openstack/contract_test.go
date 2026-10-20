@@ -412,6 +412,9 @@ func TestUpdateServerStateNotFoundContractCreateRetry(t *testing.T) {
 func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 	t.Parallel()
 
+	lookupError := novaLookup(`{"error":{"message":"compute unavailable"}}`)
+	lookupError.status = http.StatusInternalServerError
+
 	endpoint := newTeardownOpenstack(t,
 		novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
 		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
@@ -420,6 +423,10 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 		teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusConflict, ""},
 		novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(false),
 		teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusNoContent, ""},
+		novaServer("ACTIVE", ""),
+		novaServer("ACTIVE", ""), novaDelete(http.StatusNoContent),
+		novaLookup(`{"servers":[]}`), portLookup(false), lookupError,
+		novaLookup(`{"servers":[]}`), portLookup(false), novaLookup(`{"servers":[]}`),
 	)
 	identity := contractIdentity()
 	identity.UID = "identity-uid"
@@ -441,7 +448,7 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 	}}
 
 	cli := contractRetryClient(t, identity, contractOpenstackIdentity(), network, group)
-	for pass := range 5 {
+	for pass := range 8 {
 		prov := serverprovisioner.New(nil, contractMockProviders(t, teardownProvider(cli, endpoint)))
 		server, ok := prov.Object().(*regionv1.Server)
 		require.True(t, ok)
@@ -454,9 +461,9 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 		err := prov.Deprovision(coreclient.NewContext(t.Context(), cli))
 
 		switch pass {
-		case 0, 1, 2:
+		case 0, 1, 2, 4, 5:
 			require.ErrorIs(t, err, provisioners.ErrYield)
-		case 3:
+		case 3, 6:
 			require.Error(t, err)
 			require.NotErrorIs(t, err, provisioners.ErrYield)
 		default:
@@ -470,7 +477,7 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(network), updated))
 		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(group), group))
 
-		if pass < 4 {
+		if pass < 7 {
 			require.Equal(t, network.Finalizers, updated.Finalizers, "pending or failed provider cleanup retains the network reference")
 		} else {
 			require.Equal(t, []string{coreconstants.Finalizer}, updated.Finalizers)
