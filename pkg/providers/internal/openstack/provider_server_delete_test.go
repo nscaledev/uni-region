@@ -17,6 +17,10 @@ limitations under the License.
 package openstack_test
 
 import (
+	"fmt"
+	"net/http"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
@@ -27,7 +31,220 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 
 	corev1 "k8s.io/api/core/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+type teardownRequest struct {
+	method string
+	path   string
+	status int
+	body   string
+}
+
+// newTeardownOpenstack scripts lifecycle requests; auth and discovery use the
+// shared contract fixture. An unexpected request fails the test before replying.
+func newTeardownOpenstack(t *testing.T, steps ...teardownRequest) string {
+	t.Helper()
+
+	var mu sync.Mutex
+
+	index := 0
+	ts := newContractFakeOpenstack(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/" || strings.HasSuffix(r.URL.Path, "/auth/tokens") {
+			return false
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		if index >= len(steps) {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+			http.Error(w, "unexpected request", http.StatusInternalServerError)
+
+			return true
+		}
+
+		step := steps[index]
+		index++
+
+		if r.Method != step.method || r.URL.RequestURI() != step.path {
+			t.Errorf("request %d: got %s %s, want %s %s", index, r.Method, r.URL.RequestURI(), step.method, step.path)
+		}
+
+		if strings.Contains(r.URL.Path, "/servers") {
+			if version := r.Header.Get("X-Openstack-Nova-Api-Version"); version != "2.90" {
+				t.Errorf("Nova microversion = %q, want 2.90", version)
+			}
+		}
+
+		if step.status != http.StatusNoContent {
+			w.Header().Set("Content-Type", "application/json")
+		}
+
+		w.WriteHeader(step.status)
+		fmt.Fprint(w, step.body)
+
+		return true
+	})
+
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		require.Equal(t, len(steps), index, "all scripted lifecycle requests must run")
+	})
+
+	return ts.URL
+}
+
+func novaLookup(body string) teardownRequest {
+	return teardownRequest{http.MethodGet, "/servers/detail?name=server-1", http.StatusOK, body}
+}
+
+func novaServer(status, task string) teardownRequest {
+	return novaLookup(fmt.Sprintf(`{"servers":[{"id":"nova-1","name":"server-1","status":%q,"OS-EXT-STS:task_state":%q}]}`, status, task))
+}
+
+func novaDelete(status int) teardownRequest {
+	return teardownRequest{http.MethodDelete, "/servers/nova-1", status, ""}
+}
+
+func portLookup(present bool) teardownRequest {
+	body := `{"ports":[]}`
+	if present {
+		body = `{"ports":[{"id":"port-1","name":"server-server-1"}]}`
+	}
+
+	return teardownRequest{http.MethodGet, "/v2.0/ports?name=server-server-1", http.StatusOK, body}
+}
+
+func floatingIPLookup(present bool) teardownRequest {
+	body := `{"floatingips":[]}`
+	if present {
+		body = `{"floatingips":[{"id":"fip-1","port_id":"port-1"}]}`
+	}
+
+	return teardownRequest{http.MethodGet, "/v2.0/floatingips?port_id=port-1", http.StatusOK, body}
+}
+
+func teardownProvider(cli client.Client, endpoint string) *openstack.Provider {
+	return openstack.NewTestProviderWithCredentials(cli, contractRegion(endpoint), openstack.TestProviderCredentials{
+		UserID: "manager-user", Password: "manager-password", ProjectID: "manager-project",
+	})
+}
+
+func teardownServer() *unikornv1.Server {
+	server := &unikornv1.Server{}
+	server.Name = contractServerID
+	server.Namespace = contractNamespace
+	server.Labels = contractServerLabels()
+
+	return server
+}
+
+func TestDeleteServerRetriesFailedDelete(t *testing.T) {
+	t.Parallel()
+
+	// Nova can retain deleting after synchronous cleanup fails on a down host.
+	endpoint := newTeardownOpenstack(t,
+		novaServer("ACTIVE", ""), novaDelete(http.StatusInternalServerError),
+		novaServer("ACTIVE", "deleting"), novaDelete(http.StatusNoContent),
+		novaLookup(`{"servers":[]}`), portLookup(false),
+	)
+	cli := contractRetryClient(t, contractOpenstackIdentity())
+	server := teardownServer()
+
+	err := teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
+
+	err = teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server)
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
+}
+
+func TestDeleteServerPresentRetainsNetworking(t *testing.T) {
+	t.Parallel()
+
+	for name, steps := range map[string][]teardownRequest{
+		"build hold":     {novaServer("BUILD", "spawning")},
+		"rebuild hold":   {novaServer("REBUILD", "rebuild_spawning")},
+		"queued build":   {novaServer("BUILD", "scheduling"), novaDelete(204)},
+		"queued rebuild": {novaServer("REBUILD", "rebuilding"), novaDelete(204)},
+		"deleting":       {novaServer("ACTIVE", "deleting"), novaDelete(204)},
+		"error":          {novaServer("ERROR", ""), novaDelete(204)},
+		"delete race":    {novaServer("ACTIVE", ""), novaDelete(404)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			endpoint := newTeardownOpenstack(t, steps...)
+			cli := contractRetryClient(t, contractOpenstackIdentity())
+			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()), provisioners.ErrYield)
+		})
+	}
+}
+
+func TestDeleteServerReleasesBuildHold(t *testing.T) {
+	t.Parallel()
+
+	for _, absent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("absent=%t", absent), func(t *testing.T) {
+			t.Parallel()
+
+			steps := []teardownRequest{novaServer("BUILD", "spawning"), novaServer("ACTIVE", "deleting"), novaDelete(204)}
+
+			if absent {
+				portError := portLookup(false)
+				portError.status = http.StatusInternalServerError
+				steps[1] = novaLookup(`{"servers":[]}`)
+				steps[2] = portError
+			}
+
+			endpoint := newTeardownOpenstack(t, steps...)
+			cli := contractRetryClient(t, contractOpenstackIdentity())
+			server := teardownServer()
+			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server), provisioners.ErrYield)
+			held, err := unikornv1.GetDeletionHeldCondition(server)
+			require.NoError(t, err)
+			require.Equal(t, corev1.ConditionTrue, held.Status)
+
+			err = teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server)
+			if absent {
+				require.Error(t, err)
+				require.NotErrorIs(t, err, provisioners.ErrYield)
+			} else {
+				require.ErrorIs(t, err, provisioners.ErrYield)
+			}
+
+			held, err = unikornv1.GetDeletionHeldCondition(server)
+			require.NoError(t, err)
+			require.Equal(t, corev1.ConditionFalse, held.Status)
+			require.Equal(t, unikornv1.DeletionHeldConditionReasonReleased, held.Reason)
+			require.NotContains(t, held.Message, "delete sent")
+		})
+	}
+}
+
+func TestDeleteServerNetworkCleanup(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusNoContent, http.StatusNotFound} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) {
+			t.Parallel()
+			endpoint := newTeardownOpenstack(t,
+				novaLookup(`{"servers":[]}`), portLookup(true), floatingIPLookup(true),
+				teardownRequest{http.MethodDelete, "/v2.0/floatingips/fip-1", status, ""},
+				teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", status, ""},
+				novaLookup(`{"servers":[]}`), portLookup(false),
+			)
+			cli := contractRetryClient(t, contractOpenstackIdentity())
+
+			for range 2 {
+				require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()))
+			}
+		})
+	}
+}
 
 func TestServerDeleteHeldOnlyWhileSpawning(t *testing.T) {
 	t.Parallel()

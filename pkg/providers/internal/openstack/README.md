@@ -317,14 +317,26 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   Nova claims the Ironic node only once the task state is `spawning`; a build
   still queued in nova-compute (`scheduling`, `networking`,
   `block_device_mapping`) aborts cleanly on delete without reaching Ironic, so
-  it is deleted at once. Every other status is deleted whatever its
-  `task_state`. The hold is read from one `GetServer`, so a delete can land in
+  its delete is requested at once. Other states, including `deleting`, retry
+  DELETE so failed synchronous cleanup on a down compute host can recover;
+  Nova suppresses duplicate asynchronous deletions.
+  The hold is read from one `GetServer`, so a delete can land in
   the instant after Nova saves `spawning`; that window is one API round trip.
   A held pass sets the Server's `DeletionHeld` condition True with the Nova
   state in its message, so its transition time is when the hold began, and logs
   at Info on every pass so a live controller is distinguishable from a wedged
-  one. The condition goes False, reason `Released`, once the delete is sent. A
-  server that was never held has no `DeletionHeld` condition.
+  one. False with reason `Released` means the build hold ended, irrespective
+  of later cleanup success; never-held servers have no `DeletionHeld` condition.
+- Accepted Nova DELETE, including a concurrent-delete 404, yields until a fresh
+  lookup confirms absence. Only then are the floating IP and port deleted, in
+  that order. Neutron DELETE 404 is idempotent success; other provider errors
+  retain cleanup ownership. This assumes the microversion-2.90 name-filtered
+  lookup is complete and Nova keeps instances discoverable until network
+  teardown finishes. It requires `[api] list_records_by_skipping_down_cells = False`
+  on every Nova API replica and `reclaim_instance_interval = 0` on API and
+  compute services. Credential retention depends on the existing Server
+  ownership and reference chain; it does not recover orphaned instances or
+  fence late creates/rebuilds.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
