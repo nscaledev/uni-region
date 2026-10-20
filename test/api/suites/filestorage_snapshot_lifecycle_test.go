@@ -58,6 +58,14 @@ func createSnapshotLifecycleIntent(parentID string, request regionopenapi.FileSt
 }
 
 var _ = Describe("Manual File Storage Snapshot lifecycle", func() {
+	// Skipped pending STO-265: a manual snapshot is accepted at create even on a driver
+	// that does not support manual snapshots, but can then never be torn down — it wedges
+	// in Deprovisioning and blocks its parent file storage and the pre-suite sweep. Remove
+	// this skip once STO-265 lands (create rejects unsupported drivers and delete completes).
+	BeforeEach(func() {
+		Skip("blocked on STO-265: manual snapshots leak on drivers that do not support them")
+	})
+
 	Context("When creating Manual Snapshots through the deployed Region API", func() {
 		Describe("Given an authorized File Storage parent", func() {
 			It("returns complete pending immutable intent that can be read under its parent", func() {

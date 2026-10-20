@@ -83,7 +83,7 @@ type ServerInterface interface {
 
 	// (POST /api/v1/organizations/{organizationID}/projects/{projectID}/identities/{identityID}/servers/{serverID}/stop)
 	PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, projectID ProjectIDParameter, identityID IdentityIDParameter, serverID ServerIDParameter)
-
+	// List regions
 	// (GET /api/v1/organizations/{organizationID}/regions)
 	GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter)
 
@@ -92,7 +92,7 @@ type ServerInterface interface {
 
 	// (GET /api/v1/organizations/{organizationID}/regions/{regionID}/externalnetworks)
 	GetApiV1OrganizationsOrganizationIDRegionsRegionIDExternalnetworks(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter)
-
+	// List flavors
 	// (GET /api/v1/organizations/{organizationID}/regions/{regionID}/flavors)
 	GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter)
 
@@ -390,6 +390,7 @@ func (_ Unimplemented) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIden
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List regions
 // (GET /api/v1/organizations/{organizationID}/regions)
 func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDRegions(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -405,6 +406,7 @@ func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDRegionsRegionIDExterna
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// List flavors
 // (GET /api/v1/organizations/{organizationID}/regions/{regionID}/flavors)
 func (_ Unimplemented) GetApiV1OrganizationsOrganizationIDRegionsRegionIDFlavors(w http.ResponseWriter, r *http.Request, organizationID OrganizationIDParameter, regionID RegionIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
