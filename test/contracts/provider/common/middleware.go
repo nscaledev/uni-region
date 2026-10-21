@@ -21,6 +21,7 @@ package common
 import (
 	"bytes"
 	"cmp"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,8 +31,27 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/unikorn-cloud/identity/pkg/principal"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
+
+// PrincipalFromHeader decodes the X-Principal header (unpadded base64url JSON),
+// returning an empty principal when it is absent or malformed.
+func PrincipalFromHeader(r *http.Request) principal.Principal {
+	var p principal.Principal
+
+	data, err := base64.RawURLEncoding.DecodeString(r.Header.Get("X-Principal"))
+	if err != nil {
+		return principal.Principal{}
+	}
+
+	// Unmarshal can fill some fields before it fails, so discard them on error.
+	if err := json.Unmarshal(data, &p); err != nil {
+		return principal.Principal{}
+	}
+
+	return p
+}
 
 // ExtractOrganizationID extracts the organization ID from the request path.
 // Expected pattern: /api/v1/organizations/{orgID}/...
