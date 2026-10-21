@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -29,7 +30,9 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -262,6 +265,27 @@ func (im *IdentityStateManager) cleanupIdentitiesAndNetworks(ctx context.Context
 			} else {
 				fmt.Printf("Deleted identity %s\n", identity.Name)
 			}
+		}
+	}
+
+	// The API deletes identities and networks in the foreground, so they linger
+	// until the garbage collector removes its finalizer. A later state creating
+	// the same name would fail, so wait until they are gone.
+	return im.waitForEmpty(ctx, &unikornv1.NetworkList{}, &unikornv1.OpenstackIdentityList{}, &unikornv1.IdentityList{})
+}
+
+// waitForEmpty waits until each list has no items in the namespace.
+func (im *IdentityStateManager) waitForEmpty(ctx context.Context, lists ...client.ObjectList) error {
+	for _, list := range lists {
+		err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+			if err := im.client.List(ctx, list, client.InNamespace(im.namespace)); err != nil {
+				return false, err
+			}
+
+			return meta.LenList(list) == 0, nil
+		})
+		if err != nil {
+			return fmt.Errorf("waiting for %T to empty: %w", list, err)
 		}
 	}
 
