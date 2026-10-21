@@ -235,6 +235,52 @@ func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
 	requireNoEvent(t, recorder)
 }
 
+func TestProvision_ProviderCreateRetryDeleteYields(t *testing.T) {
+	t.Parallel()
+
+	server := retryServer(withProviderCreateRetrying, withProviderCreateFailure, withRuntimeStatus, withSatisfiedProviderCreateGate)
+	cli := retryClient(t, retryIdentity(), server)
+	recorder := record.NewFakeRecorder(2)
+	provider := mocktypes.NewMockProvider(gomock.NewController(t))
+	provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), gomock.Any()).Return(provisioners.ErrYield).Times(3)
+
+	before := &regionv1.Server{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(server), before))
+
+	for range 3 {
+		// Persist and reconstruct both the object and provisioner between passes.
+		server = &regionv1.Server{}
+		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(before), server))
+		prov := retryProvisioner(t, server, nil, provider, recorder)
+		require.ErrorIs(t, prov.Provision(coreclient.NewContext(t.Context(), cli)), provisioners.ErrYield)
+		require.Equal(t, before.Status, server.Status, "pending deletion must preserve the attempt, runtime state and satisfied gates")
+		requireNoEvent(t, recorder)
+		require.NoError(t, cli.Update(t.Context(), server))
+	}
+
+	provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), server).Return(nil)
+	provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).Return(coreerrors.ErrResourceNotFound)
+	prov := retryProvisioner(t, server, nil, provider, recorder)
+	require.ErrorIs(t, prov.Provision(coreclient.NewContext(t.Context(), cli)), provisioners.ErrYield)
+	require.False(t, server.Status.ProviderCreateRetrying)
+	require.Equal(t, int32(1), server.Status.ProviderCreateFailures)
+	require.Nil(t, server.Status.PrivateIP)
+	require.Nil(t, server.Status.PublicIP)
+	require.Nil(t, server.Status.ScheduledAt)
+	require.Equal(t, regionv1.ActiveConditionReasonPending, activeReason(t, server))
+	gate, ok := server.ProviderCreateGateStatusRead("test/gate")
+	require.True(t, ok)
+	require.Equal(t, corev1.ConditionUnknown, gate.Status)
+	requireEvent(t, recorder, "ProviderCreateRetryReady")
+	requireNoEvent(t, recorder)
+
+	// The reset gate must block the next create, without another delete/reset.
+	prov = retryProvisioner(t, server, nil, provider, recorder)
+	require.ErrorIs(t, prov.Provision(coreclient.NewContext(t.Context(), cli)), provisioners.ErrYield)
+	require.Equal(t, int32(1), server.Status.ProviderCreateFailures)
+	requireNoEvent(t, recorder)
+}
+
 // TestProvision_ProviderCreateRetryKeepsDeletingWithGate proves a satisfied gate
 // carried over from the initial create does not block the delete mop-up: while
 // ProviderCreateRetrying is true the reconcile short-circuits into the delete and

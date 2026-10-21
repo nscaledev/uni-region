@@ -6,7 +6,8 @@ Distinctive behaviour:
 
 - maintains explicit reference edges from a server to consumed networks,
   security groups, and optional SSH certificate authority
-- blocks on identity readiness before provider create/delete
+- blocks on identity readiness before provider create; delegates delete
+  unconditionally so the provider can handle unrealized identities idempotently
 - blocks provider create while any configured `providerCreateGates` remain
   unsatisfied. The wait is a typed `provisioners.Yield` naming the outstanding
   gates on the `Available` condition: gates are satisfied by a separate service,
@@ -51,6 +52,12 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - provider-side server lifecycle is delegated
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
+
+Deprovisioning retains consumed-resource references and the Server's finalizer
+until provider deletion succeeds. During failed-create retry, deletion yields
+also preserve `ProviderCreateRetrying`, attempt count, runtime state and satisfied
+create gates across restart, without emitting readiness events. Cleanup success
+resumes the existing absence check/reset before gates can admit another attempt.
 
 ## Managed cloud-init augmentation
 

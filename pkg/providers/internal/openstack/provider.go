@@ -3401,10 +3401,20 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 
 		releaseServerDelete(server)
 
-		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil {
+		// Nova can retain deleting after failed synchronous cleanup; let it
+		// distinguish a retry from an already-running asynchronous deletion.
+		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
 		}
+
+		log.Info("waiting for provider server deletion", "novaServerID", openstackServer.ID)
+
+		// DELETE acceptance, including a concurrent delete's 404, does not prove
+		// Nova has finished using the tenant credentials for network teardown.
+		return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for the provider to finish deleting the server")
 	}
+
+	releaseServerDelete(server)
 
 	networking, err := p.networkFromServicePrincipal(ctx, identity)
 	if err != nil {
@@ -3426,19 +3436,29 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		if floatingip != nil {
 			log.V(1).Info("deleting floating ip")
 
-			if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
+			if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return err
 			}
 		}
 
 		log.V(1).Info("deleting port")
 
-		if err := networking.DeletePort(ctx, port.ID); err != nil {
+		if err := networking.DeletePort(ctx, port.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
 		}
 	}
 
-	return nil
+	// A create can become visible while networking is removed. Keep ownership
+	// until a lookup after port removal confirms no matching server remains.
+	if _, err := compute.GetServer(ctx, server); err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a provider server discovered during network cleanup")
 }
 
 const (
@@ -3461,14 +3481,14 @@ func holdServerDelete(ctx context.Context, server *unikornv1.Server, openstackSe
 		"waiting for the provider to finish building the server before deleting it")
 }
 
-// releaseServerDelete marks a previously held delete as sent. A server that was
-// never held gets no condition.
+// releaseServerDelete records that the build-state hold ended, independently of
+// teardown completion. A server that was never held gets no condition.
 func releaseServerDelete(server *unikornv1.Server) {
 	if _, err := unikornv1.GetDeletionHeldCondition(server); err != nil {
 		return
 	}
 
-	server.SetDeletionHeldCondition(false, unikornv1.DeletionHeldConditionReasonReleased, "provider delete sent")
+	server.SetDeletionHeldCondition(false, unikornv1.DeletionHeldConditionReasonReleased, "provider build state no longer holds deletion")
 }
 
 // serverDeleteHeld reports whether Nova is deploying the server's Ironic node.
