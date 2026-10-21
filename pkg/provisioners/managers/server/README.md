@@ -144,10 +144,11 @@ Known gaps:
 ## Cloud-init tests
 
 `make test-cloud-init` runs the tests tagged `cloudinit` against real
-cloud-init in an image built from `testdata/cloudinit` (Ubuntu 24.04, exact
-package versions; a build failure after the archive drops a version is the
-signal to bump them on purpose). They check what cloud-init does with our
-output, never its shape:
+cloud-init in an image built from `testdata/cloudinit` (Ubuntu 24.04 amd64, exact
+package versions installed from a dated archive snapshot, so the build does not
+break when the live archive moves on; bumping means moving the snapshot and the
+versions together). They check what cloud-init does with our output, never its
+shape:
 
 - Boot tests run cloud-init's four stages in a container, once with the
   customer's user-data alone and once with ours added. Each input has a

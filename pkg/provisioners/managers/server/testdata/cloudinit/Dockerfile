@@ -13,11 +13,26 @@
 # limitations under the License.
 
 # Real cloud-init for the cloud-init tests. Base image and packages are pinned
-# exactly: when the archive drops a version the build fails, and bumping it is
-# a deliberate change. See the server package README's "Cloud-init tests".
+# exactly. Packages come from a dated Ubuntu archive snapshot, so the pins stay
+# installable after the live archive moves on; bumping them means moving the
+# snapshot. The snapshot service has no arm64 archive, so the image is amd64
+# only. The base image has no CA bundle, so TLS peer checks are off for the
+# snapshot host; apt still verifies the signed Release files. See the server
+# package README's "Cloud-init tests".
 FROM ubuntu@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
-RUN apt-get update && \
+ARG SNAPSHOT=20261015T120000Z
+
+RUN printf '%s\n' \
+      'Types: deb' \
+      "URIs: http://snapshot.ubuntu.com/ubuntu/${SNAPSHOT}" \
+      'Suites: noble noble-updates noble-security' \
+      'Components: main' \
+      'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
+      > /etc/apt/sources.list.d/ubuntu.sources && \
+    echo 'Acquire::https::snapshot.ubuntu.com::Verify-Peer "false";' \
+      > /etc/apt/apt.conf.d/99snapshot && \
+    apt-get update && \
     apt-get install -y --no-install-recommends \
       cloud-init=26.1-0ubuntu1~24.04.1 \
       openssh-server=1:9.6p1-3ubuntu13.20 \
