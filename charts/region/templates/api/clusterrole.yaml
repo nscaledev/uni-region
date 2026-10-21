@@ -5,16 +5,8 @@ metadata:
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
 rules:
-# Orchestrate Unikorn resources (my job).
-- apiGroups:
-  - region.unikorn-cloud.org
-  resources:
-  - regions
-  - filestorageclasses
-  - filestorageprovisioners
-  verbs:
-  - list
-  - watch
+# The API server reads directly from the API server, so everything it reads
+# singly needs get; nothing needs watch. Written kinds keep their write verbs.
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
@@ -22,23 +14,22 @@ rules:
   - filestorageclasses
   verbs:
   - get
+  - list
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
   - identities
   - networks
-  - quotas
   - securitygroups
   - loadbalancers
-  - securitygrouprules
   - servers
   - filestorages
   - filestoragesnapshots
   - volumes
   - sshcertificateauthorities
   verbs:
+  - get
   - list
-  - watch
   - create
   - delete
   - patch
@@ -53,18 +44,11 @@ rules:
   - region.unikorn-cloud.org
   resources:
   - openstackidentities
-  - openstacknetworks
-  - openstacksecuritygroups
-  - openstacksecuritygrouprules
-  - openstackservers
   verbs:
-  - list
-  - watch
+  - get
 - apiGroups:
   - ""
   resources:
   - secrets
-  - configmaps
   verbs:
-  - list
-  - watch
+  - get

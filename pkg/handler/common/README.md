@@ -10,7 +10,7 @@ that most handlers need.
 
 Those capabilities are:
 
-- cached Kubernetes access
+- direct Kubernetes access, reads and writes alike
 - process namespace
 - provider lookup
 - outbound identity API access
@@ -31,7 +31,7 @@ handlers keep their allocation requirements, compensation, and error handling.
 
 It carries:
 
-- `client.Client` for cached Kubernetes access
+- `client.Client` for direct Kubernetes access, reads and writes alike
 - `Namespace` for process-local namespace scoping
 - `providers.Providers` for provider lookup
 - `identityapi.ClientWithResponsesInterface` for identity-side RBAC and tenancy

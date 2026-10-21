@@ -27,7 +27,7 @@ import (
 // The general idea is these things should be either scalars or interfaces
 // that can easily be mocked out in tests.
 type ClientArgs struct {
-	// Client gives cached access to Kubernetes.
+	// Client accesses Kubernetes directly.
 	Client client.Client
 
 	// Namespace is the namespace we are running in.
