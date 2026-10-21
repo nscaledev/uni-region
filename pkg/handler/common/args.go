@@ -17,8 +17,11 @@ limitations under the License.
 package common
 
 import (
+	"github.com/unikorn-cloud/core/pkg/server/errors"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/region/pkg/providers"
+
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -38,4 +41,21 @@ type ClientArgs struct {
 
 	// Identity is an identity client for RBAC access.
 	Identity identityapi.ClientWithResponsesInterface
+}
+
+// RetryConflictOnce runs attempt and, if it returns a Kubernetes conflict,
+// once more, so a write that raced the guard's read is retried against a
+// fresh copy rather than failing the request. A second conflict is returned
+// as a 409, leaving the concurrent-write decision to the caller.
+func (c ClientArgs) RetryConflictOnce(attempt func() error) error {
+	err := attempt()
+	if !kerrors.IsConflict(err) {
+		return err
+	}
+
+	if err = attempt(); kerrors.IsConflict(err) {
+		return errors.HTTPConflict().WithError(err)
+	}
+
+	return err
 }

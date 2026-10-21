@@ -36,6 +36,8 @@ It carries:
 - `providers.Providers` for provider lookup
 - `identityapi.ClientWithResponsesInterface` for identity-side RBAC and tenancy
   interactions
+- `RetryConflictOnce`, which retries a conflicted guarded write once against a
+  fresh read and returns `409` if that conflicts too
 
 The struct is intentionally made of interfaces and scalars so handlers remain
 easy to unit test and do not need to construct their own ambient clients
