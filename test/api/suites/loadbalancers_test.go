@@ -37,12 +37,9 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
-func deferLoadBalancerFixtureCleanup(networkID string, loadBalancerID *string) {
-	// Separate cleanup nodes ensure a failed load-balancer wait cannot skip the
-	// network delete. Register the network first so Ginkgo runs it last.
-	DeferCleanup(func() {
-		api.MustDeleteNetwork(regionClient, ctx, networkID)
-	})
+func deferLoadBalancerFixtureCleanup(loadBalancerID *string) {
+	// The network is the shared, long-lived fixture and must not be deleted here;
+	// only the load balancer this context created is cleaned up.
 	DeferCleanup(func() {
 		if *loadBalancerID == "" {
 			return
@@ -69,13 +66,8 @@ var _ = Describe("LoadBalancer", func() {
 		)
 
 		BeforeAll(func() {
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-			networkID = network.Metadata.Id
-			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
-			deferLoadBalancerFixtureCleanup(networkID, &lbID)
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
+			deferLoadBalancerFixtureCleanup(&lbID)
 
 			// Reads are served from the controller-runtime cache, so the
 			// load balancer create below can resolve the network reference
@@ -254,13 +246,8 @@ var _ = Describe("LoadBalancer", func() {
 		)
 
 		BeforeAll(func() {
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-			networkID = network.Metadata.Id
-			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
-			deferLoadBalancerFixtureCleanup(networkID, &lbID)
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
+			deferLoadBalancerFixtureCleanup(&lbID)
 
 			// Reads are served from the controller-runtime cache, so the
 			// load balancer create below can resolve the network reference
@@ -309,13 +296,8 @@ var _ = Describe("LoadBalancer", func() {
 		)
 
 		BeforeAll(func() {
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-			networkID = network.Metadata.Id
-			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
-			deferLoadBalancerFixtureCleanup(networkID, &lbID)
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
+			deferLoadBalancerFixtureCleanup(&lbID)
 
 			// Reads are served from the controller-runtime cache, so the
 			// load balancer create below can resolve the network reference

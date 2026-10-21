@@ -62,7 +62,21 @@ func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConf
 			func() { WaitForFileStorageGone(c, ctx, storage.Metadata.Id) })
 	}
 
+	sweepStaleLoadBalancers(c, ctx, config, config.RegionID)
 	sweepStaleNetworks(c, ctx, config, config.RegionID)
+}
+
+func sweepStaleLoadBalancers(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	loadBalancers, err := c.ListLoadBalancers(ctx, config.OrgID, config.ProjectID, regionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list load balancers")
+
+	for i := range loadBalancers {
+		loadBalancer := &loadBalancers[i]
+		sweepStaleTestResource("load balancer", loadBalancer.Metadata.Id, loadBalancer.Metadata.Name,
+			loadBalancer.Metadata.CreationTime, loadBalancer.Metadata.DeletionTime,
+			func() error { return c.DeleteLoadBalancer(ctx, loadBalancer.Metadata.Id) },
+			func() { WaitForLoadBalancerGone(c, ctx, loadBalancer.Metadata.Id) })
+	}
 }
 
 // SweepStaleFakeDataCenterResources removes stale Fake DC server, volume,
