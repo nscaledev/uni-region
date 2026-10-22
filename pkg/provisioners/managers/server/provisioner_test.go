@@ -17,8 +17,10 @@ limitations under the License.
 package server_test
 
 import (
+	"context"
 	"testing"
 
+	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -28,6 +30,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 	serverprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
 
@@ -39,6 +42,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -141,4 +145,70 @@ func TestProvisionProviderCreateGateSatisfied(t *testing.T) {
 
 	prov := serverprovisioner.NewForTest(server, providers, nil)
 	require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
+}
+
+// TestProvisionEmitsWhatThePassObserved pins that the pass diffs the status it
+// read against the status it wrote. The snapshot has to be a copy: aliasing the
+// server puts the provider's writes on both sides of the diff, and every
+// transition is silently swallowed.
+func TestProvisionEmitsWhatThePassObserved(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := testProvisionServer(withProviderCreateGate(corev1.ConditionTrue))
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *regionv1.Identity, s *regionv1.Server, _ *types.ServerCreateOptions) error {
+			s.SetActiveCondition(regionv1.ActiveConditionReasonRunning)
+
+			return nil
+		})
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	cli := testProvisionClient(t, server, testProvisionIdentity())
+
+	prov := serverprovisioner.NewForTest(server, providers, nil)
+
+	sink := newCaptureSink()
+	ctx := log.IntoContext(coreclient.NewContext(t.Context(), cli), logr.New(sink))
+
+	require.NoError(t, prov.Provision(ctx))
+	require.Len(t, sink.entriesWithMsg("lifecycle"), 1, "the transition the provider wrote must be emitted")
+}
+
+// TestProvisionEmitsOnAYieldingPass pins the defer. A pass that does not
+// complete is where the transition matters most -- the server is mid-flight,
+// which is precisely what the lifecycle stream is for -- so emitting only on
+// the success path reports nothing until the server settles.
+func TestProvisionEmitsOnAYieldingPass(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := testProvisionServer(withProviderCreateGate(corev1.ConditionTrue))
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *regionv1.Identity, s *regionv1.Server, _ *types.ServerCreateOptions) error {
+			s.SetActiveCondition(regionv1.ActiveConditionReasonBuilding)
+
+			return provisioners.ErrYield
+		})
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	cli := testProvisionClient(t, server, testProvisionIdentity())
+
+	prov := serverprovisioner.NewForTest(server, providers, nil)
+
+	sink := newCaptureSink()
+	ctx := log.IntoContext(coreclient.NewContext(t.Context(), cli), logr.New(sink))
+
+	require.ErrorIs(t, prov.Provision(ctx), provisioners.ErrYield)
+	require.Len(t, sink.entriesWithMsg("lifecycle"), 1, "a yielding pass must still report what it observed")
 }

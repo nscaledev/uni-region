@@ -117,7 +117,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - A desired server image change is reconciled with Nova rebuild only once the
   server has booted at least once, decided from Nova's `launched_at`
   (`OS-SRV-USG:launched_at`) read fresh on the same `GetServer` — never from the
-  monitor-stamped `status.launchedAt`/`status.provisionedAt` latches, which are
+  stamped `status.launchedAt`/`status.provisionedAt` latches, which are
   observations and must not authorize the gate (observation is stimulus, never
   authorization; keying off them silently dropped image changes whenever the
   monitor had not yet recorded the first `ACTIVE`, and the clean-completing
@@ -127,13 +127,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   reconcile yields, leaving the resource visibly `provisioning` and re-checking
   every 10s until first boot, after which a pass submits the rebuild once the
   server is quiescent. A
-  never-booted server Nova reports in `ERROR` is likewise deferred here — the
-  reconcile pass yields without writing a health stamp (the monitor owns observed
-  state), though the yield itself is named on the `Available` condition — and
-  absorbed by the bounded provider-create
-  delete-and-retry flow, which recreates it from the already-updated spec
-  image. That retry adoption keys off the `Healthy=Errored` stamp the
-  monitor's poll writes, so it takes effect at worst one poll later. This
+  never-booted server Nova reports in `ERROR` is likewise deferred here (the
+  yield is named on the `Available` condition) and absorbed by the bounded
+  provider-create delete-and-retry flow, which recreates it from the
+  already-updated spec image. That retry adoption keys off the errored lifecycle
+  stamp, which the pass now projects itself, so it takes effect on the next pass
+  rather than at worst one poll later. This
   assumes the cloud exposes
   `OS-SRV-USG:launched_at` — the same signal the health monitor mirrors and the
   create-retry guard keys off. Deliberately not a goal: recreating a
@@ -245,8 +244,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   already on the spec image — therefore reads exactly as ours when a pass runs.
   Measured behaviour: an in-flight foreign rebuild does not move the
   provisioning axis at all (a foreign operation generates no reconciler wake —
-  no spec change, no observed change — so R3 never runs; only the monitor's
-  phase and health axes read `Rebuilding`/`Unknown` for one poll cycle), a
+  no spec change, no observed change — so R3 never runs; only the lifecycle and
+  health conditions read `Rebuilding`/`Unknown`, written by whichever observer
+  sees it first), a
   *failed* foreign rebuild parks via the observed-errored wake within one
   monitor period, and a foreign recovery un-parks the same way. A foreign
   rebuild onto a *different* image — succeeded or failed — is auto-reverted:
@@ -301,9 +301,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   awaiting quiescence, and every other rejection class surfaces as the pass's
   error and retries on the yield interval.
 
-  The reconciler writes `Active`/`Healthy` when it acts and re-asserts the
-  accepted stamp while a rebuild it submitted is still in flight (R3); on every other
-  waiting row it writes nothing and the monitor owns observed state.
+  The reconciler projects `Active`/`Healthy` on every row from the read it
+  decided on (see Server Observation) and re-asserts the accepted stamp while a
+  rebuild it submitted is still in flight (R3).
 - Nova rebuild retains the server UUID, network ports and IP relationships,
   attached data volumes, flavor, metadata, and placement, but recreates the
   root disk. It stays on the same compute host; evacuation is a separate
@@ -535,15 +535,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `Active` and `Healthy` conditions would just duplicate one concept across two
   axes). Provisioning status itself is a separate axis (the `Available` condition),
   provisioner-owned and the monitor never writes it; `setServerActive`
-  does, however, latch the monitor-owned `status.provisionedAt` field from Nova
+  does, however, latch `status.provisionedAt` from Nova
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's bounded
   provider-create delete-and-retry guard relies on (so a server that has booted
   is never destroyed and recreated). The image-rebuild gate does not read this
-  latch: it authorizes from Nova `launched_at` read fresh each pass. Alongside it, `setServerMACAddress` records the other monitor-owned
-  field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
-  (the port MAC rides inline in `addresses`, reused from the read the caller
-  already took — no extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
+  latch: it authorizes from Nova `launched_at` read fresh each pass. Alongside it, `setServerMACAddress` records
+  `status.macAddress` from the Nova response once the server is `ACTIVE`
+  (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
+  extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
   real NIC MAC asynchronously; the value is only ever written, never cleared.
   `GetServer` resolves by name, which forces a list, and **the list response can omit
   `fault` entirely** on Nova up to 2025.2, so a listed errored server carries no
@@ -590,6 +590,48 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   port is reused without a `PUT`, while private-IP status projection still runs.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
+
+## Server Observation
+
+`projectServerState` projects one fresh provider read onto a `Server`'s status: health,
+MAC once Nova has bound one, and live lifecycle state via `setServerActive`. It
+takes the read rather than fetching one, so neither caller can observe at a
+different moment from the one it decided at.
+
+It is not the whole of `UpdateServerState`. That also writes `status.observed`
+and runs the bounded fault log on the error edge, both of which stay with the
+monitor for now, so until the monitor is deleted a pass can report
+`Active=Errored` while `status.observed.errored` is still false. `status.observed`
+exists only to wake the reconciler and nothing reads its contents, so the
+divergence is invisible; it disappears with the monitor.
+
+`reconcileServer` calls it on the already-exists branch, **before the image
+rows**, and the ordering is not free choice:
+
+- `setServerActive` is where `ScheduledAt`, `LaunchedAt` and the write-once
+  `ProvisionedAt` latch. `reconcileServerImage` returns early on most of its rows,
+  so observing afterwards would skip the latch on exactly the passes that park or
+  yield — including the bounded create-retry guard that reads `ProvisionedAt`, so
+  a skipped latch re-arms delete-and-retry on a server that has booted.
+- An accepted rebuild stamps `Active=Rebuilding` from within the image rows. The
+  read predates the submission, so projecting it afterwards reverts that stamp.
+
+Observing first does not weaken the rule that an observation never authorises an
+action: the image rows decide from the `GetServer` result directly, never from the
+status the projection wrote.
+
+The create branch deliberately does not observe. There is no Ironic node bound
+yet, and Nova has not bound a port MAC, so it stamps health and lifecycle from the
+create response alone.
+
+`status.macAddress` is written from the Nova response once the server reaches
+`ACTIVE`, which is the barrier at which the port MAC is guaranteed bound for VMs
+and baremetal alike. Earlier values — the one visible at port-create time — are
+the ephemeral Neutron MAC, which Ironic rebinds to the real NIC MAC during a
+baremetal deploy, so `reconcileServerPort` must not record it. It is only ever
+written, never cleared: gating on `ACTIVE` and skipping an empty read means a
+transient read miss cannot unset a value already held, while writing a valid MAC
+unconditionally self-heals drift.
 
 ## Credential Sessions
 
@@ -712,38 +754,20 @@ model counted requests and rows; it did not price what a loaded Nova charges for
 a regular expression scan over a project. Do not size anything off the 35s
 figure — neither read form ever fitted the one-minute poll period.
 
-The saving on the monitor's path was never a shared read but a single read, and
-`ObserveServers` is now that: one unfiltered, paginated list of the identity's
-project per cycle, indexed by name, replacing a read per server with a read per
-identity — two orders of magnitude fewer Nova calls against the same estate.
-Observation-only reads are allowed to do this; see the note on projected status in
-[the API package](../../../apis/unikorn/v1alpha1/README.md).
+The monitor's batched identity read went with the monitor. The reconcile pass
+observes from its own per-server filtered `GetServer`, so Nova pays one name
+scan per server per poll period — the same reads the monitor used to make, now
+spread across `MaxConcurrentReconciles` rather than walked one at a time.
 
-It pages explicitly rather than using `AllPages`, which holds every page as a
-generic map tree and re-marshals the whole thing through JSON to decode it, so
-that overhead scales with the project rather than the page.
+Concurrency is the regime where an unfiltered, single-flighted read does collapse
+(reads fall to N/C), so the decision above is reopened rather than settled. Two
+things are known up front:
 
-Paging bounds the overhead, not the peak: the decoded slice is the whole project
-by construction, and `ObserveServers` retains it for the length of its caller's
-projection. For a project of around 1500 realistic Nova rows that is about 14MiB
-live, or 43MiB of heap arena once the per-page decode churn is counted — against
-roughly 15MiB for a project of 80. That retention is the dominant term. No page size changes that. It is bounded instead by the caller reading one
-project at a time, and by a project being bounded by the region's physical
-footprint. Trimming the retained row to the fields the projection actually uses
-would bound it properly, at the cost of changing a signature the create path also
-depends on.
-
-Because an unfiltered list is walked by marker, a server created between two
-pages can be missed and read as absent for that cycle. Harmless here — the absent
-path stamps an observation and touches no condition, and it self-heals on the next
-poll — but it is a way to reach that path which a filtered read of one name could
-not. Nothing destructive keys off it: the create-retry gate goes through
-`UpdateServerState`'s own fresh read, never the batch.
-
-`UpdateServerState` keeps its own per-server filtered read, and must. An
-observation may only refuse an action, never authorise one, so the create path's
-"is there already a server with exactly this name" question takes a fresh read at
-decision time rather than consulting a batch someone else took.
+- it needs a per-credential mutation epoch in the read key. Without one a
+  reconcile can join a list opened before its own create, see not-found, and build
+  a second server — reachable by one reconciler retrying itself.
+- a create burst retires the sharing on every create, so it pays full price
+  whatever is done here.
 
 ## Octavia Load Balancers
 

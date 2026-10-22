@@ -23,15 +23,26 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/baremetal/v1/nodes"
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 
-	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
-	"github.com/unikorn-cloud/region/pkg/providers/types"
 )
 
-// projectServerState projects an already-read provider server onto the resource.
-// Every caller reaches the same derivation, whether it read one server or the
-// whole project.
+// serverFaultReadTimeout bounds the per-ID fault read taken on the error edge.
+const serverFaultReadTimeout = 10 * time.Second
+
+// serverAlreadyErrored reports whether the server's lifecycle condition already
+// says Errored, so the fault detail is logged once per edge and not per pass.
+func serverAlreadyErrored(server *unikornv1.Server) bool {
+	active, err := unikornv1.GetActiveCondition(server)
+	if err != nil {
+		return false
+	}
+
+	return active.Reason == unikornv1.ActiveConditionReasonError
+}
+
+// projectServerState projects one fresh provider read onto the server's status:
+// health, MAC, and live lifecycle state.  Takes the read so both callers project
+// the same observation; see the README's Server Observation section.
 func (p *Provider) projectServerState(
 	ctx context.Context,
 	identity *unikornv1.Identity,
@@ -40,14 +51,18 @@ func (p *Provider) projectServerState(
 	serverClient ServerObservationInterface,
 	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
 ) {
+	// Read before the projection overwrites it, so the error edge is decided
+	// from what this pass found rather than from a stored marker.
+	entersError := openstackServer.Status == novaStatusError && !serverAlreadyErrored(server)
+
 	setServerHealthStatus(server, openstackServer)
 	setServerMACAddress(ctx, server, openstackServer)
 
-	if enteredError := setServerObservedStatus(server, openstackServer); enteredError {
-		// The enrichment is best-effort and bounded so a hung Nova read cannot
-		// stall the whole poll cycle.
-		faultCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	if entersError {
+		// Bounded so a hung Nova read cannot stall the pass.
+		faultCtx, cancel := context.WithTimeout(ctx, serverFaultReadTimeout)
 		defer cancel()
+
 		logServerFault(faultCtx, serverClient, server, openstackServer)
 	}
 
@@ -61,67 +76,4 @@ func (p *Provider) projectServerState(
 	}
 
 	setServerActive(ctx, server, openstackServer, ironicNode)
-}
-
-// serverObserver holds one unfiltered read of an identity's project, indexed by
-// name. Observation only: nothing here may authorise an action against the
-// provider, which is why the create path keeps its own per-server GetServer.
-type serverObserver struct {
-	provider *Provider
-	identity *unikornv1.Identity
-	client   ServerObservationInterface
-	servers  map[string]*servers.Server
-}
-
-// Observe projects the held provider state onto server.
-func (o *serverObserver) Observe(ctx context.Context, server *unikornv1.Server) error {
-	openstackServer, ok := o.servers[server.Labels[coreconstants.NameLabel]]
-	if !ok {
-		// Identical to the absent path in updateServerStateWithClients: stamp the
-		// observation so a caller that persists it fires the observed wake, then
-		// surface the absence.
-		recordAbsentServerObservation(server)
-
-		return coreerrors.ErrResourceNotFound
-	}
-
-	o.provider.projectServerState(ctx, o.identity, server, openstackServer, o.client, o.provider.baremetalForPhase)
-
-	return nil
-}
-
-// newServerObserver indexes one project read by name.
-func (p *Provider) newServerObserver(identity *unikornv1.Identity, client ServerObservationInterface, list []servers.Server) *serverObserver {
-	// First exact match wins, as GetServer's post-filter does today. Names are
-	// unique within a project in practice; this only fixes which row is chosen
-	// if they are not.
-	index := make(map[string]*servers.Server, len(list))
-
-	for i := range list {
-		if _, ok := index[list[i].Name]; !ok {
-			index[list[i].Name] = &list[i]
-		}
-	}
-
-	return &serverObserver{
-		provider: p,
-		identity: identity,
-		client:   client,
-		servers:  index,
-	}
-}
-
-// ObserveServers takes one provider read of the identity's whole project.
-func (p *Provider) ObserveServers(ctx context.Context, identity *unikornv1.Identity) (types.ServerObserver, error) {
-	compute, err := p.computeFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return nil, err
-	}
-
-	list, err := compute.ListServers(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.newServerObserver(identity, compute, list), nil
 }

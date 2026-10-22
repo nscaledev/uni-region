@@ -17,7 +17,7 @@ The useful way to read it is not as a directory tree, but as one system:
 
 - handlers shape and validate the lifecycle graph
 - provisioners and managers realize provider-side effects
-- monitors project observed provider truth back into status and metrics
+- reconcile passes project observed provider truth back into status and telemetry
 - providers bind the region model to real or simulated clouds
 - `Volume` is a Region block storage model: a network-anchored,
   quota-carrying block storage resource. Its deployable controller now drives
@@ -119,7 +119,6 @@ relationships.
 ### Monitor Layer
 
 - [monitor](./monitor/README.md)
-- [monitor/health/server](./monitor/health/server/README.md)
 - [monitor/health/volume](./monitor/health/volume/README.md)
 
 These packages cover the part of the system that is intentionally observational
