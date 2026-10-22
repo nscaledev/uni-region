@@ -1205,6 +1205,12 @@ const (
 	// completes. Distinct from Building (a first provision) so a rebuild is
 	// legible on the Active axis.
 	ActiveConditionReasonRebuilding ActiveConditionReason = "Rebuilding"
+	// ActiveConditionReasonRebooting means a reboot of a provisioned server has
+	// been accepted and is in flight (Nova HARD_REBOOT or REBOOT; for baremetal
+	// Ironic power-cycles the node). It is the observable proof that a reboot the
+	// user requested actually ran, and it clears to Running once the provider
+	// reports the reboot complete.
+	ActiveConditionReasonRebooting ActiveConditionReason = "Rebooting"
 	// ActiveConditionReasonRunning means the server is running and usable; this is
 	// the only reason for which the Active condition Status is True.
 	ActiveConditionReasonRunning ActiveConditionReason = "Running"
