@@ -190,6 +190,8 @@ func convertUserData(in []byte) *[]byte {
 // returns nil when the condition is absent (the server has not yet been observed)
 // or carries an unrecognised reason, so the API omits the field rather than
 // emitting a bogus value.
+//
+//nolint:cyclop // One case per ActiveConditionReason; the fan-out is the enum mapping itself.
 func serverPowerState(in *unikornv1.Server) *openapi.InstanceLifecyclePhase {
 	active, err := unikornv1.GetActiveCondition(in)
 	if err != nil {
@@ -205,6 +207,8 @@ func serverPowerState(in *unikornv1.Server) *openapi.InstanceLifecyclePhase {
 		return ptr.To(openapi.InstanceLifecyclePhaseBuilding)
 	case unikornv1.ActiveConditionReasonRebuilding:
 		return ptr.To(openapi.InstanceLifecyclePhaseRebuilding)
+	case unikornv1.ActiveConditionReasonRebooting:
+		return ptr.To(openapi.InstanceLifecyclePhaseRebooting)
 	case unikornv1.ActiveConditionReasonRunning:
 		return ptr.To(openapi.InstanceLifecyclePhaseRunning)
 	case unikornv1.ActiveConditionReasonStopping:

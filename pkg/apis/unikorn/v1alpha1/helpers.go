@@ -270,6 +270,8 @@ func (r ActiveConditionReason) Message() string {
 		return "the server is being built"
 	case ActiveConditionReasonRebuilding:
 		return "the server is being rebuilt"
+	case ActiveConditionReasonRebooting:
+		return "the server is being rebooted"
 	case ActiveConditionReasonRunning:
 		return "the server is running"
 	case ActiveConditionReasonStopping:
