@@ -62,6 +62,11 @@ func TestServerPowerState(t *testing.T) {
 			want:  ptr.To(openapi.InstanceLifecyclePhaseRunning),
 		},
 		{
+			name:  "Rebooting",
+			input: serverWithReason(unikornv1.ActiveConditionReasonRebooting),
+			want:  ptr.To(openapi.InstanceLifecyclePhaseRebooting),
+		},
+		{
 			name:  "Stopping",
 			input: serverWithReason(unikornv1.ActiveConditionReasonStopping),
 			want:  ptr.To(openapi.InstanceLifecyclePhaseStopping),

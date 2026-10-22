@@ -240,7 +240,8 @@ func GetActiveCondition(r unikornv1core.StatusConditionReader) (*unikornv1core.T
 
 // ConditionStatus projects a lifecycle reason onto the Active condition's boolean
 // status: a server is Active (True) only when it is running; every other state
-// (pending, queued, building, stopping, stopped, errored) is not-running (False).
+// (pending, queued, building, rebuilding, rebooting, stopping, stopped, errored)
+// is not-running (False).
 // ConditionStatus projects a reason onto the boolean Active status: True only
 // when Running, False for every other reason.
 //
@@ -270,6 +271,8 @@ func (r ActiveConditionReason) Message() string {
 		return "the server is being built"
 	case ActiveConditionReasonRebuilding:
 		return "the server is being rebuilt"
+	case ActiveConditionReasonRebooting:
+		return "the server is rebooting"
 	case ActiveConditionReasonRunning:
 		return "the server is running"
 	case ActiveConditionReasonStopping:
