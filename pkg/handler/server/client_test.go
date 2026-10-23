@@ -208,3 +208,66 @@ func TestServerV1CreateRejectsNonexistentImage(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, httperrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
 }
+
+// rebootV1 issues a v1 reboot against a Running server whose provider returns
+// providerErr, and returns the server's resulting Active reason.
+func rebootV1(t *testing.T, hard bool, providerErr error) (regionv1.ActiveConditionReason, error) {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+
+	resource := testServerV1(srvServerID)
+	resource.SetActiveCondition(regionv1.ActiveConditionReasonRunning)
+
+	k8sClient := newSrvFakeClient(t, testSrvIdentity(), resource).WithStatusSubresource(&regionv1.Server{}).Build()
+
+	mockProvider := mocktypes.NewMockProvider(ctrl)
+	mockProvider.EXPECT().RebootServer(gomock.Any(), gomock.Any(), gomock.Any(), hard).Return(providerErr)
+
+	mockProviders := mockproviders.NewMockProviders(ctrl)
+	mockProviders.EXPECT().LookupCloud(gomock.Any()).Return(mockProvider, nil)
+
+	c := server.NewClient(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Providers: mockProviders,
+	})
+
+	rebootErr := c.Reboot(withPrincipal(t.Context()),
+		identityids.MustParseOrganizationID(srvOrganizationID),
+		identityids.MustParseProjectID(srvProjectID),
+		idstest.MustParseIdentityID(srvIdentityID),
+		idstest.MustParseServerID(srvServerID),
+		hard)
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvServerID}, updated))
+
+	active, err := regionv1.GetActiveCondition(updated)
+	require.NoError(t, err)
+
+	return active.Reason, rebootErr
+}
+
+// TestServerV1RebootStampsRebooting pins that an accepted reboot is observable
+// on the 202: the handler stamps the Active condition Rebooting so a user can
+// tell the reboot ran even if it completes inside one monitor poll.
+func TestServerV1RebootStampsRebooting(t *testing.T) {
+	t.Parallel()
+
+	for _, hard := range []bool{true, false} {
+		reason, err := rebootV1(t, hard, nil)
+		require.NoError(t, err)
+		require.Equal(t, regionv1.ActiveConditionReasonRebooting, reason)
+	}
+}
+
+// TestServerV1RebootRejectedLeavesStateAlone pins that a reboot the provider
+// refuses does not claim a reboot is in flight.
+func TestServerV1RebootRejectedLeavesStateAlone(t *testing.T) {
+	t.Parallel()
+
+	reason, err := rebootV1(t, true, coreerrors.ErrConflict)
+	require.Error(t, err)
+	require.Equal(t, regionv1.ActiveConditionReasonRunning, reason)
+}
