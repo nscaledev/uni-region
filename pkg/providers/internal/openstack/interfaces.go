@@ -170,7 +170,9 @@ type ComputeQuotaInterface interface {
 }
 
 type ServerRebuildOptions struct {
-	ImageID regionids.ImageID
+	ImageID     regionids.ImageID
+	UserData    []byte
+	UseUserData bool
 }
 
 type ServerInterface interface {

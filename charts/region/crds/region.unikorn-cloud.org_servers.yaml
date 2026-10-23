@@ -220,6 +220,12 @@ spec:
                 oldSelf.providerCreateGates)'
           status:
             properties:
+              acceptedUserDataHash:
+                description: |-
+                  AcceptedUserDataHash is the SHA-256 digest of the customer user-data
+                  accepted by the provider. It drives customer-requested rebuilds without
+                  coupling them to managed cloud-init implementation details.
+                type: string
               conditions:
                 description: Current service state of a cluster manager.
                 items:
@@ -407,6 +413,12 @@ spec:
                   ScheduledAt is the time the provider accepted and processed the creation request.
                   Nil until the server has been observed in the provider at least once.
                 format: date-time
+                type: string
+              submittedUserDataHash:
+                description: |-
+                  SubmittedUserDataHash is the SHA-256 digest of the effective cloud-init
+                  payload accepted by the provider. It records the submitted payload without
+                  exposing it through status.
                 type: string
               volumes:
                 description: Volumes reflects the observed attachment state for each
