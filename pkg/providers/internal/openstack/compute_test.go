@@ -97,6 +97,7 @@ func TestRebuildServerSendsUserData(t *testing.T) {
 		ImageID:     idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
 		UserData:    []byte("#cloud-config\nusers: []\n"),
 		UseUserData: true,
+		Metadata:    map[string]string{"region:userdata_hashes": "v1:accepted:submitted"},
 	}
 
 	_, err := client.RebuildServer(t.Context(), "server-id", options)
@@ -111,6 +112,7 @@ func TestRebuildServerSendsUserData(t *testing.T) {
 	assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
 
 	assert.Equal(t, "I2Nsb3VkLWNvbmZpZwp1c2VyczogW10K", rebuildBody["user_data"])
+	assert.Equal(t, map[string]any{"region:userdata_hashes": "v1:accepted:submitted"}, rebuildBody["metadata"])
 }
 
 func TestRebuildServerClearsUserData(t *testing.T) {
@@ -146,13 +148,15 @@ func TestCreateAndRebuildServerEncodeUserDataEqually(t *testing.T) {
 	createClient := openstack.NewTestComputeClient(createServer.URL + "/")
 	server := newServerFixture()
 	server.Spec.UserData = userData
-	_, err := createClient.CreateServer(t.Context(), server, "", nil, nil, nil)
+	metadata := map[string]string{"region:userdata_hashes": "v1:accepted:submitted"}
+	_, err := createClient.CreateServer(t.Context(), server, "", nil, nil, metadata)
 	require.NoError(t, err)
 
 	createBody, ok := createFake.body["server"].(map[string]any)
 	require.True(t, ok, "body missing 'server' key")
 	createUserData, ok := createBody["user_data"].(string)
 	require.True(t, ok, "create body missing user_data")
+	assert.Equal(t, map[string]any{"region:userdata_hashes": "v1:accepted:submitted"}, createBody["metadata"])
 
 	rebuildFake := &fakeNovaServer{}
 	rebuildServer := httptest.NewServer(rebuildFake)
