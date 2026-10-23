@@ -167,7 +167,7 @@ CLOUDINIT_TEST_IMAGE ?= unikorn-region-cloudinit-test
 # Runs managed cloud-init augmentation against real cloud-init (needs docker).
 .PHONY: test-cloud-init
 test-cloud-init:
-	docker build -t $(CLOUDINIT_TEST_IMAGE) pkg/provisioners/managers/server/testdata/cloudinit
+	docker build --platform linux/amd64 -t $(CLOUDINIT_TEST_IMAGE) pkg/provisioners/managers/server/testdata/cloudinit
 	CLOUDINIT_TEST_IMAGE=$(CLOUDINIT_TEST_IMAGE) go test -count=1 -tags cloudinit -parallel 6 ./pkg/provisioners/managers/server/
 
 # Build a binary and install it.
