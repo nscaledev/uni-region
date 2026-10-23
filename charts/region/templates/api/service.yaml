@@ -4,6 +4,7 @@ metadata:
   name: {{ .Release.Name }}-server
   labels:
     {{- include "unikorn.labels" . | nindent 4 }}
+    unikorn-cloud.org/metrics: "true"
 spec:
   selector:
     app: {{ .Release.Name }}-server

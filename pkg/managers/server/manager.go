@@ -46,11 +46,17 @@ type Factory struct {
 var _ interface {
 	coremanager.ControllerFactory
 	coremanager.ControllerInitializer
+	coremanager.ControllerScrapedMetrics
 } = &Factory{}
 
 // Metadata returns the application, version and revision.
 func (*Factory) Metadata() util.ServiceDescriptor {
 	return constants.ServiceDescriptor()
+}
+
+// ScrapedMetrics serves metrics from the manager's endpoint rather than pushing them.
+func (*Factory) ScrapedMetrics() bool {
+	return true
 }
 
 // Options returns any options to be added to the CLI flags and passed to the reconciler.
