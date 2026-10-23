@@ -32,7 +32,10 @@ rule-shape validation rather than deep multi-object orchestration.
   status write advances the resource version; callers re-read and reapply
   their requested change.
 - Deletion is primarily handled through the ownership graph rooted at the
-  network rather than bespoke orchestration here.
+  network rather than bespoke orchestration here. `v2` delete refuses a group
+  that is in use. It carries UID and resource-version preconditions, and a
+  conflict re-runs the guard against a fresh read before retrying once,
+  returning `409` only if that conflicts too.
 
 ## Caveats
 

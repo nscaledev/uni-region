@@ -35,6 +35,10 @@ packages are the concrete provider implementations.
 
 ## Invariants And Guard Rails
 
+- Providers read Kubernetes through whichever client they are built with. The
+  API server builds them with its direct client, so the Region, the
+  credentials Secret and everything else a provider touches are read from the
+  API server; controllers build them with their manager's cached client.
 - The package exposes two lookup surfaces:
   - `LookupCommon` returns a `types.CommonProvider` for region-level capability
     discovery that every provider must support
