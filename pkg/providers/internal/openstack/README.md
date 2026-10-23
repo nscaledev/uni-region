@@ -145,10 +145,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   last create or rebuild. A mismatch follows the same launched and quiescent
   gates as an image mismatch, then submits Nova rebuild with the current image
   and `user_data`. This keeps changes to managed cloud-init augmentation from
-  rebuilding the fleet. A separate submitted-payload digest records the
-  effective bytes accepted by Nova for audit only. Servers predating the
-  customer digest establish a baseline without a destructive migration rebuild;
-  the API saves that baseline before the first legacy user-data update.
+  rebuilding the fleet. Nova stores the accepted customer digest in one
+  controller-owned metadata item when it accepts create or rebuild. That is the
+  recovery fence for a lost status write: matching customer bytes restore the
+  accepted digest, while different customer bytes rebuild once. A changed
+  augmentation does not rebuild. Servers predating the metadata item establish a
+  baseline without a destructive migration rebuild; the API saves that baseline
+  before the first legacy user-data update.
 
   Nova commits the image ref and `task_state` together. `nova/compute/api.py` sets
   `task_state = REBUILDING` and `image_ref = image_href` on one object and saves them
@@ -171,7 +174,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   | R3 | ref == desired, rebuild task active | yield |
   | R3′ | ref == desired, `ERROR`, launched, current rebuild recorded, attempts remain | **submit** |
   | R3″ | ref == desired, `ERROR`, launched, current rebuild recorded, attempts exhausted | **park** |
-  | R3‴ | ref == desired, otherwise | done |
+  | R3‴ | ref == desired, `ERROR`, launched, hashes metadata-recovered or legacy-baselined | **park** |
+  | R3⁗ | ref == desired, otherwise | done |
   | R4 | ref != desired, `launched_at` zero | yield |
   | R4′ | ref != desired, any task active | yield |
   | R4″ | ref != desired, quiescent | **submit** |
@@ -217,8 +221,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   outside `ERROR`, so a later unrelated `ERROR` cannot consume its budget or
   authorize another rebuild. An unresolved rebuild retries until three
   provider-accepted attempts have failed, then parks as user-action-required.
-  An unrecorded or stale `ERROR` remains monitor-owned because Nova cannot
-  attribute it to a provider rebuild.
+  A metadata-recovered or legacy-baselined unrecorded `ERROR` parks because the
+  image ref alone cannot certify the failed write. An unrecorded `ERROR` with an
+  intact status record remains monitor-owned because Nova cannot attribute it to
+  a provider rebuild.
 
   R3″ parks a quiesced `ERROR` on the desired ref with a current recorded
   rebuild as user-action-required
@@ -244,7 +250,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   wake resumes reconciliation, monitor-independent. Or the provider recovers
   without a spec change, in which case the un-park rides the monitor's
   `status.observed` write firing the observed wake: the park is re-derived per
-  pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
+  pass, so the woken pass walks to R3⁗ and reads `provisioned` again (the same
   measured path as a foreign recovery, below — within one monitor period). Or
   the provider server disappears entirely — deleted out-of-band — in which case
   the monitor's `Observe` finds no row for it and `projectServerState`'s absent
@@ -267,8 +273,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 
   R4″ is the single destructive step. The submission (`submitServerRebuild`) writes a
   fixed accepted stamp on a 2xx (`Active` `Rebuilding`, `Healthy` `Unknown`, matching
-  the monitor's `REBUILD` mapping so the two writers agree rather than churn) and never
-  derives it from the rebuild response body, whose 202 can still describe the
+  the monitor's `REBUILD` mapping so the two writers agree rather than churn) and
+  sends the paired user-data hashes in the same Nova action. It never derives the
+  stamp from the rebuild response body, whose 202 can still describe the
   pre-destruction server as `ACTIVE` and would stamp a just-accepted destructive
   rebuild as running. Acceptance *yields* rather than completing: Nova now has a
   destructive operation in flight, and completing would map to

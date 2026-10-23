@@ -429,12 +429,6 @@ spec:
                   Nil until the server has been observed in the provider at least once.
                 format: date-time
                 type: string
-              submittedUserDataHash:
-                description: |-
-                  SubmittedUserDataHash is the SHA-256 digest of the effective cloud-init
-                  payload accepted by the provider. It records the submitted payload without
-                  exposing it through status.
-                type: string
               volumes:
                 description: Volumes reflects the observed attachment state for each
                   desired volume.

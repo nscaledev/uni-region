@@ -173,6 +173,7 @@ type ServerRebuildOptions struct {
 	ImageID     regionids.ImageID
 	UserData    []byte
 	UseUserData bool
+	Metadata    map[string]string
 }
 
 type ServerInterface interface {
