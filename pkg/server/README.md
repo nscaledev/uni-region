@@ -126,6 +126,8 @@ provider layer before the handler is built.
 ## Distinctive Operational Behaviour
 
 - `pprof` is started on a separate listener at `:6060`
+- metrics are served for scraping at `/metrics` on `:8080`, labelled
+  `service="unikorn-region"`; nothing is pushed over OTLP
 - provider startup currently requests image-cache warmup
 - the server relies on a remote trust boundary with identity rather than being
   a self-contained identity authority
