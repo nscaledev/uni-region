@@ -26,12 +26,14 @@ import (
 
 	chi "github.com/go-chi/chi/v5"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	"github.com/unikorn-cloud/core/pkg/openapi/helpers"
 	"github.com/unikorn-cloud/core/pkg/options"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/cors"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/logging"
+	metricsmiddleware "github.com/unikorn-cloud/core/pkg/server/middleware/metrics"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/routeresolver"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
@@ -140,15 +142,24 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 	//   establishes a trace ID that is used to correlate logs with user issues.
 	// * Logging ensures at least all errors are captured by logging telemetry and we
 	//   can trigger alerts based on them.
+	// * Request metrics must precede the route resolver, which answers unresolved
+	//   requests without calling the next handler.
 	// * Route resolver provides routing and OpenAPI information to child middlewares.
 	// * CORS emulates OPTIONS endpoints based on OpenAPI (requires route resolver).
 	opentelemetry := opentelemetry.New(constants.Application, constants.Version)
 	logging := logging.New()
+
+	requestMetrics, err := metricsmiddleware.New(otel.Meter(constants.Application))
+	if err != nil {
+		return nil, err
+	}
+
 	routeresolver := routeresolver.New(schema)
 	cors := cors.New(&s.CORSOptions)
 
 	router.Use(opentelemetry.Middleware)
 	router.Use(logging.Middleware)
+	router.Use(requestMetrics.Middleware)
 	router.Use(routeresolver.Middleware)
 	router.Use(cors.Middleware)
 	router.NotFound(http.HandlerFunc(handler.NotFound))
