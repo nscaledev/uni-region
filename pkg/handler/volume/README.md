@@ -20,4 +20,8 @@ Updates replace mutable metadata and tags with optimistic locking while
 preserving Network, VolumeClass, size, claims, controller state, and any
 future allocation annotation. Delete is idempotent once started and rejects a
 Volume with an active attachment claim or resource reference until it is
-manually detached.
+manually detached. The delete carries UID and resource-version preconditions;
+if the Volume changed after the guard's read, the guard is re-run against a
+fresh read before retrying once, so a new claim or reference returns `403`
+and an unrelated change still deletes, with `409` reserved for a conflict that
+survives the retry.
