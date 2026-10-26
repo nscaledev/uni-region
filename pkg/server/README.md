@@ -33,14 +33,18 @@ The raw router is wrapped in this order:
 
 1. OpenTelemetry
 2. logging
-3. route resolver
-4. CORS
+3. metrics
+4. route resolver
+5. CORS
 
 The ordering has the same rationale as identity:
 
 - OpenTelemetry runs first so trace context exists before anything else
 - logging runs early so failures before deep handler logic are still captured
   with correlation context
+- metrics records request rate, errors and duration; it comes before route
+  resolution, which answers unresolvable requests without calling on, so
+  those are counted too (see core's `pkg/server/middleware/README.md`)
 - route resolution must happen before middleware that depends on OpenAPI
   operation/schema metadata
 - CORS comes after route resolution because its schema-driven behaviour depends
