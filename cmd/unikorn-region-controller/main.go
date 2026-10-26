@@ -45,6 +45,10 @@ const (
 	// rate limiter; every handler read is an API-server request.
 	kubernetesClientQPS   = 100
 	kubernetesClientBurst = 200
+
+	// metricsAddress is where metrics are scraped, clear of the API on
+	// :6080 and pprof on :6060.
+	metricsAddress = ":8080"
 )
 
 // start is the entry point to server.
@@ -66,11 +70,17 @@ func start() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if err := s.SetupOpenTelemetry(ctx); err != nil {
-		logger.Error(err, "failed to setup OpenTelemetry")
+	if err := s.SetupTelemetry(ctx); err != nil {
+		logger.Error(err, "failed to setup telemetry")
 
 		return
 	}
+
+	go func() {
+		if err := s.CoreOptions.ServeMetrics(ctx, metricsAddress); err != nil {
+			logger.Error(err, "metrics server error")
+		}
+	}()
 
 	kubernetesClient, err := newKubernetesClient()
 	if err != nil {

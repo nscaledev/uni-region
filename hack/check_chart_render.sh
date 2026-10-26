@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# RBAC assertions for the API server ClusterRole. Reads go directly to the
-# API server, so every kind read singly needs a get permission, no kind needs
-# watch, and Secrets are only ever read.
+# Chart render assertions: RBAC for the API server ClusterRole, and the
+# metrics ports. Reads go directly to the API server, so every kind read
+# singly needs a get permission, no kind needs watch, and Secrets are only
+# ever read.
 # `make lint` runs this script.
 set -euo pipefail
 
@@ -51,5 +52,20 @@ fi
 
 # Secrets are only ever read, one GET at a time.
 [[ "$(server_verbs secrets)" == "get" ]] || die "expected only get on secrets for the server"
+
+# The shared PodMonitor scrapes the container port named prometheus, and the
+# service name on traces is set in code, not by OTEL_SERVICE_NAME.
+for deployment in server monitor identity-controller load-balancer-controller \
+	network-controller security-group-controller server-controller volume-controller; do
+	port=$(deployment="test-$deployment" yq -r '
+		select(.kind == "Deployment" and .metadata.name == strenv(deployment)) |
+		.spec.template.spec.containers[].ports[] | select(.name == "prometheus") | .containerPort
+	' <<<"$out")
+	[[ "$port" == "8080" ]] || die "expected a prometheus port 8080 on $deployment, got '$port'"
+done
+
+if yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[].env[]?.name' <<<"$out" | grep -qx OTEL_SERVICE_NAME; then
+	die "expected no OTEL_SERVICE_NAME"
+fi
 
 echo "chart render checks OK"

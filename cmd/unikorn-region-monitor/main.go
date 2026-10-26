@@ -23,11 +23,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/spf13/pflag"
-	"go.opentelemetry.io/otel"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -37,6 +34,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
+
+// metricsAddress is where the monitor's metrics are scraped.
+const metricsAddress = ":8080"
 
 func run() error {
 	// Initialize components with legacy flags.
@@ -73,24 +73,23 @@ func run() error {
 		cancel()
 	}()
 
-	if err := monitorOptions.CoreOptions.SetupOpenTelemetry(ctx); err != nil {
-		logger.Error(err, "failed to setup OpenTelemetry")
+	if err := monitorOptions.CoreOptions.SetupTracing(ctx, constants.Service); err != nil {
+		logger.Error(err, "failed to setup tracing")
 
 		return err
 	}
 
-	if meterProvider, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider); ok {
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
+	if err := monitorOptions.CoreOptions.SetupMetrics(constants.Service); err != nil {
+		logger.Error(err, "failed to setup metrics")
 
-			if err := meterProvider.Shutdown(shutdownCtx); err != nil {
-				logger.Error(err, "failed to shutdown meter provider")
-			}
-		}()
-	} else {
-		logger.Info("meter provider type unexpected, skipping graceful shutdown")
+		return err
 	}
+
+	go func() {
+		if err := monitorOptions.CoreOptions.ServeMetrics(ctx, metricsAddress); err != nil {
+			logger.Error(err, "metrics server error")
+		}
+	}()
 
 	client, err := coreclient.New(ctx, unikornv1.AddToScheme)
 	if err != nil {

@@ -57,6 +57,10 @@ func ServiceDescriptor() util.ServiceDescriptor {
 }
 
 const (
+	// Service names the service on every scraped metric and trace, the same
+	// for every binary in it.
+	Service = "unikorn-region"
+
 	// ResourceAPIVersionLabel defines what API version a resource belongs to
 	// for filtering purposes.
 	ResourceAPIVersionLabel = "resource.unikorn-cloud.org/api-version"
