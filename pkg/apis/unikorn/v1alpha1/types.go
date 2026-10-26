@@ -238,6 +238,10 @@ type FlavorMetadata struct {
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.
 	GPU *GPUSpec `json:"gpu,omitempty"`
+	// InfiniBand describes the flavor's InfiniBand ports, for consumers that need
+	// to know whether a flavor is IB-capable and how many ports it exposes. It is
+	// descriptive only: on its own it does not enable partition isolation.
+	InfiniBand *InfiniBandSpec `json:"infiniBand,omitempty"`
 	// PinnedOnly indicates that this flavor requires a specific physical host to
 	// be identified via InfrastructureRef when creating a server. Attempts to
 	// create a server with this flavor without an InfrastructureRef are rejected.
@@ -280,6 +284,14 @@ type GPUSpec struct {
 	LogicalCount int `json:"logicalCount"`
 	// Memory is the amount of memory each logical GPU has access to.
 	Memory *resource.Quantity `json:"memory"`
+}
+
+type InfiniBandSpec struct {
+	// PortCount is the number of InfiniBand ports the flavor exposes. This counts
+	// ports, not host channel adapters (a single HCA can present one or two ports),
+	// because fabric partitioning programs a partition membership per port GUID.
+	// +kubebuilder:validation:Minimum=1
+	PortCount int `json:"portCount"`
 }
 
 type RegionOpenstackImageSpec struct {
@@ -1205,6 +1217,14 @@ const (
 	// completes. Distinct from Building (a first provision) so a rebuild is
 	// legible on the Active axis.
 	ActiveConditionReasonRebuilding ActiveConditionReason = "Rebuilding"
+	// ActiveConditionReasonRebooting means a reboot of a provisioned server has
+	// been accepted and is in flight (Nova HARD_REBOOT or REBOOT; for baremetal
+	// Ironic power-cycles the node). It reflects the provider's task state and
+	// clears to Running once the provider reports the reboot request processed.
+	// It indicates a reboot is in flight, not that the guest restarted:
+	// confirmation of that comes from guest OS evidence such as a changed boot ID
+	// or boot time.
+	ActiveConditionReasonRebooting ActiveConditionReason = "Rebooting"
 	// ActiveConditionReasonRunning means the server is running and usable; this is
 	// the only reason for which the Active condition Status is True.
 	ActiveConditionReasonRunning ActiveConditionReason = "Running"

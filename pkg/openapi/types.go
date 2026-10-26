@@ -48,6 +48,7 @@ const (
 	InstanceLifecyclePhaseError      InstanceLifecyclePhase = "Error"
 	InstanceLifecyclePhasePending    InstanceLifecyclePhase = "Pending"
 	InstanceLifecyclePhaseQueued     InstanceLifecyclePhase = "Queued"
+	InstanceLifecyclePhaseRebooting  InstanceLifecyclePhase = "Rebooting"
 	InstanceLifecyclePhaseRebuilding InstanceLifecyclePhase = "Rebuilding"
 	InstanceLifecyclePhaseRunning    InstanceLifecyclePhase = "Running"
 	InstanceLifecyclePhaseStopped    InstanceLifecyclePhase = "Stopped"
@@ -284,6 +285,9 @@ type FlavorSpec struct {
 	// Gpu GPU specification.
 	Gpu *GpuSpec `json:"gpu,omitempty"`
 
+	// InfiniBand InfiniBand specification.
+	InfiniBand *InfiniBandSpec `json:"infiniBand,omitempty"`
+
 	// Memory The amount of memory in GiB.
 	Memory int `json:"memory"`
 
@@ -503,6 +507,12 @@ type ImageVirtualization string
 // Images A list of images that are compatible with this platform.
 type Images = []Image
 
+// InfiniBandSpec InfiniBand specification.
+type InfiniBandSpec struct {
+	// PortCount The number of InfiniBand ports available to the flavor.
+	PortCount int `json:"portCount"`
+}
+
 // InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
 type InfrastructureRef = string
 
@@ -513,8 +523,11 @@ type InfrastructureRef = string
 // baremetal servers waiting on hardware, Building for servers the
 // provider is actively bringing up. Rebuilding means an already
 // provisioned server is being reimaged in place and is not usable until
-// it completes. Error means the provider reported the server in a
-// terminal error state.
+// it completes. Rebooting means a soft or hard reboot has been accepted
+// and is in flight; it returns to Running once the provider has
+// processed the request. To confirm the guest actually restarted, use
+// OS-level evidence such as a changed boot ID or boot time. Error
+// means the provider reported the server in a terminal error state.
 type InstanceLifecyclePhase string
 
 // Ipv4Address An IPv4 address.
@@ -1193,8 +1206,11 @@ type ServerStatus struct {
 	// baremetal servers waiting on hardware, Building for servers the
 	// provider is actively bringing up. Rebuilding means an already
 	// provisioned server is being reimaged in place and is not usable until
-	// it completes. Error means the provider reported the server in a
-	// terminal error state.
+	// it completes. Rebooting means a soft or hard reboot has been accepted
+	// and is in flight; it returns to Running once the provider has
+	// processed the request. To confirm the guest actually restarted, use
+	// OS-level evidence such as a changed boot ID or boot time. Error
+	// means the provider reported the server in a terminal error state.
 	Phase *InstanceLifecyclePhase `json:"phase,omitempty"`
 
 	// PrivateIP The private IP address of the server.
@@ -1324,8 +1340,11 @@ type ServerV2Status struct {
 	// baremetal servers waiting on hardware, Building for servers the
 	// provider is actively bringing up. Rebuilding means an already
 	// provisioned server is being reimaged in place and is not usable until
-	// it completes. Error means the provider reported the server in a
-	// terminal error state.
+	// it completes. Rebooting means a soft or hard reboot has been accepted
+	// and is in flight; it returns to Running once the provider has
+	// processed the request. To confirm the guest actually restarted, use
+	// OS-level evidence such as a changed boot ID or boot time. Error
+	// means the provider reported the server in a terminal error state.
 	PowerState *InstanceLifecyclePhase `json:"powerState,omitempty"`
 
 	// PrivateIP The private IP address of the server.

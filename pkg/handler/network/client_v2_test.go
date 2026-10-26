@@ -38,6 +38,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/handlertest"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -558,4 +559,136 @@ func TestReferences(t *testing.T) {
 
 	resource = getNetwork(t, cli)
 	require.Empty(t, resource.Finalizers)
+}
+
+func referencesContext(t *testing.T) context.Context {
+	t.Helper()
+
+	return rbac.NewContext(t.Context(), &identityapi.Acl{
+		Global: &identityapi.AclEndpoints{
+			{
+				Name:       "region:networks:v2",
+				Operations: identityapi.AclOperations{identityapi.Read, identityapi.Delete},
+			},
+			{
+				Name:       "region:networks:v2/references",
+				Operations: identityapi.AclOperations{identityapi.Create, identityapi.Delete},
+			},
+		},
+	})
+}
+
+// staleNetworkClients applies before to the stored network, snapshots it as
+// the copy a guard read would see, then applies after, so the read lags the
+// store by one write.
+func staleNetworkClients(t *testing.T, before, after func(*regionv1.Network)) (client.WithWatch, *regionv1.Network) {
+	t.Helper()
+
+	store, ok := setupFixtures(t).(client.WithWatch)
+	require.True(t, ok)
+
+	update := func(mutate func(*regionv1.Network)) {
+		n := getNetwork(t, store)
+		mutate(n)
+		require.NoError(t, store.Update(t.Context(), n))
+	}
+
+	update(before)
+
+	stale := getNetwork(t, store)
+
+	update(after)
+
+	return store, stale
+}
+
+func addReference(n *regionv1.Network) { controllerutil.AddFinalizer(n, reference) }
+
+func removeReference(n *regionv1.Network) { controllerutil.RemoveFinalizer(n, reference) }
+
+func noChange(*regionv1.Network) {}
+
+// TestReferenceCreateV2StaleReadStillAdds covers a remove followed by an add
+// where the add's read still saw the reference present.
+func TestReferenceCreateV2StaleReadStillAdds(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, addReference, removeReference)
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	require.NoError(t, c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+	require.True(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceDeleteV2StaleReadStillRemoves covers an add followed by a
+// remove where the remove's read had not yet seen the add.
+func TestReferenceDeleteV2StaleReadStillRemoves(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, noChange, addReference)
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	require.NoError(t, c.ReferenceDeleteV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+	require.False(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceCreateV2StaleReadDeletingNetwork covers an add whose read
+// missed the deletion starting: the retry sees the live copy and refuses, and
+// no reference is added.
+func TestReferenceCreateV2StaleReadDeletingNetwork(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, noChange, func(n *regionv1.Network) {
+		controllerutil.AddFinalizer(n, "blocker")
+	})
+
+	// Deleting a network that still has finalizers sets its deletion
+	// timestamp, and the object stays until they clear.
+	require.NoError(t, store.Delete(t.Context(), getNetwork(t, store)))
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	err := c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsBadRequest(err), "expected 400 invalid request, got: %v", err)
+	require.False(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceDeleteV2AfterNetworkGoneReturnsNil covers a remove racing the
+// network's deletion: the patch misses the network, and the remove still
+// succeeds so repeated removal stays idempotent.
+func TestReferenceDeleteV2AfterNetworkGoneReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, noChange, noChange)
+
+	// The network carries no finalizers, so deleting it removes it outright.
+	require.NoError(t, store.Delete(t.Context(), getNetwork(t, store)))
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	require.NoError(t, c.ReferenceDeleteV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+}
+
+// TestReferenceCreateV2RepeatedConflictReturns409 verifies a conflict that
+// survives the retried read is reported as 409.
+func TestReferenceCreateV2RepeatedConflictReturns409(t *testing.T) {
+	t.Parallel()
+
+	store, ok := setupFixtures(t).(client.WithWatch)
+	require.True(t, ok)
+
+	conflicting := interceptor.NewClient(store, interceptor.Funcs{
+		Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			return apierrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "networks"}, obj.GetName(), nil)
+		},
+	})
+
+	c := network.New(common.ClientArgs{Client: conflicting, Namespace: namespace})
+
+	err := c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
 }

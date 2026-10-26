@@ -109,6 +109,10 @@ identity-authority bootstrap.
 
 The most important constructed runtime dependencies are:
 
+- a direct Kubernetes client, used for every handler read and write; a list
+  is one API-server round trip, served from the API server's watch cache
+  where ConsistentListFromCache is enabled, the default since Kubernetes 1.31
+  and GA in 1.34
 - an identity API client for remote authorization and handler-side identity
   operations
 - a provider registry from [`pkg/providers`](../providers/README.md)

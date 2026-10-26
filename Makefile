@@ -217,6 +217,7 @@ lint: $(GENDIR)
 	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(LINT_VERSION)
 	$(GOBIN)/golangci-lint run --timeout=10m --build-tags cloudinit ./...
 	helm lint --strict charts/region
+	./hack/check_chart_render.sh
 
 # Validate the server OpenAPI schema is legit.
 # Regenerating and then building proves the sources and the generators agree; it

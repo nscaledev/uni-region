@@ -29,12 +29,22 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"github.com/unikorn-cloud/core/pkg/client"
+	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/server"
 
+	"k8s.io/client-go/rest"
+
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+const (
+	// kubernetesClientQPS and kubernetesClientBurst size the client-side
+	// rate limiter; every handler read is an API-server request.
+	kubernetesClientQPS   = 100
+	kubernetesClientBurst = 200
 )
 
 // start is the entry point to server.
@@ -62,14 +72,14 @@ func start() {
 		return
 	}
 
-	client, err := client.New(ctx, unikornv1.AddToScheme)
+	kubernetesClient, err := newKubernetesClient()
 	if err != nil {
-		logger.Error(err, "failed to create client")
+		logger.Error(err, "failed to create Kubernetes client")
 
 		return
 	}
 
-	server, err := s.GetServer(ctx, client)
+	server, err := s.GetServer(ctx, kubernetesClient)
 	if err != nil {
 		logger.Error(err, "failed to setup Handler")
 
@@ -109,4 +119,25 @@ func start() {
 
 func main() {
 	start()
+}
+
+// newKubernetesClient returns a client whose reads go straight to the API
+// server, so a read cannot miss a write that has been acknowledged. A list is
+// one round trip, served from the API server's watch cache where
+// ConsistentListFromCache is enabled, the default since Kubernetes 1.31.
+func newKubernetesClient() (ctrlclient.Client, error) {
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	config.QPS = kubernetesClientQPS
+	config.Burst = kubernetesClientBurst
+
+	scheme, err := coreclient.NewScheme(unikornv1.AddToScheme)
+	if err != nil {
+		return nil, err
+	}
+
+	return ctrlclient.New(config, ctrlclient.Options{Scheme: scheme})
 }

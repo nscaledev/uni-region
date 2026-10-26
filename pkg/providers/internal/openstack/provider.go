@@ -482,46 +482,59 @@ func convertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.
 			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
 		}
 
-		// Apply any extra metadata to the flavor.
-		//
-		//nolint:nestif
-		if region != nil && region.Spec.Openstack != nil && region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
-			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
-				return flavor.ID == metadata.ID
-			})
-
-			if i >= 0 {
-				metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
-
-				f.Baremetal = metadata.Baremetal
-				f.PinnedOnly = metadata.PinnedOnly
-
-				if metadata.CPU != nil {
-					if metadata.CPU.Architecture != nil {
-						f.Architecture = types.Architecture(*metadata.CPU.Architecture)
-					}
-
-					f.CPUFamily = metadata.CPU.Family
-				}
-
-				if metadata.GPU != nil {
-					f.GPU = &types.GPU{
-						// TODO: while these align, you should really put a
-						// proper conversion in here.
-						Vendor:        types.GPUVendor(metadata.GPU.Vendor),
-						Model:         metadata.GPU.Model,
-						Memory:        metadata.GPU.Memory,
-						PhysicalCount: metadata.GPU.PhysicalCount,
-						LogicalCount:  metadata.GPU.LogicalCount,
-					}
-				}
-			}
-		}
+		// Apply any per-flavor metadata overrides.
+		applyFlavorMetadata(&f, region, flavor.ID)
 
 		result[i] = f
 	}
 
 	return result
+}
+
+// applyFlavorMetadata overlays any Region-level per-flavor metadata (CPU, GPU,
+// InfiniBand, bare-metal/pinning) onto the converted flavor.
+func applyFlavorMetadata(f *types.Flavor, region *unikornv1.Region, flavorID string) {
+	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.Compute == nil || region.Spec.Openstack.Compute.Flavors == nil {
+		return
+	}
+
+	i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
+		return flavorID == metadata.ID
+	})
+	if i < 0 {
+		return
+	}
+
+	metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
+
+	f.Baremetal = metadata.Baremetal
+	f.PinnedOnly = metadata.PinnedOnly
+
+	if metadata.CPU != nil {
+		if metadata.CPU.Architecture != nil {
+			f.Architecture = types.Architecture(*metadata.CPU.Architecture)
+		}
+
+		f.CPUFamily = metadata.CPU.Family
+	}
+
+	if metadata.GPU != nil {
+		f.GPU = &types.GPU{
+			// TODO: while these align, you should really put a
+			// proper conversion in here.
+			Vendor:        types.GPUVendor(metadata.GPU.Vendor),
+			Model:         metadata.GPU.Model,
+			Memory:        metadata.GPU.Memory,
+			PhysicalCount: metadata.GPU.PhysicalCount,
+			LogicalCount:  metadata.GPU.LogicalCount,
+		}
+	}
+
+	if metadata.InfiniBand != nil {
+		f.InfiniBand = &types.InfiniBand{
+			PortCount: metadata.InfiniBand.PortCount,
+		}
+	}
 }
 
 func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
