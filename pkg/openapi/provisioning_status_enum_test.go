@@ -18,6 +18,7 @@ package openapi_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -28,6 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
+	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
 
@@ -141,6 +143,24 @@ func TestStorageDefaultSnapshotProtectionRejectsNullInput(t *testing.T) {
 	defaultProtectionProperty := schemaProperty(t, storageSpec, "defaultSnapshotProtectionEnabled")
 
 	require.Error(t, defaultProtectionProperty.VisitJSON(nil))
+}
+
+func TestServerV2SpecAcceptsSerializedNullUserData(t *testing.T) {
+	t.Parallel()
+
+	serialized, err := json.Marshal(openapi.ServerV2Spec{
+		FlavorId: idstest.MustParseFlavorID("00000000-0000-0000-0000-000000000000"),
+		ImageId:  idstest.MustParseImageID("00000000-0000-0000-0000-000000000001"),
+	})
+	require.NoError(t, err)
+	require.Contains(t, string(serialized), `"userData":null`)
+
+	var representation any
+	require.NoError(t, json.Unmarshal(serialized, &representation))
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+	require.NoError(t, componentSchema(t, swagger, "serverV2Spec").VisitJSON(representation))
 }
 
 func TestStorageV2UpdateRequestRejectsExplicitNulls(t *testing.T) {

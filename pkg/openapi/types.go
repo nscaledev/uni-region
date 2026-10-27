@@ -1262,7 +1262,7 @@ type ServerV2CreateSpec struct {
 	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
 	// it clears the stored value. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
-	UserData *[]byte `json:"userData,omitempty"`
+	UserData *[]byte `json:"userData"`
 
 	// Volumes Complete desired set of existing Volumes to attach to the Server.
 	Volumes *ServerV2VolumeList `json:"volumes,omitempty"`
@@ -1316,7 +1316,7 @@ type ServerV2Spec struct {
 	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
 	// it clears the stored value. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
-	UserData *[]byte `json:"userData,omitempty"`
+	UserData *[]byte `json:"userData"`
 
 	// Volumes Complete desired set of existing Volumes to attach to the Server.
 	Volumes *ServerV2VolumeList `json:"volumes,omitempty"`
