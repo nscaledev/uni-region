@@ -33,14 +33,17 @@ The raw router is wrapped in this order:
 
 1. OpenTelemetry
 2. logging
-3. route resolver
-4. CORS
+3. request metrics
+4. route resolver
+5. CORS
 
 The ordering has the same rationale as identity:
 
 - OpenTelemetry runs first so trace context exists before anything else
 - logging runs early so failures before deep handler logic are still captured
   with correlation context
+- request metrics run before route resolution, because the resolver answers
+  unresolved requests without calling the next handler
 - route resolution must happen before middleware that depends on OpenAPI
   operation/schema metadata
 - CORS comes after route resolution because its schema-driven behaviour depends
@@ -126,6 +129,8 @@ provider layer before the handler is built.
 ## Distinctive Operational Behaviour
 
 - `pprof` is started on a separate listener at `:6060`
+- metrics are served for scraping at `/metrics` on `:8080`, labelled
+  `service="unikorn-region"`; nothing is pushed over OTLP
 - provider startup currently requests image-cache warmup
 - the server relies on a remote trust boundary with identity rather than being
   a self-contained identity authority
