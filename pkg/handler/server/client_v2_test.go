@@ -22,6 +22,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	goerrors "errors"
 	"math/big"
@@ -2005,6 +2006,22 @@ func TestServerGetV2ReturnsMACAddress(t *testing.T) {
 	require.Equal(t, resource.Status.PrivateIP, result.Status.PrivateIP)
 	require.Equal(t, resource.Status.PublicIP, result.Status.PublicIP)
 	require.Equal(t, resource.Status.MACAddress, result.Status.MacAddress)
+}
+
+func TestServerGetV2SerializesAbsentUserDataAsNull(t *testing.T) {
+	t.Parallel()
+
+	resource := testServerV2(srvServerID)
+	resource.Spec.UserData = nil
+
+	result := getServerV2(t, resource)
+	body, err := json.Marshal(result)
+	require.NoError(t, err)
+
+	var serialized map[string]map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(body, &serialized))
+	require.Contains(t, serialized["spec"], "userData")
+	require.Equal(t, json.RawMessage("null"), serialized["spec"]["userData"])
 }
 
 func TestServerGetV2ReturnsVolumeAttachmentStatus(t *testing.T) {
