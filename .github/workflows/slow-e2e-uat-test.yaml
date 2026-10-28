@@ -72,7 +72,7 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: read
-      # Required for Teleport-backed Grafana lookup and OTLP collector shipping.
+      # Required for the snapshot CR observer, Grafana lookup, and OTLP shipping.
       id-token: write
     # Runs when a test-ref override is given, or the resolver produced a UAT checkout ref.
     if: ${{ inputs.test_ref != '' || needs.find-uat-deployed-version.outputs.ref != '' }}
@@ -84,6 +84,7 @@ jobs:
       TEST_ORG_ID: ${{ vars.UAT_TEST_ORG_ID }}
       TEST_PROJECT_ID: ${{ vars.UAT_TEST_PROJECT_ID }}
       TEST_REGION_ID: ${{ inputs.region_id || vars.UAT_TEST_REGION_ID }}
+      TEST_REGION_NAMESPACE: unikorn-region
       TEST_NETWORK_ID: ${{ vars.UAT_TEST_NETWORK_ID }}
       FAKE_TEST_REGION_ID: ${{ vars.UAT_FAKE_TEST_REGION_ID }}
       FAKE_TEST_NETWORK_ID: ${{ vars.UAT_FAKE_TEST_NETWORK_ID }}
@@ -142,6 +143,28 @@ jobs:
 
         echo "INTERNAL_API_CLIENT_CERT=$cert_path" >> "$GITHUB_ENV"
         echo "INTERNAL_API_CLIENT_KEY=$key_path" >> "$GITHUB_ENV"
+
+    # Reuse the report enrichment reader identity before tests so expiration
+    # assertions can distinguish actual CR removal from Region's filtered 404.
+    - name: Install kubectl for snapshot CR access preflight
+      uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede
+
+    - name: Install Teleport clients for snapshot CR observation
+      uses: teleport-actions/setup@a820ebbf1bc1a496efca348ad21042d6e8df73a6
+      with:
+        version: auto
+        proxy: nscale.teleport.sh:443
+
+    - name: Authenticate read-only snapshot CR observer
+      uses: teleport-actions/auth-k8s@0f46164469ae4fcd4d359d40e06bab17d4be17c9
+      with:
+        proxy: nscale.teleport.sh:443
+        token: github-unikorn-cr-reader
+        kubernetes-cluster: nks-stg-europe-west2
+        certificate-ttl: 2h
+
+    - name: Verify read-only snapshot CR access
+      run: kubectl auth can-i get filestoragesnapshots.region.unikorn-cloud.org --namespace "$TEST_REGION_NAMESPACE"
 
     - name: Validate slow test configuration
       run: |

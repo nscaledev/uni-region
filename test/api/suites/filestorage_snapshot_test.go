@@ -56,12 +56,29 @@ const (
 	probeFilename             = "e2e-probe.txt"
 )
 
-var _ = Describe("File storage snapshot happy flow", func() {
+var _ = Describe("File storage snapshot happy flow", Ordered, ContinueOnFailure, Label("slow"), func() {
 	Context("When mounting file storage from a running instance", func() {
 		Describe("Given an OpenStack network, server, and NFS file storage attachment", func() {
-			It("captures probe file contents in an hourly scheduled snapshot", Label("slow"), func() {
+			var mounted *mountedFileStorage
+
+			BeforeAll(func() {
 				policies := buildHourlySnapshotPolicy()
-				mounted := EventuallyProvisionMountedFilesystem(&policies)
+				mounted = EventuallyProvisionMountedFilesystem(&policies)
+			})
+
+			It("preserves root file contents in a manual snapshot until explicitly deleted", func() {
+				assertManualSnapshotCapture(mounted, "")
+			})
+
+			It("preserves only the protected subdirectory in a manual snapshot until explicitly deleted", func() {
+				assertManualSnapshotCapture(mounted, "reports/daily")
+			})
+
+			It("expires a captured snapshot without removing a non-expiring snapshot", func() {
+				assertManualSnapshotExpiration(mounted)
+			})
+
+			It("captures probe file contents in an hourly scheduled snapshot", func() {
 				probePath := path.Join(mounted.MountPoint, probeFilename)
 				probeContent := "probe-" + mounted.Storage.Metadata.Id
 
@@ -82,23 +99,24 @@ type mountedFileStorage struct {
 	Storage    *regionopenapi.StorageV2Read
 	SSHClient  *ssh.Client
 	MountPoint string
+	ExportPath string
 }
 
-func mustFindNFSFileStorageClassID() string {
+func mustFindStandardFileStorageClassID() string {
 	storageClasses, err := regionClient.ListFileStorageClasses(ctx, config.RegionID)
 	Expect(err).NotTo(HaveOccurred(), "failed to list storage classes")
 
+	var matches []string
+
 	for _, storageClass := range storageClasses {
-		for _, protocol := range storageClass.Spec.Protocols {
-			if protocol == regionopenapi.StorageClassProtocolTypeNfsv3 || protocol == regionopenapi.StorageClassProtocolTypeNfsv4 {
-				return storageClass.Metadata.Id
-			}
+		if storageClass.Metadata.Name == "standard" {
+			matches = append(matches, storageClass.Metadata.Id)
 		}
 	}
 
-	Skip(fmt.Sprintf("no NFS file storage classes allocated to region %s", config.RegionID))
+	Expect(matches).To(HaveLen(1), "region %s must have exactly one file storage class named standard", config.RegionID)
 
-	return ""
+	return matches[0]
 }
 
 func EventuallySecurityGroupVisible(securityGroupID string) {
@@ -168,6 +186,7 @@ func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies
 
 	DeferCleanup(func() {
 		err := regionClient.DeleteFileStorage(ctx, storage.Metadata.Id)
+
 		switch {
 		case err == nil:
 			api.WaitForFileStorageGone(regionClient, ctx, storage.Metadata.Id)
@@ -194,6 +213,7 @@ func MustProvisionFileStorage(storageClassID, networkID string, snapshotPolicies
 
 			attachment = candidate
 			foundAttachment = true
+
 			break
 		}
 
@@ -224,6 +244,7 @@ func EventuallyProvisionSnapshotPolicy(storageID string) {
 
 			foundPolicy = true
 			g.Expect(policy.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
+
 			break
 		}
 
@@ -280,11 +301,13 @@ func EventuallyDialSSHConn(ctx context.Context, host, privateKey string) *ssh.Cl
 	}
 
 	address := net.JoinHostPort(host, "22")
+
 	var client *ssh.Client
 
 	Eventually(func() error {
 		var dialErr error
 		client, dialErr = ssh.Dial("tcp", address, sshConfig)
+
 		return dialErr
 	}).WithContext(ctx).
 		WithTimeout(sshConnectTimeout).
@@ -302,8 +325,11 @@ func runSSHCommandReturnResult(client *ssh.Client, command string, timeout time.
 
 	defer session.Close()
 
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	)
+
 	session.Stdout = &stdout
 	session.Stderr = &stderr
 
@@ -324,7 +350,7 @@ func runSSHCommandReturnResult(client *ssh.Client, command string, timeout time.
 		return stdout.String(), stderr.String(), err
 	case <-timer.C:
 		_ = session.Close()
-		return stdout.String(), stderr.String(), fmt.Errorf("remote command timed out after %s", timeout)
+		return stdout.String(), stderr.String(), fmt.Errorf("remote command timed out after %s: %w", timeout, context.DeadlineExceeded)
 	}
 }
 
@@ -401,8 +427,9 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 	api.SkipUnlessInternalAPIConfigured(regionClient)
 	api.SkipUnlessServerFixtureConfigured(config)
 
-	By("selecting an NFS-capable file storage class")
-	storageClassID := mustFindNFSFileStorageClassID()
+	By("selecting the standard file storage class")
+
+	storageClassID := mustFindStandardFileStorageClassID()
 
 	By("provisioning a network and an SSH-ingress security group")
 	networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
@@ -422,6 +449,7 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 
 	By("opening an SSH connection to the server")
 	sshClient := EventuallyDialSSHConn(ctx, *server.Status.PublicIP, key.PrivateKey)
+
 	DeferCleanup(func() {
 		if err := sshClient.Close(); err != nil {
 			GinkgoWriter.Printf("Warning: cleanup close SSH client for server %s: %v\n", server.Metadata.Id, err)
@@ -432,8 +460,12 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 	MustPreflightInstance(sshClient)
 
 	By("mounting the file storage over NFS")
-	mountPoint := path.Join("/mnt", string(storage.Metadata.Name))
+
+	mountPoint := path.Join("/mnt", storage.Metadata.Name)
 	mountSource := *attachment.MountSource
+	_, exportPath, found := strings.Cut(mountSource, ":")
+	Expect(found).To(BeTrue(), "mountSource must contain an NFS export path: %s", mountSource)
+	Expect(path.IsAbs(exportPath)).To(BeTrue(), "NFS export path must be absolute: %s", exportPath)
 	runSSHCommandExpectNoError(sshClient, buildMountCmd(mountSource, mountPoint))
 	DeferCleanup(func() {
 		runSSHCommandExpectNoError(sshClient, fmt.Sprintf("sudo -n umount %s && sudo -n rmdir %s", shellQuote(mountPoint), shellQuote(mountPoint)))
@@ -443,6 +475,7 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 		Storage:    storage,
 		SSHClient:  sshClient,
 		MountPoint: mountPoint,
+		ExportPath: path.Clean(exportPath),
 	}
 }
 
@@ -472,6 +505,7 @@ exit 1`,
 		}
 
 		snapshotPath = strings.TrimSpace(stdout)
+
 		return snapshotPath
 	}).WithTimeout(snapshotVisibilityTimeout).
 		WithPolling(30*time.Second).
