@@ -344,9 +344,16 @@ Run verification against pacts from the Pact Broker (this assumes you have alrea
 make test-contracts-provider
 ```
 
-Run verification against a local pact file (pact for the consumer when testing without a broker):
+Run verification against a local pact file (pact for the consumer when testing without a broker). It runs one provider package, the one whose state handlers serve the pact's consumer:
+
+| Consumer | Package |
+| --- | --- |
+| uni-kubernetes, nscale-environments | `./test/contracts/provider/kubernetes/` (the default) |
+| uni-compute | `./test/contracts/provider/compute/` |
+
 ```bash
 make test-contracts-provider-local PACT_FILE=/path/to/pact.json
+make test-contracts-provider-local PACT_FILE=/path/to/uni-compute-pact.json CONTRACTS_LOCAL_PACKAGE=./test/contracts/provider/compute/
 ```
 
 Run with verbose output:
