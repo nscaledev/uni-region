@@ -702,21 +702,6 @@ func WaitForNetworkVisible(c *APIClient, ctx context.Context, networkID string) 
 		Should(Succeed(), "network should become visible at the API")
 }
 
-// WaitForNetworkProvisioned polls until the network reaches the provisioned state.
-func WaitForNetworkProvisioned(c *APIClient, ctx context.Context, networkID string) {
-	Eventually(func() coreapi.ResourceProvisioningStatus {
-		network, err := c.GetNetwork(ctx, networkID)
-		if err != nil {
-			GinkgoWriter.Printf("Error retrieving network %s: %v\n", networkID, err)
-			return ""
-		}
-
-		return network.Metadata.ProvisioningStatus
-	}).WithTimeout(5*time.Minute).
-		WithPolling(5*time.Second).
-		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "network should be provisioned")
-}
-
 // errResourceStillExists signals a resource is still present during a deletion wait.
 var errResourceStillExists = errors.New("resource still exists")
 
@@ -814,23 +799,6 @@ func SkipUnlessServerFixtureConfigured(config *TestConfig) {
 	if config.ServerFlavorID == "" || config.ServerImageID == "" {
 		Skip("tests require TEST_SERVER_FLAVOR_ID and TEST_SERVER_IMAGE_ID")
 	}
-}
-
-// MustProvisionNetwork creates a network from createReq, registers cleanup
-// immediately, and waits for it to become visible and provisioned.
-func MustProvisionNetwork(c *APIClient, ctx context.Context, createReq regionopenapi.NetworkV2Create) *regionopenapi.NetworkV2Read {
-	network, err := c.CreateNetwork(ctx, createReq)
-	Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-	Expect(network).NotTo(BeNil())
-
-	DeferCleanup(func() {
-		MustDeleteNetwork(c, ctx, network.Metadata.Id)
-	})
-
-	WaitForNetworkVisible(c, ctx, network.Metadata.Id)
-	WaitForNetworkProvisioned(c, ctx, network.Metadata.Id)
-
-	return network
 }
 
 // MustDeleteNetwork deletes the network and waits for it to disappear. A missing network
