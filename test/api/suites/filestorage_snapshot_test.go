@@ -431,9 +431,9 @@ func EventuallyProvisionMountedFilesystem(snapshotPolicies *regionopenapi.Storag
 
 	storageClassID := mustFindStandardFileStorageClassID()
 
-	By("provisioning a network and an SSH-ingress security group")
-	networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-	network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+	By("reusing the shared test network and provisioning an SSH-ingress security group")
+
+	network := api.MustResolveSharedNetwork(regionClient, ctx)
 	securityGroup := MustCreateSecurityGroup(network.Metadata.Id)
 
 	By("creating the NFS file storage and waiting for a mountable attachment")
