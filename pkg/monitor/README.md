@@ -8,7 +8,7 @@ state and projects that back into:
 
 - Kubernetes status updates
 - structured transition logs
-- OpenTelemetry metrics
+- OpenTelemetry metrics, scraped from `/metrics` on `:8080`
 
 Architecturally, this is important because it is a cross-resource, potentially
 cross-repo pattern rather than a one-off local helper. It is where the platform

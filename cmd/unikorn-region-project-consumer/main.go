@@ -50,6 +50,17 @@ func main() {
 
 	ctx := cr.SetupSignalHandler()
 
+	if err := options.SetupMetrics(constants.Service); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	go func() {
+		if err := options.ServeMetrics(ctx, ":8080"); err != nil {
+			fmt.Println(err)
+		}
+	}()
+
 	// The consumer will listen for project deletion events and propagate them to
 	// any root resources that have a corresponding project label.
 	cli, err := client.New(ctx, regionv1.AddToScheme)
