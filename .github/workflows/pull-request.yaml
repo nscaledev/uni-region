@@ -7,6 +7,8 @@ on:
     - reopened
     - ready_for_review
     - labeled
+    # Removing skip-contract-tests reruns the contract jobs it skipped.
+    - unlabeled
 permissions:
   contents: write
 jobs:
@@ -108,6 +110,8 @@ jobs:
         CONSUMER_VERSION: ${{ github.event.pull_request.head.sha || github.sha }}
   ProviderContractVerification:
     runs-on: ubuntu-latest
+    # The emergency label skips every contract job, so a broker or consumer outage can't hold up a fix.
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-contract-tests') }}
     steps:
     - name: Checkout
       uses: actions/checkout@v4
