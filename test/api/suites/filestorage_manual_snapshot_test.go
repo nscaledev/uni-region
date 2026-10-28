@@ -134,7 +134,7 @@ func assertManualSnapshotExpiration(mounted *mountedFileStorage) {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(snapshotCR.Spec.FileStorageID.String()).To(Equal(mounted.Storage.Metadata.Id))
 	Expect(snapshotCR.Spec.ExpirationTime).NotTo(BeNil())
-	Expect(snapshotCR.Spec.ExpirationTime.Time).To(Equal(expiration))
+	Expect(snapshotCR.Spec.ExpirationTime.Time).To(BeTemporally("==", expiration))
 	Expect(snapshotCR.UID).NotTo(BeEmpty())
 	Expect(snapshotCR.DeletionTimestamp.IsZero()).To(BeTrue())
 
