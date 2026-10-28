@@ -344,9 +344,16 @@ Run verification against pacts from the Pact Broker (this assumes you have alrea
 make test-contracts-provider
 ```
 
-Run verification against a local pact file (pact for the consumer when testing without a broker):
+Run verification against a local pact file (pact for the consumer when testing without a broker). It runs one provider package, the one whose state handlers serve the pact's consumer:
+
+| Consumer | Package |
+| --- | --- |
+| uni-kubernetes, nscale-environments | `./test/contracts/provider/kubernetes/` (the default) |
+| uni-compute | `./test/contracts/provider/compute/` |
+
 ```bash
 make test-contracts-provider-local PACT_FILE=/path/to/pact.json
+make test-contracts-provider-local PACT_FILE=/path/to/uni-compute-pact.json CONTRACTS_LOCAL_PACKAGE=./test/contracts/provider/compute/
 ```
 
 Run with verbose output:
@@ -475,23 +482,25 @@ This is useful for ensuring both your consumer expectations and provider impleme
 
 ## Contract Test Escape Hatch
 
-In emergencies (e.g. a hotfix that can't wait for contract tests to be updated), you can skip the `ConsumerContractTests` and `CanIDeploy` jobs without permanently weakening the CI gate.
+In emergencies (e.g. a hotfix that can't wait for contract tests to be updated, or the Pact broker being down), you can skip every contract job, `ConsumerContractTests`, `ProviderContractVerification` and `CanIDeploy`, without permanently weakening the CI gate. Envir (nscale-environments), uni-identity and nks-core use the same label.
 
 ### How to use it
 
 1. Apply the `skip-contract-tests` label to your pull request.
 2. The workflow re-triggers automatically (via the `labeled` event) — no new commit needed.
-3. `ConsumerContractTests` and `CanIDeploy` are both skipped. Skipped jobs count as neutral in GitHub and satisfy branch protection required-status checks.
-4. Remove the label once the contracts are updated.
+3. `ConsumerContractTests`, `ProviderContractVerification` and `CanIDeploy` are skipped. Skipped jobs count as neutral in GitHub and satisfy branch protection required-status checks.
+4. Remove the label once the contracts are updated. Removing it reruns the contract jobs (via the `unlabeled` event).
+
+Say in the pull request why you used it, and tell the owners of the consumers whose contracts were skipped (for Envir's, the Envir team).
 
 The label is recorded in the PR timeline, providing a full audit trail of when the escape hatch was used and by whom.
 
 ### Behaviour
 
-| Scenario | ConsumerContractTests | CanIDeploy |
-|---|---|---|
-| Normal PR (no label) | Runs normally | Runs if tests pass |
-| PR has `skip-contract-tests` label | Skipped | Skipped |
+| Scenario | ConsumerContractTests | ProviderContractVerification | CanIDeploy |
+|---|---|---|---|
+| Normal PR (no label) | Runs normally | Runs normally | Runs if both pass |
+| PR has `skip-contract-tests` label | Skipped | Skipped | Skipped |
 
 ### One-time setup
 
