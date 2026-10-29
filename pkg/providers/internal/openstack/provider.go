@@ -3041,6 +3041,29 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate)
 }
 
+func setAcceptedUserDataHashes(server *unikornv1.Server, acceptedHash, submittedHash string) {
+	server.Status.AcceptedUserDataHash = acceptedHash
+	server.Status.SubmittedUserDataHash = submittedHash
+}
+
+func userDataHash(userData []byte) string {
+	return types.UserDataHash(userData)
+}
+
+func serverRequiresRebuild(server *unikornv1.Server, currentImageID, desiredImageID regionids.ImageID, desiredUserDataHash string) bool {
+	if currentImageID == desiredImageID && server.Status.AcceptedUserDataHash == "" {
+		// Servers created before user-data rebuilds have no provider-readable
+		// payload. Establish a baseline without reimaging them.
+		setAcceptedUserDataHashes(server, desiredUserDataHash, "")
+	}
+
+	return currentImageID != desiredImageID || server.Status.AcceptedUserDataHash != desiredUserDataHash
+}
+
+func serverRebuildInFlightOnDesiredImage(currentImageID, desiredImageID regionids.ImageID, openstackServer *servers.Server) bool {
+	return currentImageID == desiredImageID && serverRebuildInFlight(openstackServer)
+}
+
 // novaRebuildImageNotFoundMessage is the fixed explanation Nova's rebuild
 // action returns when the target image no longer exists (nova
 // api/openstack/compute/servers.py, the ImageNotFound catch). The literal has
@@ -3081,7 +3104,7 @@ func isRebuildImageNotFound(err error) bool {
 // recovery bumps no generation, so parking a 403 or a 5xx would strand the
 // server. The accepted stamp is fixed, never derived from the response body: a
 // 202 can still describe the pre-destruction server as ACTIVE.
-func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions) (*servers.Server, error) {
+func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredUserDataHash string, options ServerRebuildOptions) (*servers.Server, error) {
 	rebuilt, err := client.RebuildServer(ctx, openstackServer.ID, options)
 	if err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
@@ -3107,6 +3130,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 		return nil, err
 	}
 
+	setAcceptedUserDataHashes(server, desiredUserDataHash, userDataHash(options.UserData))
 	markServerRebuildAccepted(server)
 
 	// An accepted rebuild is in flight, so completing here would report the server
@@ -3145,7 +3169,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 //	                                      a rebuild before first boot regardless.
 //	R4′  ref != desired, task in flight  → yield; something else holds the server.
 //	R4″  ref != desired, quiescent       → submit. The one destructive row.
-func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredUserDataHash string) (*servers.Server, error) {
 	// R1: the spec names no image. Image is in the CRD's required list, so this
 	// is dead code in practice, but completing would report a server provisioned
 	// onto no image. The only remedy is a spec edit, which is the park contract.
@@ -3169,69 +3193,63 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 			"the provider cannot report the server's image, so the desired image cannot be verified; replace the server")
 	}
 
-	if currentImageID == desiredImageID {
-		// R3: accepted but unfinished.
-		if serverRebuildInFlight(openstackServer) {
-			markServerRebuildAccepted(server)
+	// R3: accepted but unfinished.
+	if serverRebuildInFlightOnDesiredImage(currentImageID, desiredImageID, openstackServer) {
+		markServerRebuildAccepted(server)
+
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+			"the provider is rebuilding the server onto the requested image")
+	}
+
+	if serverRequiresRebuild(server, currentImageID, desiredImageID, desiredUserDataHash) {
+		if openstackServer.LaunchedAt.IsZero() {
+			if currentImageID != desiredImageID {
+				log.FromContext(ctx).Info("image change deferred until first launch",
+					"server", server.Name, "novaServerID", openstackServer.ID)
+			}
 
 			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
-				"the provider is rebuilding the server onto the requested image")
+				"the requested server changes will be applied once the server has booted")
 		}
 
-		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
-		// write (it moved at accept), so this must not read as provisioned. Park
-		// on the provisioning axis, exactly as create-retry does when its
-		// attempts are exhausted. The remedy is a spec edit — a new image choice
-		// or a replacement server — which is ErrUserActionRequired's contract:
-		// recovery is generation-driven, and there is no retry bookkeeping to
-		// clear here, so the sentinel alone suffices. The park is also
-		// re-derived per pass, so a monitor observed-write after a silent
-		// provider recovery un-parks it without any spec change.
-		if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
-			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-				"the provider reports the server in an error state; select another image or replace the server")
+		if serverTaskActive(openstackServer) {
+			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+				"another operation is in progress on the server; the requested changes will be applied once it completes")
 		}
 
-		// R3″: converged. Any other task is the monitor's axis.
-		return openstackServer, nil
+		return submitServerRebuild(ctx, client, server, openstackServer, desiredUserDataHash, ServerRebuildOptions{
+			ImageID:     desiredImageID,
+			UserData:    server.Spec.UserData,
+			UseUserData: true,
+		})
 	}
 
-	// R4: before first boot the image is a create parameter, so this belongs to
-	// create-retry. Nova refuses it anyway (must_have_launched).
-	if openstackServer.LaunchedAt.IsZero() {
-		log.FromContext(ctx).Info("image change deferred until first launch",
-			"server", server.Name, "novaServerID", openstackServer.ID)
-
-		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
-			"the requested image differs from the running one; it will be applied once the server has booted")
+	// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
+	// write (it moved at accept), so this must not read as provisioned. Park
+	// on the provisioning axis, exactly as create-retry does when its
+	// attempts are exhausted. The remedy is a spec edit — a new image choice
+	// or a replacement server — which is ErrUserActionRequired's contract:
+	// recovery is generation-driven, and there is no retry bookkeeping to
+	// clear here, so the sentinel alone suffices. The park is also
+	// re-derived per pass, so a monitor observed-write after a silent
+	// provider recovery un-parks it without any spec change.
+	if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
+		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+			"the provider reports the server in an error state; select another image or replace the server")
 	}
 
-	// R4′: a foreign operation holds the server; Nova would refuse the rebuild.
-	// The task state is provider vocabulary, so it goes to the log; the condition
-	// says only that another operation holds the server.
-	if serverTaskActive(openstackServer) {
-		log.FromContext(ctx).Info("image change deferred while another operation holds the server",
-			"server", server.Name, "novaServerID", openstackServer.ID,
-			"novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
-
-		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
-			"another operation is in progress on the server; the requested image will be applied once it completes")
-	}
-
-	// R4″: the one destructive row.
-	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-		ImageID: desiredImageID,
-	})
+	// R3″: converged. Any other task is the monitor's axis.
+	return openstackServer, nil
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
+func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName, desiredUserDataHash string, preflight serverCreatePreflight) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
 	openstackServer, err := client.GetServer(ctx, server)
 	if err == nil {
 		log.V(1).Info("server already exists")
 
-		return reconcileServerImage(ctx, client, server, openstackServer)
+		return reconcileServerImage(ctx, client, server, openstackServer, desiredUserDataHash)
 	}
 
 	// Fail closed on an ambiguous provider read before a creating action — only
@@ -3294,6 +3312,8 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		return nil, err
 	}
 
+	setAcceptedUserDataHashes(server, desiredUserDataHash, userDataHash(server.Spec.UserData))
+
 	setServerHealthStatus(server, openstackServer)
 	// No Ironic lookup at create time — the live monitor's UpdateServerState
 	// refines the lifecycle state from observed Ironic state on each poll.
@@ -3321,9 +3341,10 @@ func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOption
 // PrivateIP/PublicIP onto the caller's server, so the full copy-back cannot
 // revert those fields or drop the reconcile's own Phase/Healthy writes.
 func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string, preflight serverCreatePreflight) error {
+	desiredUserDataHash := userDataHash(server.Spec.UserData)
 	serverForCreate := serverForCreate(server, options)
 
-	_, err := p.reconcileServer(ctx, client, serverForCreate, port, keyName, preflight)
+	_, err := p.reconcileServer(ctx, client, serverForCreate, port, keyName, desiredUserDataHash, preflight)
 
 	if serverForCreate != server {
 		server.Status = *serverForCreate.Status.DeepCopy()
