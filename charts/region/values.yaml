@@ -85,6 +85,9 @@ organization: nscaledev
 #         # defined, and its value must be the ECDSA signature of the SHA256 hash of
 #         # the image ID.
 #         signingKey: ~
+#       # Also list images with community visibility.  For development only,
+#       # never enable this in production.
+#       includeCommunity: false
 #     # Network service configuration.
 #     network:
 #       # External network selection, the result is a boolean intersection of
