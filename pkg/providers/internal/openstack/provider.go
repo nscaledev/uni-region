@@ -2029,10 +2029,26 @@ func volumeSystemMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume
 }
 
 const (
-	volumeStatusAvailable   = "available"
-	volumeStatusInUse       = "in-use"
-	volumeStatusErrorPrefix = "error"
+	volumeStatusAvailable = "available"
+	volumeStatusInUse     = "in-use"
+	// volumeStatusError is the bare Cinder error state, and as a prefix the
+	// whole error family.
+	volumeStatusError = "error"
 )
+
+// volumeErrorDisposition classifies Cinder's error family, or returns nil
+// outside it. Every state in it is rechecked, a bare "error" included: a failed
+// create cannot be told from a working volume gone to "error" once restarted,
+// since ProvisionedAt stamps on first sight, and the second may hold data an
+// operator can recover without a spec edit. So nothing here parks, and nothing
+// tells a user to replace a volume. See the README.
+func volumeErrorDisposition(status string) error {
+	if strings.HasPrefix(status, volumeStatusError) {
+		return provisioners.Recheck(unikornv1core.ConditionReasonErrored, "the provider reports the volume in an error state")
+	}
+
+	return nil
+}
 
 func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
 	logger := log.FromContext(ctx)
@@ -2050,8 +2066,8 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 			volume.Status.ProvisionedAt = &now
 		}
 
-		if strings.HasPrefix(openstackVolume.Status, volumeStatusErrorPrefix) {
-			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
+		if err := volumeErrorDisposition(openstackVolume.Status); err != nil {
+			return err
 		}
 
 		if openstackVolume.Status != volumeStatusAvailable && openstackVolume.Status != volumeStatusInUse {
@@ -2066,6 +2082,7 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 	}
 
 	if volume.Status.ProvisionedAt != nil {
+		volume.Status.Size = nil
 		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
 
 		return provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider volume is missing; replace the Region Volume")
@@ -2599,7 +2616,7 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		return
 	}
 
-	// Nova BUILD is the window where the live monitor refines the lifecycle
+	// Nova BUILD is the window where the projection refines the lifecycle
 	// view beyond what PowerState alone can express. PowerState is NOSTATE
 	// throughout BUILD, so we look at server.Status + the optional Ironic
 	// state to pick Queued vs Building.
@@ -2625,7 +2642,7 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	case servers.SHUTDOWN:
 		// TODO: Stopping is only ever written by the handler in response to a
-		// user-initiated stop. If a monitor poll lands while OpenStack is
+		// user-initiated stop. If a poll lands while OpenStack is
 		// already reporting SHUTOFF/SHUTDOWN (e.g. the user stopped via the
 		// OpenStack dashboard rather than the platform API, or the platform
 		// missed the transient Stopping window), this flips Stopping → Stopped
@@ -2971,7 +2988,7 @@ func logServerFault(ctx context.Context, client ServerObservationInterface, serv
 }
 
 // markServerRebuildAccepted stamps the post-acceptance in-flight view: Active
-// Rebuilding and health Unknown, byte-identical to what the monitor derives for
+// Rebuilding and health Unknown, matching what the projection derives for
 // a Nova REBUILD (setServerActive + convertServerHealthStatus). Never call
 // before Nova has accepted: pre-acceptance waits are silent yields.
 func markServerRebuildAccepted(server *unikornv1.Server) {
@@ -3205,7 +3222,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	}
 
 	setServerHealthStatus(server, openstackServer)
-	// No Ironic lookup at create time — the live monitor's UpdateServerState
+	// No Ironic lookup at create time — the next pass's projection
 	// refines the lifecycle state from observed Ironic state on each poll.
 	setServerActive(ctx, server, openstackServer, nil)
 
@@ -3583,8 +3600,8 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 // lookupIronicNodeForPhase fetches the bound Ironic node for a baremetal
 // server in Nova BUILD so setServerActive can distinguish Queued (pre-deploy)
 // from Building (active deploy). All failure modes log and return nil;
-// setServerActive then falls back to Building, matching the VM default — the
-// monitor must never error on a missing or unreachable Ironic.
+// setServerActive then falls back to Building, matching the VM default: the
+// pass must never error on a missing or unreachable Ironic.
 func (p *Provider) lookupIronicNodeForPhase(
 	ctx context.Context,
 	identity *unikornv1.Identity,

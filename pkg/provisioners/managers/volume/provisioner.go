@@ -19,6 +19,7 @@ package volume
 import (
 	"context"
 	"errors"
+	"slices"
 
 	"github.com/spf13/pflag"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/provisioners/internal/base"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
@@ -100,13 +102,7 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.reconcileVolume(ctx, provider, identity); err != nil {
-		return err
-	}
-
-	p.volume.Status.ObservedGeneration = &p.volume.Generation
-
-	return nil
+	return p.reconcileVolume(ctx, provider, identity)
 }
 
 func (p *Provisioner) reconcileVolume(ctx context.Context, provider types.Provider, identity *unikornv1.Identity) error {
@@ -247,9 +243,14 @@ func (p *Provisioner) reconcileClaimedVolume(ctx context.Context, provider types
 		return err
 	}
 
-	condition, err := unikornv1core.GetAvailableCondition(server)
-	if err != nil || condition.Reason != unikornv1core.ConditionReasonProvisioned {
-		return p.waitForServerProvisioning(ctx, server, condition, err)
+	// The server's own pass gates only a server that has not booted.  After
+	// boot it is polled and can read Errored or Provisioning with no spec edit,
+	// while the attachment is fine.  See the README.
+	if server.Status.ProvisionedAt == nil {
+		condition, err := unikornv1core.GetAvailableCondition(server)
+		if err != nil || condition.Reason != unikornv1core.ConditionReasonProvisioned {
+			return p.waitForServer(ctx, server, condition, err)
+		}
 	}
 
 	attachment, err := provider.AttachVolume(ctx, identity, server, p.volume)
@@ -270,8 +271,15 @@ func (p *Provisioner) reconcileClaimedVolume(ctx context.Context, provider types
 }
 
 func (p *Provisioner) handleAttachmentError(ctx context.Context, server *unikornv1.Server, err error) error {
+	// Could not reach the cloud, so nothing new to say about the attachment:
+	// leave its row as it was, by the test core applies to the condition.
+	if manager.Unreachable(err, providers.Transient) {
+		return err
+	}
+
+	// A recheck is a yield, but it reports a fault rather than progress.
 	status := unikornv1.AttachmentProvisioning
-	if !errors.Is(err, provisioners.ErrYield) {
+	if !errors.Is(err, provisioners.ErrYield) || errors.Is(err, provisioners.ErrRecheck) {
 		status = unikornv1.AttachmentErrored
 	}
 
@@ -282,19 +290,21 @@ func (p *Provisioner) handleAttachmentError(ctx context.Context, server *unikorn
 	return err
 }
 
-// waitForServerProvisioning records why attachment is blocked and yields until
-// the claimed Server is ready for the provider attachment call.
-func (p *Provisioner) waitForServerProvisioning(ctx context.Context, server *unikornv1.Server, condition *unikornv1core.TypedCondition[unikornv1core.ProvisioningConditionReason], conditionErr error) error {
-	// A Server provisioning error blocks attachment, but remains retryable because
-	// the Server condition can recover without a Volume generation change.
-	if conditionErr == nil && condition.Reason == unikornv1core.ConditionReasonErrored {
-		message := "server provisioning failed"
-
-		if err := p.setAttachmentStatus(ctx, server, unikornv1.AttachmentErrored, nil, message); err != nil {
+// waitForServer records why attachment is blocked.  A server still coming up
+// is progress, so the volume yields; one that has failed may recover but is not
+// moving, so the volume reports it and waits for the next poll.
+func (p *Provisioner) waitForServer(ctx context.Context, server *unikornv1.Server, condition *unikornv1core.TypedCondition[unikornv1core.ProvisioningConditionReason], conditionErr error) error {
+	if conditionErr == nil && serverFailed(condition.Reason) {
+		if err := p.setAttachmentStatus(ctx, server, unikornv1.AttachmentErrored, nil, "server provisioning failed"); err != nil {
 			return err
 		}
 
-		return provisioners.ErrYield
+		cli, err := coreclient.FromContext(ctx)
+		if err != nil {
+			return err
+		}
+
+		return provisioners.DependencyFailed(cli.Scheme(), server)
 	}
 
 	if err := p.setAttachmentStatus(ctx, server, unikornv1.AttachmentProvisioning, nil, "waiting for server provisioning"); err != nil {
@@ -302,6 +312,19 @@ func (p *Provisioner) waitForServerProvisioning(ctx context.Context, server *uni
 	}
 
 	return provisioners.ErrYield
+}
+
+// serverFailed reports whether a server's provisioning reason is a failure.
+func serverFailed(reason unikornv1core.ProvisioningConditionReason) bool {
+	switch reason {
+	case unikornv1core.ConditionReasonErrored, unikornv1core.ConditionReasonDependencyFailed, unikornv1core.ConditionReasonDependencyNotFound:
+		return true
+	case unikornv1core.ConditionReasonProvisioning, unikornv1core.ConditionReasonProvisioned,
+		unikornv1core.ConditionReasonDeprovisioning, unikornv1core.ConditionReasonDeprovisioned,
+		unikornv1core.ConditionReasonDependencyNotReady:
+	}
+
+	return false
 }
 
 func serverRequestsVolume(server *unikornv1.Server, volumeID string) bool {
@@ -315,17 +338,19 @@ func serverRequestsVolume(server *unikornv1.Server, volumeID string) bool {
 }
 
 func attachmentMessage(err error) string {
+	// A typed error says what it is waiting on or what went wrong; only an
+	// untyped one gets a generic word.
+	var provisioningError *provisioners.Error
+	if errors.As(err, &provisioningError) {
+		return provisioningError.Message()
+	}
+
 	if errors.Is(err, provisioners.ErrYield) {
 		return "waiting for volume attachment to converge"
 	}
 
 	if errors.Is(err, coreerrors.ErrConflict) {
 		return "volume attachment conflicts with provider state"
-	}
-
-	var provisioningError *provisioners.Error
-	if errors.As(err, &provisioningError) {
-		return provisioningError.Message()
 	}
 
 	return "an unexpected error occurred"
@@ -399,14 +424,8 @@ func (p *Provisioner) updateAttachmentStatus(ctx context.Context, server *unikor
 			return err
 		}
 
-		updated := removeServerVolumeStatus(latest.Status.Volumes, p.volume.Name)
-		if status != nil {
-			if !create && len(updated) == len(latest.Status.Volumes) {
-				return nil
-			}
-
-			updated = append(updated, *status)
-		} else if len(updated) == len(latest.Status.Volumes) {
+		updated, changed := serverVolumeStatusUpdate(latest.Status.Volumes, p.volume.Name, status, create)
+		if !changed {
 			return nil
 		}
 
@@ -416,16 +435,37 @@ func (p *Provisioner) updateAttachmentStatus(ctx context.Context, server *unikor
 	})
 }
 
-func removeServerVolumeStatus(volumes []unikornv1.ServerVolumeStatus, volumeID string) []unikornv1.ServerVolumeStatus {
-	result := volumes[:0]
+// serverVolumeStatusUpdate returns volumes with this volume's entry replaced
+// where it stands, added when create allows, or removed when status is nil, and
+// whether anything changed. Replaced in place, because order is part of the
+// object: moving an entry is a real write, which a polling controller would
+// otherwise make every period for every server with two volumes.
+func serverVolumeStatusUpdate(volumes []unikornv1.ServerVolumeStatus, volumeID string, status *unikornv1.ServerVolumeStatus, create bool) ([]unikornv1.ServerVolumeStatus, bool) {
+	index := slices.IndexFunc(volumes, func(volume unikornv1.ServerVolumeStatus) bool {
+		return volume.ID == volumeID
+	})
 
-	for _, volume := range volumes {
-		if volume.ID != volumeID {
-			result = append(result, volume)
+	switch {
+	case status == nil:
+		if index < 0 {
+			return volumes, false
 		}
-	}
 
-	return result
+		return slices.Delete(slices.Clone(volumes), index, index+1), true
+	case index >= 0:
+		if equality.Semantic.DeepEqual(volumes[index], *status) {
+			return volumes, false
+		}
+
+		updated := slices.Clone(volumes)
+		updated[index] = *status
+
+		return updated, true
+	case create:
+		return append(slices.Clone(volumes), *status), true
+	default:
+		return volumes, false
+	}
 }
 
 // Deprovision removes provider state before releasing any Identity allocation.

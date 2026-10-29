@@ -167,7 +167,7 @@ func validateServerImageForCreate(ctx context.Context, provider types.Provider, 
 // flavor-dependent compatibility checks (architecture, disk size,
 // virtualization) are skipped because the flavor's metadata is unavailable;
 // Nova is the remaining backstop for a truly incompatible rebuild, which it
-// either rejects synchronously or settles as ERROR for the monitor to report.
+// either rejects synchronously or settles as ERROR for the next pass to report.
 func validateServerImageForUpdate(ctx context.Context, provider types.Provider, organizationID identityids.OrganizationID, imageID regionids.ImageID, flavorID regionids.FlavorID) error {
 	image, err := readyServerImage(ctx, provider, organizationID, imageID)
 	if err != nil {

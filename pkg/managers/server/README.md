@@ -34,8 +34,10 @@ other failure logs at Error on every pass.
 ## Watches
 
 Besides spec generation changes, the watch wakes the controller when a
-pre-launch provider server lands in `Healthy/Errored`. That status edge is the
-trigger for bounded delete-and-retry in the server provisioner.
+pre-launch provider server is first seen in `Active/Errored`. That edge comes
+from the pass's own projection and triggers bounded delete-and-retry in the
+server provisioner, so a failed create is handled on the next pass rather than
+at the next poll.
 
 The "pre-launch" test is the shared `ProviderCreateFailure` predicate exported by
 [`pkg/provisioners/managers/server`](../../provisioners/managers/server/README.md),
