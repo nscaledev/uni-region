@@ -353,10 +353,11 @@ func TestListImagesVisibility(t *testing.T) {
 	}
 
 	cases := []struct {
-		name         string
-		options      *unikornv1.RegionOpenstackImageSpec
-		visibilities []string
-		want         []string
+		name           string
+		options        *unikornv1.RegionOpenstackImageSpec
+		communityFails bool
+		visibilities   []string
+		want           []string
 	}{
 		{
 			name:         "PublicOnly",
@@ -368,6 +369,14 @@ func TestListImagesVisibility(t *testing.T) {
 			options:      &unikornv1.RegionOpenstackImageSpec{IncludeCommunity: true},
 			visibilities: []string{"public", "community"},
 			want:         []string{"community-old", "public-org", "public-new", "community-new"},
+		},
+		{
+			// A partial listing would silently hide community images, so a
+			// failed community call fails the whole listing.
+			name:           "CommunityError",
+			options:        &unikornv1.RegionOpenstackImageSpec{IncludeCommunity: true},
+			communityFails: true,
+			visibilities:   []string{"public", "community"},
 		},
 	}
 
@@ -394,6 +403,12 @@ func TestListImagesVisibility(t *testing.T) {
 				visibilities = append(visibilities, visibility)
 				lock.Unlock()
 
+				if c.communityFails && visibility == "community" {
+					http.Error(w, "community listing failed", http.StatusInternalServerError)
+
+					return
+				}
+
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{"images": response})
 			}))
@@ -402,6 +417,18 @@ func TestListImagesVisibility(t *testing.T) {
 			client := openstack.NewTestImageClient(server.URL+"/", c.options)
 
 			result, err := client.ListImages(t.Context())
+
+			lock.Lock()
+			defer lock.Unlock()
+
+			require.Equal(t, c.visibilities, visibilities)
+
+			if c.communityFails {
+				require.Error(t, err)
+
+				return
+			}
+
 			require.NoError(t, err)
 
 			got := make([]string, len(result))
@@ -410,11 +437,6 @@ func TestListImagesVisibility(t *testing.T) {
 			}
 
 			require.Equal(t, c.want, got)
-
-			lock.Lock()
-			defer lock.Unlock()
-
-			require.Equal(t, c.visibilities, visibilities)
 		})
 	}
 }
