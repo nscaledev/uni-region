@@ -56,6 +56,11 @@ type NetworkClient struct {
 	// externalNetworkCache provides caching to avoid having to talk to
 	// OpenStack.
 	externalNetworkCache *cache.TimeoutCache[[]networks.Network]
+
+	// projectID and userID are what the client's token is scoped to, or
+	// empty.  Read once: the token is re-marshalled whole to read them.
+	projectID string
+	userID    string
 }
 
 // NewNetworkClient provides a simple one-liner to start networking.
@@ -70,10 +75,14 @@ func NewNetworkClient(ctx context.Context, provider CredentialProvider, options 
 		return nil, err
 	}
 
+	projectID, userID := authScope(providerClient)
+
 	c := &NetworkClient{
 		client:               client,
 		options:              options,
 		externalNetworkCache: cache.New[[]networks.Network](time.Hour),
+		projectID:            projectID,
+		userID:               userID,
 	}
 
 	return c, nil
@@ -172,6 +181,13 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 
 	name := networkName(network)
 
+	// A token with no project keeps nothing: an empty key would merge projects.
+	if c.projectID != "" {
+		return networkLists.find(ctx, c.projectID, c.userID, c.listNetworks(c.projectID), func(x *NetworkExt) bool {
+			return x.Name == name
+		})
+	}
+
 	opts := &networks.ListOpts{
 		// NOTE: this is a regular expression match so foo-4 will match
 		// foo-4, foo-48, foo-4444444444444.
@@ -208,6 +224,8 @@ func (c *NetworkClient) GetNetwork(ctx context.Context, network *unikornv1.Netwo
 // This requires https://github.com/unikorn-cloud/python-unikorn-openstack-policy
 // to be installed, see the README for further details on how this has to work.
 func (c *NetworkClient) CreateNetwork(ctx context.Context, network *unikornv1.Network, vlanID *int) (*NetworkExt, error) {
+	defer c.retireLists()
+
 	_, span := traceStart(ctx, "POST /network/v2.0/networks")
 	defer span.End()
 
@@ -238,6 +256,8 @@ func (c *NetworkClient) CreateNetwork(ctx context.Context, network *unikornv1.Ne
 }
 
 func (c *NetworkClient) DeleteNetwork(ctx context.Context, id string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.network.id", id),
 	)
@@ -286,6 +306,8 @@ func (c *NetworkClient) GetSubnet(ctx context.Context, network *unikornv1.Networ
 }
 
 func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Network, networkID, prefix, gatewayIP string, dnsNameservers []string, routes []subnets.HostRoute, allocationPools []subnets.AllocationPool) (*subnets.Subnet, error) {
+	defer c.retireLists()
+
 	_, span := traceStart(ctx, "POST /network/v2.0/subnets")
 	defer span.End()
 
@@ -309,6 +331,8 @@ func (c *NetworkClient) CreateSubnet(ctx context.Context, network *unikornv1.Net
 }
 
 func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNameservers []string, routes []subnets.HostRoute) (*subnets.Subnet, error) {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.subnet.id", subnetID),
 	)
@@ -333,6 +357,8 @@ func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNa
 }
 
 func (c *NetworkClient) DeleteSubnet(ctx context.Context, id string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.subnet.id", id),
 	)
@@ -381,6 +407,8 @@ func (c *NetworkClient) GetRouter(ctx context.Context, network *unikornv1.Networ
 }
 
 func (c *NetworkClient) CreateRouter(ctx context.Context, network *unikornv1.Network) (*routers.Router, error) {
+	defer c.retireLists()
+
 	externalNetworks, err := c.ExternalNetworks(ctx)
 	if err != nil {
 		return nil, err
@@ -405,6 +433,8 @@ func (c *NetworkClient) CreateRouter(ctx context.Context, network *unikornv1.Net
 }
 
 func (c *NetworkClient) DeleteRouter(ctx context.Context, id string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.router.id", id),
 	)
@@ -416,6 +446,8 @@ func (c *NetworkClient) DeleteRouter(ctx context.Context, id string) error {
 }
 
 func (c *NetworkClient) AddRouterInterface(ctx context.Context, routerID, subnetID string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.router.id", routerID),
 	)
@@ -431,6 +463,8 @@ func (c *NetworkClient) AddRouterInterface(ctx context.Context, routerID, subnet
 }
 
 func (c *NetworkClient) RemoveRouterInterface(ctx context.Context, routerID, subnetID string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.router.id", routerID),
 	)
@@ -454,6 +488,13 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 	defer span.End()
 
 	name := securityGroupName(securityGroup)
+
+	// As GetNetwork.
+	if c.projectID != "" {
+		return securityGroupLists.find(ctx, c.projectID, c.userID, c.listSecurityGroups(c.projectID), func(x *groups.SecGroup) bool {
+			return x.Name == name
+		})
+	}
 
 	opts := groups.ListOpts{
 		// NOTE: this is a regular expression match so foo-4 will match
@@ -488,6 +529,8 @@ func (c *NetworkClient) GetSecurityGroup(ctx context.Context, securityGroup *uni
 
 // CreateSecurityGroup creates a new security group.
 func (c *NetworkClient) CreateSecurityGroup(ctx context.Context, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
+	defer c.retireLists()
+
 	_, span := traceStart(ctx, "POST /network/v2.0/securitygroups")
 	defer span.End()
 
@@ -505,6 +548,8 @@ func (c *NetworkClient) CreateSecurityGroup(ctx context.Context, securityGroup *
 
 // DeleteSecurityGroup deletes a security group.
 func (c *NetworkClient) DeleteSecurityGroup(ctx context.Context, securityGroupID string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.security_group.id", securityGroupID),
 	)
@@ -538,6 +583,8 @@ func (c *NetworkClient) ListSecurityGroupRules(ctx context.Context, securityGrou
 
 // CreateSecurityGroupRule adds a security group rule to a security group.
 func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGroupID string, direction rules.RuleDirection, protocol rules.RuleProtocol, portStart, portEnd int, prefix string) (*rules.SecGroupRule, error) {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.security_group.id", securityGroupID),
 	)
@@ -566,6 +613,8 @@ func (c *NetworkClient) CreateSecurityGroupRule(ctx context.Context, securityGro
 
 // DeleteSecurityGroupRule deletes a security group rule from a security group.
 func (c *NetworkClient) DeleteSecurityGroupRule(ctx context.Context, securityGroupID, ruleID string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.security_group.id", securityGroupID),
 		attribute.String("network.security_group_rule.id", ruleID),
@@ -608,6 +657,8 @@ func (c *NetworkClient) GetFloatingIP(ctx context.Context, portID string) (*floa
 
 // CreateFloatingIP creates a floating IP.
 func (c *NetworkClient) CreateFloatingIP(ctx context.Context, portID string) (*floatingips.FloatingIP, error) {
+	defer c.retireLists()
+
 	externalNetworks, err := c.ExternalNetworks(ctx)
 	if err != nil {
 		return nil, err
@@ -631,6 +682,8 @@ func (c *NetworkClient) CreateFloatingIP(ctx context.Context, portID string) (*f
 
 // DeleteFloatingIP deletes a floating IP.
 func (c *NetworkClient) DeleteFloatingIP(ctx context.Context, id string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.floating_ip.id", id),
 	)
@@ -727,6 +780,8 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 }
 
 func (c *NetworkClient) CreateServerPort(ctx context.Context, server *unikornv1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
+	defer c.retireLists()
+
 	_, span := traceStart(ctx, "POST /network/v2.0/ports")
 	defer span.End()
 
@@ -746,6 +801,8 @@ func (c *NetworkClient) CreateServerPort(ctx context.Context, server *unikornv1.
 }
 
 func (c *NetworkClient) UpdatePort(ctx context.Context, portID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.port.id", portID),
 	)
@@ -767,6 +824,8 @@ func (c *NetworkClient) UpdatePort(ctx context.Context, portID string, securityG
 }
 
 func (c *NetworkClient) DeletePort(ctx context.Context, portID string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.port.id", portID),
 	)
@@ -780,6 +839,8 @@ func (c *NetworkClient) DeletePort(ctx context.Context, portID string) error {
 // Update quotas overrides any OpenStack default quotas for the project's networking.
 // All networking limits are removed.
 func (c *NetworkClient) UpdateQuotas(ctx context.Context, projectID string) error {
+	defer c.retireLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("network.project.id", projectID),
 	)
