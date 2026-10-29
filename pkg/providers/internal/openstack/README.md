@@ -627,7 +627,7 @@ place. Caching derived clients would synchronise token expiry across a burst —
 everything built in one burst expiring in one burst — and reform the herd an hour
 later.
 
-Three things follow that are worth knowing.
+Four things follow that are worth knowing.
 
 **The service catalog is pinned for the life of the process.** gophercloud's
 `v3auth` closes `EndpointLocator` over the catalog from the login that built the
@@ -640,6 +640,20 @@ clients failing endpoint lookup until a restart. The operator-facing procedure i
 in [ADMIN.md](./ADMIN.md), because the symptom points away from the cause: calls
 fail against an endpoint that has already been changed while Keystone itself is
 healthy, and nothing logs the staleness.
+
+**Endpoint lookups are remembered for the life of the session.** gophercloud
+resolves a service's endpoint on every service client it builds, and for an
+unversioned catalog URL (Neutron's, Glance's, and usually Octavia's and
+Placement's) it GETs the version document to check the major version. A server
+reconcile builds a network client every time, so that was one extra Neutron round
+trip per reconcile, in series with it: one per server per minute once servers are
+polled. The session wraps `EndpointLocator` so each lookup is answered once per
+session, and the wrapper survives reauth; a failed lookup is not remembered. With
+one public endpoint per service, as every catalog seen so far has, it pins nothing
+the catalog did not already pin. With several, gophercloud skips one whose version
+document lacks the wanted version and takes the next, so a moment's glitch on the
+first leaves the second remembered until a restart. Pinned by
+`TestSessionLooksUpEachEndpointOnce`.
 
 **The shared client carries a request timeout, and must.** Sharing a client shares
 gophercloud's reauth serialisation: `AuthenticatedHeaders` waits for an
