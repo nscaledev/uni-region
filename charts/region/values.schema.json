@@ -432,6 +432,9 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "includeCommunity": {
+                    "type": "boolean"
                   }
                 }
               },

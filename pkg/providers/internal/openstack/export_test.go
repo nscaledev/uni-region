@@ -181,6 +181,16 @@ func NewTestBlockStorageClient(endpoint string, options *unikornv1.RegionOpensta
 	}
 }
 
+func NewTestImageClient(endpoint string, options *unikornv1.RegionOpenstackImageSpec) *ImageClient {
+	return &ImageClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		options: options,
+	}
+}
+
 func NewTestPlacementClient(endpoint string, httpClient *http.Client) *PlacementClient {
 	providerClient := &gophercloud.ProviderClient{
 		HTTPClient: *httpClient,

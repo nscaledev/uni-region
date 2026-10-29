@@ -298,6 +298,11 @@ type RegionOpenstackImageSpec struct {
 	// Selector defines a set of rules to lookup images.
 	// If not specified, all images are selected.
 	Selector *ImageSelector `json:"selector,omitempty"`
+	// IncludeCommunity additionally exposes images with community visibility, so
+	// development environments can share images without admin rights. Any project
+	// may publish a community image, so never enable this in production. Community
+	// images claiming to belong to an organization are ignored.
+	IncludeCommunity bool `json:"includeCommunity,omitempty"`
 }
 
 type ImageSelector struct {
