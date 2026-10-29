@@ -59,8 +59,8 @@ func newKeystone(t *testing.T, before func()) *countingKeystone {
 			before()
 		}
 
-		// Versioned catalog URLs, as a real cloud publishes them: gophercloud
-		// reads the version from the URL rather than probing the endpoint.
+		// Versioned catalog URLs, so gophercloud reads the version from the
+		// URL rather than probing the endpoint.
 		compute := keystone.server.URL + "/compute/v2.1"
 		network := keystone.server.URL + "/network/v2.0"
 
@@ -313,4 +313,58 @@ func TestSessionBoundsTheLoginItself(t *testing.T) {
 	_, err := NewPasswordProvider(keystone.endpoint(), "user", "secret", t.Name()).Client(t.Context())
 	require.Error(t, err, "an unresponsive identity service must not hang the login")
 	assert.NotErrorIs(t, err, context.Canceled, "it must fail on its own timeout, not a context")
+}
+
+// TestSessionLooksUpEachEndpointOnce pins that a credential's clients probe an
+// unversioned endpoint once, not once per client. Neutron publishes an
+// unversioned catalog URL on a stock cloud, and gophercloud GETs its version
+// document on every lookup; a server reconcile builds a network client every
+// time, so this used to be one extra round trip per reconcile.
+func TestSessionLooksUpEachEndpointOnce(t *testing.T) {
+	t.Parallel()
+
+	var (
+		server  *httptest.Server
+		probes  atomic.Int64
+		network = func() string { return server.URL + "/network" }
+		compute = func() string { return server.URL + "/compute/v2.1" }
+	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v3/auth/tokens", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Subject-Token", "token")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprintf(w, `{"token":{"expires_at":%q,"catalog":[`+
+			`{"id":"n","name":"neutron","type":"network",`+
+			`"endpoints":[{"id":"ne","interface":"public","region":"","url":%q}]},`+
+			`{"id":"c","name":"nova","type":"compute",`+
+			`"endpoints":[{"id":"ce","interface":"public","region":"","url":%q}]}]}}`,
+			time.Now().Add(time.Hour).UTC().Format(time.RFC3339), network(), compute())
+	})
+	mux.HandleFunc("/network/", func(w http.ResponseWriter, _ *http.Request) {
+		probes.Add(1)
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"versions":[{"id":"v2.0","status":"CURRENT","links":[{"rel":"self","href":%q}]}]}`, network()+"/v2.0/")
+	})
+
+	server = httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	const passes = 10
+
+	// Both services each pass, so a key that ignored the service would answer
+	// one with the other's address.
+	for range passes {
+		network, err := NewNetworkClient(t.Context(), NewPasswordProvider(server.URL+"/v3/", "user", "secret", t.Name()), nil)
+		require.NoError(t, err)
+		assert.Equal(t, server.URL+"/network/v2.0/", network.client.ResourceBase)
+
+		compute, err := NewComputeClient(t.Context(), NewPasswordProvider(server.URL+"/v3/", "user", "secret", t.Name()), nil)
+		require.NoError(t, err)
+		assert.Equal(t, server.URL+"/compute/v2.1/", compute.client.Endpoint)
+	}
+
+	assert.Equal(t, int64(1), probes.Load(), "%d network clients on one credential must probe Neutron once", passes)
 }
