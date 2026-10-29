@@ -186,13 +186,12 @@ type ServerInterface interface {
 	CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error)
 }
 
-// ServerObservationInterface is the read surface of the server state monitor:
-// the listing read every poll makes, plus the per-ID fault fetch the observer
-// pays only on the transition into error.
+// ServerObservationInterface is the read surface of server observation: the
+// server read every pass makes, plus the per-ID fault fetch paid only on the
+// transition into error.
 type ServerObservationInterface interface {
 	ServerInterface
 	GetServerFault(ctx context.Context, id string) (*servers.Fault, error)
-	ListServers(ctx context.Context) ([]servers.Server, error)
 }
 
 type VolumeAttachmentInterface interface {
@@ -208,6 +207,8 @@ type ComputeInterface interface {
 	ComputeQuotaInterface
 	ServerObservationInterface
 	VolumeAttachmentInterface
+	// RetireServerLists makes the project's next server read ask the cloud.
+	RetireServerLists()
 }
 
 type PlacementInterface interface {
