@@ -244,8 +244,8 @@ func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, serve
 	}
 
 	// Stamp the transitional state so the 202 is observable immediately: a VM
-	// reboot can complete within one monitor poll, so the monitor alone may
-	// never see Nova's HARD_REBOOT/REBOOT. The monitor returns it to Running.
+	// reboot can complete within one poll, so the server controller alone may
+	// never see Nova's HARD_REBOOT/REBOOT. Its next poll returns it to Running.
 	updated := server.DeepCopy()
 	updated.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
 

@@ -231,10 +231,10 @@ func TestSetServerPhaseStopped(t *testing.T) {
 	require.Equal(t, unikornv1.ActiveConditionReasonStopped, activeReason(t, server))
 }
 
-// TestUpdateServerStateWithClientsRecordsMACAddress is the end-to-end wiring
-// test for the monitor as sole owner of the MAC: an ACTIVE Nova server carrying
-// a bound port MAC results in that MAC being recorded on the resource.
-func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
+// TestObserveServerRecordsMACAddress is the end-to-end wiring
+// test for the MAC projection: an ACTIVE Nova server carrying a bound port MAC
+// results in that MAC being recorded on the resource.
+func TestObserveServerRecordsMACAddress(t *testing.T) {
 	t.Parallel()
 
 	const mac = "e0:9d:73:86:cc:18"
@@ -275,7 +275,7 @@ func TestUpdateServerStateWithClientsRecordsMACAddress(t *testing.T) {
 		},
 	}
 
-	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+	_, err := provider.observeServer(t.Context(), identity, server, compute,
 		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
 			return nil, errIronicUnavailable
 		})
@@ -291,7 +291,6 @@ type stubComputeClient struct {
 	fault           *servers.Fault
 	faultErr        error
 	faultReads      int
-	listReads       int
 }
 
 func (c *stubComputeClient) CreateKeypair(context.Context, string, string) error  { return nil }
@@ -324,19 +323,6 @@ func (c *stubComputeClient) GetServerFault(context.Context, string) (*servers.Fa
 
 	return c.fault, nil
 }
-func (c *stubComputeClient) ListServers(context.Context) ([]servers.Server, error) {
-	c.listReads++
-
-	if c.serverErr != nil {
-		return nil, c.serverErr
-	}
-
-	if c.server == nil {
-		return nil, nil
-	}
-
-	return []servers.Server{*c.server}, nil
-}
 func (c *stubComputeClient) CreateServer(context.Context, *unikornv1.Server, string, []servers.Network, *string, map[string]string) (*servers.Server, error) {
 	return nil, nil //nolint:nilnil // unused stub method
 }
@@ -368,10 +354,10 @@ func (c *recordingBaremetalClient) GetNodeByInstanceUUID(_ context.Context, inst
 	return &nodes.Node{ProvisionState: string(c.provisionState)}, nil
 }
 
-// TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup is the
+// TestObserveServerBaremetalBuildSetsPhaseFromIronicLookup is the
 // end-to-end wiring test: a baremetal Nova BUILD server triggers an Ironic
 // lookup and the resulting Phase is what baremetalBuildPhase returned.
-func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *testing.T) {
+func TestObserveServerBaremetalBuildSetsPhaseFromIronicLookup(t *testing.T) {
 	t.Parallel()
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
@@ -396,7 +382,7 @@ func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *
 		},
 	}
 
-	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+	_, err := provider.observeServer(t.Context(), identity, server, compute,
 		func(_ context.Context, gotIdentity *unikornv1.Identity) (BaremetalInterface, error) {
 			require.Same(t, identity, gotIdentity)
 
@@ -411,9 +397,9 @@ func TestUpdateServerStateWithClientsBaremetalBuildSetsPhaseFromIronicLookup(t *
 	require.Equal(t, unikornv1.ActiveConditionReasonQueued, activeReason(t, server))
 }
 
-// TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds confirms VMs
+// TestObserveServerVMBuildSkipsIronicAndBuilds confirms VMs
 // never call the Ironic factory and land on Building.
-func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
+func TestObserveServerVMBuildSkipsIronicAndBuilds(t *testing.T) {
 	t.Parallel()
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
@@ -437,7 +423,7 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 		},
 	}
 
-	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+	_, err := provider.observeServer(t.Context(), identity, server, compute,
 		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
 			factoryCalled = true
 
@@ -449,10 +435,10 @@ func TestUpdateServerStateWithClientsVMBuildSkipsIronicAndBuilds(t *testing.T) {
 	require.Equal(t, unikornv1.ActiveConditionReasonBuilding, activeReason(t, server))
 }
 
-// TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding
+// TestObserveServerBaremetalIronicFailureDegradesToBuilding
 // confirms a failed Ironic client construction (or lookup) leaves Phase at
-// Building, matching the VM default — the monitor must not block reconciles.
-func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t *testing.T) {
+// Building, matching the VM default — an Ironic fault must not fail the pass.
+func TestObserveServerBaremetalIronicFailureDegradesToBuilding(t *testing.T) {
 	t.Parallel()
 
 	compute := &stubComputeClient{server: &servers.Server{ID: "nova-id", Status: "BUILD"}}
@@ -475,7 +461,7 @@ func TestUpdateServerStateWithClientsBaremetalIronicFailureDegradesToBuilding(t 
 		},
 	}
 
-	err := provider.updateServerStateWithClients(t.Context(), identity, server, compute,
+	_, err := provider.observeServer(t.Context(), identity, server, compute,
 		func(context.Context, *unikornv1.Identity) (BaremetalInterface, error) {
 			return nil, errIronicUnavailable
 		})
@@ -670,4 +656,49 @@ func TestConvertServerHealthStatusReboot(t *testing.T) {
 		require.Equal(t, unikornv1core.ConditionReasonUnknown, reason)
 		require.Equal(t, healthMessageIndeterminate, message)
 	}
+}
+
+// TestObserveServerPassesIdentityToIronic pins that the identity threaded into
+// the reconcile pass reaches the Ironic node lookup. Without it a baremetal
+// server in BUILD cannot be distinguished from one Ironic is actively deploying.
+func TestObserveServerPassesIdentityToIronic(t *testing.T) {
+	t.Parallel()
+
+	const metalFlavorID = "22222222-2222-4222-a222-222222222222"
+
+	identity := &unikornv1.Identity{ObjectMeta: metav1.ObjectMeta{Name: "identity-1"}}
+
+	server := &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{Name: "server-1"},
+		Spec:       unikornv1.ServerSpec{FlavorID: idstest.MustParseFlavorID(metalFlavorID)},
+	}
+
+	provider := &Provider{
+		openstack: &openStackClients{
+			_region: &unikornv1.Region{
+				Spec: unikornv1.RegionSpec{
+					Openstack: &unikornv1.RegionOpenstackSpec{
+						Compute: &unikornv1.RegionOpenstackComputeSpec{
+							Flavors: &unikornv1.OpenstackFlavorsSpec{
+								Metadata: []unikornv1.FlavorMetadata{{ID: metalFlavorID, Baremetal: true}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	var got *unikornv1.Identity
+
+	provider.projectServerState(t.Context(), identity, server, &servers.Server{ID: "nova-1", Status: "BUILD"}, nil,
+		func(_ context.Context, i *unikornv1.Identity) (BaremetalInterface, error) {
+			got = i
+
+			return nil, errIronicUnavailable
+		})
+
+	require.Same(t, identity, got, "the pass must hand its own identity to the Ironic lookup")
+	// An unreachable Ironic degrades to the VM default rather than failing.
+	require.Equal(t, unikornv1.ActiveConditionReasonBuilding, activeReason(t, server))
 }

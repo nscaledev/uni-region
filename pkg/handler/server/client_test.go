@@ -251,7 +251,7 @@ func rebootV1(t *testing.T, hard bool, providerErr error) (regionv1.ActiveCondit
 
 // TestServerV1RebootStampsRebooting pins that an accepted reboot is observable
 // on the 202: the handler stamps the Active condition Rebooting so a user can
-// tell the reboot ran even if it completes inside one monitor poll.
+// tell the reboot ran even if it completes inside one poll.
 func TestServerV1RebootStampsRebooting(t *testing.T) {
 	t.Parallel()
 

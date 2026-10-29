@@ -15,20 +15,16 @@ limitations under the License.
 */
 
 // This file is the cross-package contract test for the types.Provider
-// absent-server contract: when the provider server is gone, the read must
-// (1) record the absent observation on the resource (errored cleared,
-// generation stamped from metadata.generation, image sticky) and (2) still
-// surface coreerrors.ErrResourceNotFound. Two real consumers depend on it and
-// are exercised here against the same real Provider:
-//   - pkg/provisioners/managers/server deleteFailedProviderServer uses the
-//     sentinel from UpdateServerState as the create-retry "confirmed gone" gate,
-//   - pkg/monitor/health/server checkServer takes the same sentinel from
-//     ObserveServers' Observe, patches the absent observation and logs it.
-// Their own packages test against mocks of this contract; this file exists so
+// UpdateServerState absent-server contract: when the provider server is gone,
+// UpdateServerState must surface coreerrors.ErrResourceNotFound.
+// pkg/provisioners/managers/server deleteFailedProviderServer depends on it as
+// the create-retry "confirmed gone" gate, and is exercised here against the
+// real Provider.
+// Its own package tests against mocks of this contract; this file exists so
 // a drift in the real provider cannot stay green there (a livelock regression
-// did exactly that). Both paths here are the full exported methods —
-// service-principal client construction included — against a minimal fake
-// OpenStack, not the projectServerState core alone.
+// did exactly that). The provider path here is the full exported
+// UpdateServerState—service-principal client construction included—against
+// a minimal fake OpenStack, not the observeServer core alone.
 
 package openstack_test
 
@@ -37,10 +33,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -52,7 +48,6 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
-	healthserver "github.com/unikorn-cloud/region/pkg/monitor/health/server"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
 	serverprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
@@ -60,7 +55,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
@@ -216,108 +210,6 @@ func contractMockProviders(t *testing.T, provider *openstack.Provider) *mockprov
 	return providers
 }
 
-// infoCaptureSink is a minimal logr.LogSink that records Info message strings.
-type infoCaptureSink struct {
-	messages *[]string
-}
-
-func newInfoCaptureSink() *infoCaptureSink {
-	msgs := make([]string, 0)
-
-	return &infoCaptureSink{messages: &msgs}
-}
-
-var _ logr.LogSink = (*infoCaptureSink)(nil)
-
-func (s *infoCaptureSink) Init(logr.RuntimeInfo)        {}
-func (s *infoCaptureSink) Enabled(int) bool             { return true }
-func (s *infoCaptureSink) Error(error, string, ...any)  {}
-func (s *infoCaptureSink) WithName(string) logr.LogSink { return s }
-
-func (s *infoCaptureSink) WithValues(...any) logr.LogSink {
-	c := *s // shares the messages pointer
-	return &c
-}
-
-func (s *infoCaptureSink) Info(_ int, msg string, _ ...any) {
-	*s.messages = append(*s.messages, msg)
-}
-
-func (s *infoCaptureSink) hasMessage(msg string) bool {
-	for _, m := range *s.messages {
-		if m == msg {
-			return true
-		}
-	}
-
-	return false
-}
-
-// TestUpdateServerStateNotFoundContractMonitor exercises the monitor leg:
-// checkServer projects the real Provider's batched read, whose absent path
-// records the observation and surfaces ErrResourceNotFound; the monitor
-// persists the observation and logs the sentinel message.
-func TestUpdateServerStateNotFoundContractMonitor(t *testing.T) {
-	t.Parallel()
-
-	ts := newContractFakeOpenstack(t)
-
-	k8sClient := fake.NewClientBuilder().
-		WithScheme(func() *runtime.Scheme {
-			s := runtime.NewScheme()
-			require.NoError(t, regionv1.AddToScheme(s))
-
-			return s
-		}()).
-		WithStatusSubresource(&regionv1.Server{}).
-		WithObjects(
-			contractIdentity(),
-			contractOpenstackIdentity(),
-		).
-		Build()
-
-	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
-
-	srv := &regionv1.Server{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:       contractServerID,
-			Namespace:  contractNamespace,
-			Labels:     contractServerLabels(),
-			Generation: 10,
-		},
-		Status: regionv1.ServerStatus{
-			Observed: &regionv1.ServerObservedStatus{
-				Generation: 9,
-				Image:      &imageID,
-				Errored:    true,
-			},
-		},
-	}
-
-	srv.SetActiveCondition(regionv1.ActiveConditionReasonRunning)
-
-	require.NoError(t, k8sClient.Create(t.Context(), srv))
-
-	provider := openstack.NewTestProvider(k8sClient, contractRegion(ts.URL))
-	providers := contractMockProviders(t, provider)
-
-	sink := newInfoCaptureSink()
-	ctx := logr.NewContext(t.Context(), logr.New(sink))
-
-	checker := healthserver.New(k8sClient, contractNamespace, providers, nil)
-	require.NoError(t, checker.Check(ctx))
-
-	updated := &regionv1.Server{}
-	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: contractNamespace, Name: contractServerID}, updated))
-
-	require.NotNil(t, updated.Status.Observed)
-	require.False(t, updated.Status.Observed.Errored)
-	require.Equal(t, int64(10), updated.Status.Observed.Generation)
-	require.Equal(t, &imageID, updated.Status.Observed.Image)
-	require.True(t, sink.hasMessage("server not found in provider"),
-		"expected sentinel log line; got messages: %v", *sink.messages)
-}
-
 // contractManager satisfies sigs.k8s.io/controller-runtime/pkg/manager.Manager
 // by embedding the interface (nil). Any method other than GetEventRecorderFor
 // panics, pinning the production surface: the provisioner must only use the
@@ -405,8 +297,6 @@ func TestUpdateServerStateNotFoundContractCreateRetry(t *testing.T) {
 	require.False(t, srv.Status.ProviderCreateRetrying)
 	require.Equal(t, regionv1.ActiveConditionReasonPending, contractActiveReason(t, srv))
 	contractRequireEvent(t, recorder, "ProviderCreateRetryReady")
-	require.NotNil(t, srv.Status.Observed)
-	require.False(t, srv.Status.Observed.Errored)
 }
 
 func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
@@ -491,4 +381,93 @@ func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 		require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(identity), identity))
 		require.Equal(t, []string{coreconstants.Finalizer}, identity.Finalizers)
 	}
+}
+
+// TestCreateServerLeavesUnreachableCloudUntyped pins that a pass which could
+// not reach the cloud comes back from the real CreateServer as a plain failure
+// that core's WithTransient, given the region classifier, treats as an outage:
+// the condition is left alone.  A disposition would hide it from the
+// classifier.
+func TestCreateServerLeavesUnreachableCloudUntyped(t *testing.T) {
+	t.Parallel()
+
+	endpoint := newContractFakeOpenstack(t, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Method != http.MethodPost {
+			return false
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+
+		return true
+	})
+
+	server := &regionv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      contractServerID,
+			Namespace: contractNamespace,
+			Labels:    contractServerLabels(),
+		},
+	}
+
+	cli := contractRetryClient(t, contractIdentity(), contractOpenstackIdentity())
+	provider := teardownProvider(cli, endpoint.URL)
+
+	_, err := provider.CreateServer(t.Context(), contractIdentity(), server, nil)
+	require.Error(t, err)
+	require.True(t, coremanager.Unreachable(err, openstack.Transient))
+}
+
+// TestUpdateServerStateReadsAfresh pins that the create-retry gate never sees
+// a kept list: it deletes a server it reads as failed, so one fixed in the
+// cloud since the last list must read as fixed.
+func TestUpdateServerStateReadsAfresh(t *testing.T) {
+	t.Parallel()
+
+	// The row Nova lists: failed, then fixed in the cloud and booted.
+	var row atomic.Value
+
+	row.Store(`"status":"ERROR"`)
+
+	project := fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano())
+
+	var ts *httptest.Server
+
+	ts = newContractFakeOpenstack(t, func(w http.ResponseWriter, r *http.Request) bool {
+		switch {
+		case r.Method == http.MethodPost:
+			// As the default, but scoped to a project, which the shared read keys on.
+			w.Header().Set("X-Subject-Token", "test-token")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			fmt.Fprintf(w, `{"token":{"project":{"id":%q,"name":"p"},"catalog":[
+			{"type":"compute","endpoints":[{"interface":"public","url":%[2]q,"region_id":""}]}
+			],"expires_at":"2099-01-01T00:00:00.000000Z"}}`, project, ts.URL)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/servers/detail"):
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"servers":[{"id":"nova-1","name":%q,%s}]}`, contractServerID, row.Load())
+		default:
+			return false
+		}
+
+		return true
+	})
+
+	k8sClient := contractRetryClient(t, contractIdentity(), contractOpenstackIdentity())
+	provider := openstack.NewTestProvider(k8sClient, contractRegion(ts.URL))
+
+	server := &regionv1.Server{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      contractServerID,
+			Namespace: contractNamespace,
+			Labels:    contractServerLabels(),
+		},
+	}
+
+	require.NoError(t, provider.UpdateServerState(t.Context(), contractIdentity(), server))
+	require.True(t, serverprovisioner.ProviderCreateFailure(server))
+
+	row.Store(`"status":"ACTIVE","OS-EXT-STS:power_state":1,"OS-SRV-USG:launched_at":"2026-01-01T00:00:00.000000"`)
+
+	require.NoError(t, provider.UpdateServerState(t.Context(), contractIdentity(), server))
+	require.False(t, serverprovisioner.ProviderCreateFailure(server), "the gate must not be answered from the list that showed the failure")
 }
