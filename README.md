@@ -12,8 +12,7 @@ and related project-scoped infrastructure through one API and lifecycle model.
 
 Implementation-level package documentation lives in [pkg/README.md](./pkg/README.md).
 Use that as the drill-down entry point for the service internals, especially
-for the API model, provider bindings, handlers, controller lifecycle, and
-monitoring behaviour.
+for the API model, provider bindings, handlers, and controller lifecycle.
 
 ## Architecture
 
@@ -28,7 +27,7 @@ shared layer that:
 - maps platform resources onto real cloud/provider resources
 - maintains project-scoped service-principal and resource lifecycle
 - exposes a common API shape across different provider substrates
-- coordinates both desired-state reconciliation and observed-state monitoring
+- reconciles desired state and projects observed provider state, in one pass
 
 The preferred API direction is `v2`. Older `v1` shapes remain as deprecated
 compatibility surface and should be migrated away from as quickly as practical.
