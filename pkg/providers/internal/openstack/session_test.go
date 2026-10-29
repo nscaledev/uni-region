@@ -213,7 +213,7 @@ func TestSessionCollapsesConcurrentLogins(t *testing.T) {
 // rests on: a caller waiting on someone else's login is not held by it. A leader
 // whose grant wedges against an unresponsive Keystone must not take the callers
 // behind it down, which would otherwise include the synchronous API handlers that
-// share a credential with the reconciler and the monitor.
+// share a credential with the reconciler.
 //
 // The leader is a real login on the same registry session the caller reaches, so
 // the caller genuinely joins the flight rather than leading one of its own.
