@@ -119,6 +119,8 @@ func (s *Session) authenticate(ctx context.Context, options gophercloud.AuthOpti
 			return nil, err
 		}
 
+		client.EndpointLocator = rememberEndpoints(client.EndpointLocator)
+
 		s.lock.Lock()
 		defer s.lock.Unlock()
 
@@ -208,4 +210,39 @@ func sessionFor(parts ...string) *Session {
 	}
 
 	return sessions.get(hex.EncodeToString(digest.Sum(nil)))
+}
+
+// rememberEndpoints answers each endpoint lookup once per client. The catalog
+// is already pinned for the client's life; this pins the version discovery GET
+// gophercloud makes against an unversioned endpoint (Neutron's, typically) on
+// every lookup. Failures are not remembered. See the README's Credential
+// Sessions section.
+func rememberEndpoints(locate gophercloud.EndpointLocator) gophercloud.EndpointLocator {
+	var (
+		lock  sync.Mutex
+		found = map[string]string{}
+	)
+
+	return func(opts gophercloud.EndpointOpts) (string, error) {
+		key := fmt.Sprintf("%#v", opts)
+
+		lock.Lock()
+		url, ok := found[key]
+		lock.Unlock()
+
+		if ok {
+			return url, nil
+		}
+
+		url, err := locate(opts)
+		if err != nil {
+			return "", err
+		}
+
+		lock.Lock()
+		found[key] = url
+		lock.Unlock()
+
+		return url, nil
+	}
 }
