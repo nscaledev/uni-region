@@ -37,12 +37,9 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
-func deferLoadBalancerFixtureCleanup(networkID string, loadBalancerID *string) {
-	// Separate cleanup nodes ensure a failed load-balancer wait cannot skip the
-	// network delete. Register the network first so Ginkgo runs it last.
-	DeferCleanup(func() {
-		api.MustDeleteNetwork(regionClient, ctx, networkID)
-	})
+func deferLoadBalancerCleanup(loadBalancerID *string) {
+	// The network fixture is the long-lived shared network and is left in place;
+	// only the load balancer is cleaned up here.
 	DeferCleanup(func() {
 		if *loadBalancerID == "" {
 			return
@@ -69,18 +66,12 @@ var _ = Describe("LoadBalancer", func() {
 		)
 
 		BeforeAll(func() {
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-			networkID = network.Metadata.Id
-			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
-			deferLoadBalancerFixtureCleanup(networkID, &lbID)
-
-			// Reads are served from the controller-runtime cache, so the
-			// load balancer create below can resolve the network reference
-			// against a stale cache and 404. Await visibility first.
-			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+			// Reuse the long-lived shared network so each run does not consume a
+			// region VLAN; the pool is small and per-spec networks exhaust it.
+			// MustResolveSharedNetwork returns it already provisioned and visible.
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
+			GinkgoWriter.Printf("Using shared network fixture: %s\n", networkID)
+			deferLoadBalancerCleanup(&lbID)
 		})
 
 		Describe("Given a backend member and publicIP=true", func() {
@@ -254,18 +245,12 @@ var _ = Describe("LoadBalancer", func() {
 		)
 
 		BeforeAll(func() {
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-			networkID = network.Metadata.Id
-			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
-			deferLoadBalancerFixtureCleanup(networkID, &lbID)
-
-			// Reads are served from the controller-runtime cache, so the
-			// load balancer create below can resolve the network reference
-			// against a stale cache and 404. Await visibility first.
-			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+			// Reuse the long-lived shared network so each run does not consume a
+			// region VLAN; the pool is small and per-spec networks exhaust it.
+			// MustResolveSharedNetwork returns it already provisioned and visible.
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
+			GinkgoWriter.Printf("Using shared network fixture: %s\n", networkID)
+			deferLoadBalancerCleanup(&lbID)
 		})
 
 		Describe("Given a UDP listener on port 53 with idleTimeoutSeconds omitted", func() {
@@ -309,18 +294,12 @@ var _ = Describe("LoadBalancer", func() {
 		)
 
 		BeforeAll(func() {
-			networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-			network, err := regionClient.CreateNetwork(ctx, networkReq)
-			Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-			Expect(network).NotTo(BeNil())
-			networkID = network.Metadata.Id
-			GinkgoWriter.Printf("Created network fixture: %s\n", networkID)
-			deferLoadBalancerFixtureCleanup(networkID, &lbID)
-
-			// Reads are served from the controller-runtime cache, so the
-			// load balancer create below can resolve the network reference
-			// against a stale cache and 404. Await visibility first.
-			api.WaitForNetworkVisible(regionClient, ctx, networkID)
+			// Reuse the long-lived shared network so each run does not consume a
+			// region VLAN; the pool is small and per-spec networks exhaust it.
+			// MustResolveSharedNetwork returns it already provisioned and visible.
+			networkID = api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
+			GinkgoWriter.Printf("Using shared network fixture: %s\n", networkID)
+			deferLoadBalancerCleanup(&lbID)
 		})
 
 		Describe("Given a provisioned load balancer", func() {
