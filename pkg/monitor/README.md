@@ -4,11 +4,15 @@
 
 Unlike handlers and managers, this layer is not driving desired-state
 reconciliation directly. It periodically inspects live provider-backed resource
-state and projects that back into:
+state and projects it back into Kubernetes status.
 
-- Kubernetes status updates
-- structured transition logs
-- OpenTelemetry metrics, scraped from `/metrics` on `:8080`
+Servers are not polled here. The server controller polls in its own reconcile
+pass, which also emits transitions and lifecycle metrics; see
+[`pkg/managers/server`](../managers/server/README.md) and
+[`pkg/provisioners/managers/server`](../provisioners/managers/server/README.md).
+The `unikorn_region_server_state` gauge this package used to export is gone.
+
+What it still measures is scraped from `/metrics` on `:8080`.
 
 Architecturally, this is important because it is a cross-resource, potentially
 cross-repo pattern rather than a one-off local helper. It is where the platform
@@ -18,16 +22,12 @@ controller watches.
 ## Current Shape
 
 - builds a shared provider registry
-- creates OTel instruments
 - runs one or more `Checker`s on a poll interval
 - logs and continues on non-fatal per-check failures
 
-The current checkers are:
-
-- [health/server](./health/server/README.md), which projects server runtime
-  state and telemetry
-- [health/volume](./health/volume/README.md), which projects provider-neutral
-  Volume size and health while preserving controller-owned provisioning state
+The current checker is [health/volume](./health/volume/README.md), which
+projects provider-neutral Volume size and health while preserving
+controller-owned provisioning state.
 
 ## Caveats
 
@@ -35,7 +35,4 @@ The current checkers are:
   means timeliness and overhead are governed by poll period rather than watches.
 - Provider/cache readiness is part of monitor startup, but a region whose
   provider cannot be initialized is skipped rather than taking the process down;
-  see [providers](../providers/README.md). Servers in an unavailable region are
-  absent from that poll's checks and from the state gauge, and keep their last
-  known condition rather than being written to a wrong one, per
-  [health/server](./health/server/README.md).
+  see [providers](../providers/README.md).

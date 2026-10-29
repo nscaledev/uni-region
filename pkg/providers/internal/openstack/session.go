@@ -29,8 +29,6 @@ import (
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack"
 	"golang.org/x/sync/singleflight"
-
-	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 )
 
 // providerRequestTimeout bounds a single request made with a shared provider
@@ -72,32 +70,15 @@ func (s *Session) cached() *gophercloud.ProviderClient {
 // authenticate returns the client shared by every caller using this credential,
 // logging in at most once however many callers arrive together.
 //
-// DoChan and not Do: Do parks a follower on a WaitGroup it cannot interrupt, so
-// a wedged login would hold every caller behind it. Here each caller stops
-// waiting when its own context is done.
+// The login runs detached (see joinFlight), so an API handler whose client has
+// just hung up cannot hand context.Canceled to every healthy reconcile that
+// joined. providerRequestTimeout is what bounds it instead.
 func (s *Session) authenticate(ctx context.Context, options gophercloud.AuthOptions) (*gophercloud.ProviderClient, error) {
 	if client := s.cached(); client != nil {
 		return client, nil
 	}
 
-	// Detached, so the caller that happens to open the flight cannot fail the
-	// herd behind it: an API handler whose client has just hung up would
-	// otherwise hand context.Canceled to every healthy reconcile that joined.
-	// providerRequestTimeout is what bounds it instead.
-	detached := context.WithoutCancel(ctx)
-
-	//nolint:nonamedreturns // the deferred recover below has to set the error.
-	channel := s.login.DoChan("", func() (value any, err error) {
-		// singleflight re-panics on a bare goroutine when callers are waiting on
-		// a channel, which is unrecoverable and would take the process down.
-		// Reconciles and API handlers recover a panic and fail one unit of work;
-		// keep that.
-		defer func() {
-			if recovered := recover(); recovered != nil {
-				err = fmt.Errorf("%w: panic during login: %v", coreerrors.ErrConsistency, recovered)
-			}
-		}()
-
+	return joinFlight(ctx, &s.login, "", "login", func(detached context.Context) (*gophercloud.ProviderClient, error) {
 		// Re-checked, because a herd straddling a completed flight reaches here
 		// after the cache was filled.
 		if client := s.cached(); client != nil {
@@ -128,22 +109,6 @@ func (s *Session) authenticate(ctx context.Context, options gophercloud.AuthOpti
 
 		return client, nil
 	})
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case outcome := <-channel:
-		if outcome.Err != nil {
-			return nil, outcome.Err
-		}
-
-		client, ok := outcome.Val.(*gophercloud.ProviderClient)
-		if !ok {
-			return nil, fmt.Errorf("%w: login returned %T", coreerrors.ErrConsistency, outcome.Val)
-		}
-
-		return client, nil
-	}
 }
 
 // sessions maps a credential to the state shared across every client built from

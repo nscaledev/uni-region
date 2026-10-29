@@ -90,6 +90,12 @@ packages are the concrete provider implementations.
     successful observations
   - VolumeClass inventory remains on `CommonProvider`; Server attach and
     Volume-based detach are separate capabilities
+- `providers.Transient` is the classifier a polling controller passes to core's
+  `WithTransient`. It says whether an error means a provider could not be reached
+  (network error, timeout, unexpected EOF, 429, any 5xx) rather than gave an
+  answer. The server controller uses it, so an outage
+  leaves the `Available` condition as it was. The rule lives in
+  [`internal/openstack`](./internal/openstack/README.md).
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or

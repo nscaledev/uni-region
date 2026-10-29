@@ -25,6 +25,8 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -88,6 +90,12 @@ func (p *Provisioner) serverCreateOptions(ctx context.Context, cli client.Client
 
 	resource, err := p.getSSHCertificateAuthority(ctx, cli)
 	if err != nil {
+		// After boot nothing holds the CA, so the user may have deleted it; a
+		// re-create then goes without it. Before boot the reference holds it.
+		if p.server.Status.ProvisionedAt != nil && kerrors.IsNotFound(err) {
+			return options, nil
+		}
+
 		return nil, err
 	}
 

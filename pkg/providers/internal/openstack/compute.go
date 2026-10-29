@@ -53,6 +53,10 @@ type ComputeClient struct {
 	client  *gophercloud.ServiceClient
 
 	flavorCache *cache.TimeoutCache[[]flavors.Flavor]
+
+	// projectID is the project the client's token is scoped to, or empty.
+	// Read once: the token is re-marshalled whole to read it.
+	projectID string
 }
 
 // computeMicroversion is the Nova API microversion every compute call is made
@@ -80,10 +84,13 @@ func NewComputeClient(ctx context.Context, provider CredentialProvider, options 
 
 	client.Microversion = computeMicroversion
 
+	projectID, _ := authScope(providerClient)
+
 	c := &ComputeClient{
 		options:     options,
 		client:      client,
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
+		projectID:   projectID,
 	}
 
 	return c, nil
@@ -267,7 +274,7 @@ const serverListPageSize = 250
 // ListServers returns every server in the credential's project. Unfiltered on
 // purpose: the project holds only servers this service provisioned, so there is
 // nothing to exclude, and dropping the name filter avoids the regular expression
-// Nova evaluates per row for GetServer. Observation only — see ObserveServers.
+// Nova evaluates per row. GetServer reads through it via serverLists.
 func (c *ComputeClient) ListServers(ctx context.Context) ([]servers.Server, error) {
 	_, span := traceStart(ctx, "GET /compute/v2/servers")
 	defer span.End()
@@ -300,32 +307,8 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 
 	name := server.Labels[coreconstants.NameLabel]
 
-	opts := servers.ListOpts{
-		// NOTE: this is a regular expression match so foo-4 will match
-		// foo-4, foo-48, foo-4444444444444.
-		Name: name,
-	}
-
-	page, err := servers.List(c.client, opts).AllPages(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := servers.ExtractServers(page)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
-	}
-
-	index := slices.IndexFunc(result, func(x servers.Server) bool {
+	match := func(x *servers.Server) bool {
 		return x.Name == name
-	})
-
-	if index < 0 {
-		return nil, errors.ErrResourceNotFound
 	}
 
 	// The fault may be empty on a listed ERROR server (Nova up to 2025.2 can
@@ -333,7 +316,26 @@ func (c *ComputeClient) GetServer(ctx context.Context, server *unikornv1.Server)
 	// GetServerFault on the transition into error, so every other read — and
 	// there are two per errored server per cycle, exactly when Nova is degraded —
 	// does not pay a second call.
-	return &result[index], nil
+	//
+	// Unfiltered and kept rather than filtered by name: Nova evaluates the name
+	// filter as a regular expression over the whole project, once per server.
+	// See the README's Kept Lists section.  A token with no project keeps
+	// nothing: an empty key would merge projects.
+	if c.projectID == "" {
+		rows, err := c.ListServers(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		index := slices.IndexFunc(rows, func(x servers.Server) bool { return match(&x) })
+		if index < 0 {
+			return nil, errors.ErrResourceNotFound
+		}
+
+		return &rows[index], nil
+	}
+
+	return serverLists.find(ctx, c.projectID, "", c.ListServers, match)
 }
 
 // GetServerFault reads a server by ID for its fault detail, which a list
@@ -373,6 +375,8 @@ func (c *ComputeClient) GetVolumeAttachment(ctx context.Context, serverID, volum
 }
 
 func (c *ComputeClient) CreateVolumeAttachment(ctx context.Context, serverID, volumeID string) (*volumeattach.VolumeAttachment, error) {
+	defer c.RetireServerLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", serverID),
 		attribute.String("block_storage.volume.id", volumeID),
@@ -389,6 +393,8 @@ func (c *ComputeClient) CreateVolumeAttachment(ctx context.Context, serverID, vo
 }
 
 func (c *ComputeClient) DeleteVolumeAttachment(ctx context.Context, serverID, volumeID string) error {
+	defer c.RetireServerLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", serverID),
 		attribute.String("block_storage.volume.id", volumeID),
@@ -401,6 +407,8 @@ func (c *ComputeClient) DeleteVolumeAttachment(ctx context.Context, serverID, vo
 }
 
 func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error) {
+	defer c.RetireServerLists()
+
 	_, span := traceStart(ctx, "POST /compute/v2/servers")
 	defer span.End()
 
@@ -433,6 +441,10 @@ func (c *ComputeClient) CreateServer(ctx context.Context, server *unikornv1.Serv
 	return servers.Create(ctx, c.client, createOpts, schedulerHintOpts).Extract()
 }
 
+// DeleteServer deliberately does not retire open lists: one from before the
+// delete can only show the server still present, which every reader treats as
+// "not gone yet". Teardown re-sends DELETE every pass, so bumping here would
+// stop any project mid-deletion sharing a list at all.
 func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),
@@ -445,6 +457,8 @@ func (c *ComputeClient) DeleteServer(ctx context.Context, id string) error {
 }
 
 func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) error {
+	defer c.RetireServerLists()
+
 	rebootMethod := servers.SoftReboot
 	if hard {
 		rebootMethod = servers.HardReboot
@@ -467,6 +481,8 @@ func (c *ComputeClient) RebootServer(ctx context.Context, id string, hard bool) 
 }
 
 func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options ServerRebuildOptions) (*servers.Server, error) {
+	defer c.RetireServerLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),
 		attribute.String("compute.server.action", "rebuild"),
@@ -487,6 +503,8 @@ func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options Se
 }
 
 func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
+	defer c.RetireServerLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),
 		attribute.String("compute.server.action", "start"),
@@ -499,6 +517,8 @@ func (c *ComputeClient) StartServer(ctx context.Context, id string) error {
 }
 
 func (c *ComputeClient) StopServer(ctx context.Context, id string) error {
+	defer c.RetireServerLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),
 		attribute.String("compute.server.action", "stop"),
@@ -544,6 +564,8 @@ func (c *ComputeClient) ShowConsoleOutput(ctx context.Context, id string, length
 }
 
 func (c *ComputeClient) CreateImageFromServer(ctx context.Context, id string, opts *servers.CreateImageOpts) (string, error) {
+	defer c.RetireServerLists()
+
 	spanAttributes := trace.WithAttributes(
 		attribute.String("compute.server.id", id),
 	)
