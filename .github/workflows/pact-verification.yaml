@@ -116,8 +116,12 @@ jobs:
         CGO_LDFLAGS: "-L/usr/local/lib"
         LD_LIBRARY_PATH: "/usr/local/lib"
       run: |
-        # A deployed version is a main commit checked out detached, so name its branch explicitly.
-        if [ -n "$DEPLOYED_VERSION" ]; then export GIT_BRANCH=main; fi
+        # A deployed version is an old main commit checked out detached, so name its branch explicitly.
+        # Not main: adding a version to a branch moves that branch's head to it, so main's head would
+        # become the old commit (https://github.com/pact-foundation/pact_broker/blob/master/lib/pact_broker/versions/branch_version_repository.rb, add_branch).
+        # Not empty: the pacts-for-verification query rejects a blank branch when pending is on
+        # (https://github.com/pact-foundation/pact_broker/blob/master/lib/pact_broker/api/contracts/pacts_for_verification_json_query_schema.rb).
+        if [ -n "$DEPLOYED_VERSION" ]; then export GIT_BRANCH=deployed; fi
         make test-contracts-provider-ci
 
     - name: Report verification status
