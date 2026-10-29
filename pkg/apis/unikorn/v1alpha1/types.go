@@ -1250,10 +1250,14 @@ type ServerStatus struct {
 	// accepted by the provider. It drives customer-requested rebuilds without
 	// coupling them to managed cloud-init implementation details.
 	AcceptedUserDataHash string `json:"acceptedUserDataHash,omitempty"`
-	// SubmittedUserDataHash is the SHA-256 digest of the effective cloud-init
-	// payload accepted by the provider. It records the submitted payload without
-	// exposing it through status.
-	SubmittedUserDataHash string `json:"submittedUserDataHash,omitempty"`
+	// RebuildAttempts records an unresolved provider-accepted rebuild episode for
+	// the current rebuild target and generation. It clears after convergence.
+	RebuildAttempts int32 `json:"rebuildAttempts,omitempty"`
+	// RebuildGeneration records the Server generation for RebuildAttempts.
+	RebuildGeneration int64 `json:"rebuildGeneration,omitempty"`
+	// RebuildTargetHash is the SHA-256 digest of the image and effective
+	// cloud-init payload for RebuildAttempts.
+	RebuildTargetHash string `json:"rebuildTargetHash,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
 	// PublicIP is the public IP address of the server.
