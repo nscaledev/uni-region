@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
@@ -93,11 +92,12 @@ func volumeAttachmentResources(ctx context.Context, compute ServerInterface, blo
 
 func observedVolumeAttachment(cinderVolume *volumes.Volume, serverID string) (*types.ServerVolumeAttachment, bool, error) {
 	if volumeAttachmentForOtherServer(cinderVolume, serverID) != nil {
-		return nil, false, fmt.Errorf("%w: volume is already attached to another server", coreerrors.ErrConflict)
+		return nil, false, fmt.Errorf("%w: %w: volume is already attached to another server",
+			provisioners.Recheck(unikornv1core.ConditionReasonErrored, "the volume is attached to another server"), coreerrors.ErrConflict)
 	}
 
-	if strings.HasPrefix(cinderVolume.Status, volumeStatusErrorPrefix) {
-		return nil, false, provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
+	if err := volumeErrorDisposition(cinderVolume.Status); err != nil {
+		return nil, false, err
 	}
 
 	attachment := volumeAttachmentForServer(cinderVolume, serverID)
@@ -145,19 +145,32 @@ func attachVolume(ctx context.Context, compute ComputeInterface, blockStorage Vo
 		return nil, err
 	}
 
+	return nil, attachConflict(ctx, compute, openstackServer, cinderVolume)
+}
+
+// attachConflict explains a 409 from Nova's attach.
+func attachConflict(ctx context.Context, compute ComputeInterface, openstackServer *servers.Server, cinderVolume *volumes.Volume) error {
 	// A concurrent request may have created the same attachment between the
 	// read and create. Confirm that desired state before surfacing the conflict.
-	_, getErr := compute.GetVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
-	if getErr == nil {
-		return nil, provisioners.ErrYield
+	_, err := compute.GetVolumeAttachment(ctx, openstackServer.ID, cinderVolume.ID)
+	if err == nil {
+		return provisioners.ErrYield
 	}
 
-	if !providerResourceNotFound(getErr) {
-		return nil, getErr
+	if !providerResourceNotFound(err) {
+		return err
 	}
 
-	return nil, fmt.Errorf(
-		"%w: volume %s cannot be attached to server %s in its current state",
+	// A task holding the server moves; a server that refuses attachment in its
+	// current state does not, so that waits for the next poll.
+	if serverTaskActive(openstackServer) {
+		return provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+			"another operation is in progress on the server; the volume will be attached once it completes")
+	}
+
+	return fmt.Errorf(
+		"%w: %w: volume %s cannot be attached to server %s in its current state",
+		provisioners.Recheck(unikornv1core.ConditionReasonErrored, "the volume cannot be attached to the server in its current state"),
 		coreerrors.ErrConflict,
 		cinderVolume.ID,
 		openstackServer.ID,

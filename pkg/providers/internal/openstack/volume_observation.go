@@ -17,8 +17,6 @@ limitations under the License.
 package openstack
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -43,8 +41,10 @@ func volumeSize(sizeGiB int) (resource.Quantity, error) {
 	return *resource.NewQuantity(int64(sizeGiB)*bytesPerGiB, resource.BinarySI), nil
 }
 
+// TODO: move this.  Healthy only makes sense for a cluster; a volume's own
+// state wants its own condition.
 func setVolumeHealth(volume *unikornv1.Volume, status string) {
-	if strings.HasPrefix(status, volumeStatusErrorPrefix) {
+	if strings.HasPrefix(status, volumeStatusError) {
 		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider reported the volume in an error state")
 
 		return
@@ -70,46 +70,4 @@ func projectVolumeState(volume *unikornv1.Volume, cinderVolume *volumes.Volume) 
 	setVolumeHealth(volume, cinderVolume.Status)
 
 	return nil
-}
-
-func updateVolumeState(ctx context.Context, blockStorage VolumeInterface, volume *unikornv1.Volume) error {
-	cinderVolume, err := blockStorage.GetVolume(ctx, volume)
-	if err != nil {
-		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return err
-		}
-
-		if volume.Status.ProvisionedAt == nil {
-			return nil
-		}
-
-		volume.Status.Size = nil
-		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
-
-		return nil
-	}
-
-	if cinderVolume == nil {
-		return fmt.Errorf("%w: nil Cinder volume returned for Region volume %s", coreerrors.ErrConsistency, volume.Name)
-	}
-
-	return projectVolumeState(volume, cinderVolume)
-}
-
-func (p *Provider) UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error {
-	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	if !provisioned {
-		return nil
-	}
-
-	blockStorage, err := p.blockStorageFromServicePrincipal(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	return updateVolumeState(ctx, blockStorage, volume)
 }

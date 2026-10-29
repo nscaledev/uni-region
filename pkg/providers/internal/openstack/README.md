@@ -361,10 +361,17 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     provider yields after submission and on subsequent rediscovery until the
     volume reports `available`; all unrecognized non-error states also yield so
     an unfamiliar provider state cannot be mistaken for convergence
-  - a Cinder status beginning with `error` returns a typed terminal
-    `Available=False`, `Reason=Errored` result with the user-safe message
-    `provider volume entered an error state`; provider IDs, scheduler failures,
-    host details, and other raw Cinder diagnostics remain operator-only
+  - a Cinder status beginning with `error` returns a typed recheck,
+    `Available=False`, `Reason=Errored`, with the user-safe message
+    `the provider reports the volume in an error state`; provider IDs,
+    scheduler failures, host details, and other raw Cinder diagnostics remain
+    operator-only
+  - `CreateVolume` and `AttachVolume` return a failure to reach the cloud
+    untyped, so the volume controller's `WithTransient` keeps the condition, as
+    for servers
+  - an attach Nova refuses with a 409 and no attachment is a yield while a task
+    holds the server and a recheck otherwise; a volume attached to another
+    server is a recheck
   - user tags are translated with the package's normal namespaced metadata
     convention; namespaced system linkage keys are written last so user input
     cannot override identity, organization, project, region, network, or Volume
@@ -392,10 +399,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     decoding, and client-construction failures remain errors. A recognized
     Cinder error lifecycle and an unknown lifecycle are successful observations,
     not Go errors.
-  - `UpdateVolumeState` mutates the supplied Region Volume with observed size
-    and health without exposing Cinder or Gophercloud types. It returns provider
-    read errors so the monitor can preserve the last observed status. It does
-    not introduce a mirrored provider-state CRD. The Volume controller owns the
+  - `reconcileVolume` projects observed size and health onto the supplied Region
+    Volume without exposing Cinder or Gophercloud types. It returns provider read
+    errors so the caller can preserve the last observed status. It does not
+    introduce a mirrored provider-state CRD. The Volume controller owns the
     durable `ProvisionedAt` marker, create/delete intent, and generic
     `Available` provisioning condition.
     VolumeClass inventory and Nova
@@ -667,7 +674,8 @@ the Region admin user scoped to the service principal's project rather than as t
 tenant service principal, so every server pinned to one identity shares one
 credential. A restart resync of an identity holding 1157 servers asked for that
 one credential a couple of thousand times inside a few minutes, and the health
-monitor asked for it again for every server, every minute.
+monitor asked for it again for every server, every minute. The monitor is gone;
+  the reconcile pass polls instead, and shares the same session.
 
 A `Session` is the per-credential state that outlives every service client built
 from it, keyed on the whole credential so a rotated secret can never be served a
@@ -726,7 +734,7 @@ first leaves the second remembered until a restart. Pinned by
 gophercloud's reauth serialisation: `AuthenticatedHeaders` waits for an
 in-progress refresh on *every* request, on a channel receive that consults no
 context. One caller whose refresh hangs would otherwise park every other caller on
-that credential — reconciles, the monitor, and the synchronous reboot, start, stop
+that credential — reconciles and the synchronous reboot, start, stop
 and console handlers — below the level at which their own contexts could rescue
 them. A zero-value `http.Client` has no timeout, so the bound is set explicitly.
 

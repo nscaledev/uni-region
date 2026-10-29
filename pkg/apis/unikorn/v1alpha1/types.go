@@ -916,8 +916,6 @@ const (
 )
 
 type VolumeStatus struct {
-	// ObservedGeneration is the most recent generation observed by the controller.
-	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
 	// ProvisionedAt records the first successful discovery of backing storage.
 	// It is never cleared, because a missing provider volume must not be recreated
 	// under the same Region Volume ID.

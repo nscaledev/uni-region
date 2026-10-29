@@ -99,9 +99,6 @@ type Volume interface {
 	CreateVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 	// DeleteVolume idempotently deletes the provider volume described by the Region Volume.
 	DeleteVolume(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
-	// UpdateVolumeState rediscovers provider state and updates the Region Volume in place.
-	// Provider failures are returned so callers can preserve the last observed state.
-	UpdateVolumeState(ctx context.Context, identity *unikornv1.Identity, volume *unikornv1.Volume) error
 	// DetachVolume detaches the Volume from its claimed Server. The Server is nil
 	// when only provider Volume convergence remains.
 	DetachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) error
@@ -125,8 +122,8 @@ type Server interface {
 	// UpdateServerState checks a server's state and modifies the resource in place.
 	// Implementations MUST return ErrResourceNotFound when the provider server is
 	// absent: the server provisioner's create-retry "confirmed gone" gate depends
-	// on it.  It MUST also read the cloud afresh, never from a cache: the gate
-	// deletes on what it sees.
+	// on it, and that gate is this method's only caller.  It MUST also read
+	// the cloud afresh, never from a cache: the gate deletes on what it sees.
 	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 }
 

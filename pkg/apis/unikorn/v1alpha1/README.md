@@ -5,7 +5,7 @@
 `pkg/apis/unikorn/v1alpha1` defines the region service's Kubernetes storage
 model and controller contract. It is not just a set of CRD structs for
 generation. It is the persisted object model that handlers, provisioners,
-providers, monitors, and controller-runtime integrations share.
+providers and controller-runtime integrations share.
 
 The package contains three broad kinds of object:
 
@@ -129,18 +129,16 @@ stored objects rely on for linkage, migration, and operational coordination.
   provider detachment and removes that finalizer. The Volume controller creates
   this canonical resource reference before provider attachment and removes it
   before releasing the claim. References for removed intent remain until
-  controller teardown completes. The Volume
-  controller advances
-  `ObservedGeneration`
-  only after both backing Volume and requested attachment state converge,
-  reports attachment errors through the generic `Available` condition, and
+  controller teardown completes. The Volume reports `Provisioned` only after
+  both backing Volume and requested attachment state converge, reports
+  attachment errors through the generic `Available` condition, and
   discovers provider attachments from the Volume before detaching them. The
   controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
   The Volume controller exclusively owns the generic `Available` provisioning
   condition. The controller stamps `VolumeStatus.ProvisionedAt` after its
-  successful provider rediscovery; the monitor projects `Volume.Status.Size`
+  successful provider rediscovery; the reconcile pass projects `Volume.Status.Size`
   and coarse `Healthy`. Confirmed provider absence clears observed size and degrades health;
   a marked Volume is never recreated under the same Region Volume ID. Provider
   request errors preserve observed size and health. Provider-side volume
@@ -240,5 +238,5 @@ stored objects rely on for linkage, migration, and operational coordination.
 - provider and provisioner packages turn these stored specs and status records
   into concrete cloud-side resources and, where still necessary, internal
   provider state
-- monitor code consumes the same stored model and status helpers, especially for
-  volume lifecycle and health
+- reconcile passes consume the same stored model and status helpers, especially
+  for server lifecycle transitions

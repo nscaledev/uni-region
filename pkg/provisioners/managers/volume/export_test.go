@@ -49,3 +49,8 @@ func NewForTest(resource *unikornv1.Volume, providerSet providers.Providers, ide
 		},
 	}
 }
+
+// ServerVolumeStatusUpdate exposes serverVolumeStatusUpdate.
+func ServerVolumeStatusUpdate(volumes []unikornv1.ServerVolumeStatus, volumeID string, status *unikornv1.ServerVolumeStatus, create bool) ([]unikornv1.ServerVolumeStatus, bool) {
+	return serverVolumeStatusUpdate(volumes, volumeID, status, create)
+}

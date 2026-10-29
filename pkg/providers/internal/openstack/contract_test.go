@@ -417,6 +417,53 @@ func TestCreateServerLeavesUnreachableCloudUntyped(t *testing.T) {
 	require.True(t, coremanager.Unreachable(err, openstack.Transient))
 }
 
+// TestVolumeCallsLeaveUnreachableCloudUntyped pins that a pass which could not
+// reach the cloud comes back from the real CreateVolume and AttachVolume as a
+// plain failure that core's WithTransient, given the region classifier, treats
+// as an outage, whether Keystone or Nova is down.
+func TestVolumeCallsLeaveUnreachableCloudUntyped(t *testing.T) {
+	t.Parallel()
+
+	for outage, down := range map[string]func(*http.Request) bool{
+		"keystone": func(r *http.Request) bool { return r.Method == http.MethodPost },
+		"nova":     func(r *http.Request) bool { return strings.Contains(r.URL.Path, "/servers") },
+	} {
+		t.Run(outage, func(t *testing.T) {
+			t.Parallel()
+
+			endpoint := newContractFakeOpenstack(t, func(w http.ResponseWriter, r *http.Request) bool {
+				if !down(r) {
+					return false
+				}
+
+				w.WriteHeader(http.StatusServiceUnavailable)
+
+				return true
+			})
+
+			volume := &regionv1.Volume{
+				ObjectMeta: metav1.ObjectMeta{Name: "volume-1", Namespace: contractNamespace},
+			}
+
+			cli := contractRetryClient(t, contractIdentity(), contractOpenstackIdentity())
+			provider := teardownProvider(cli, endpoint.URL)
+
+			server := &regionv1.Server{ObjectMeta: metav1.ObjectMeta{Name: contractServerID, Namespace: contractNamespace, Labels: contractServerLabels()}}
+
+			_, err := provider.AttachVolume(t.Context(), contractIdentity(), server, volume)
+			require.Error(t, err)
+			require.True(t, coremanager.Unreachable(err, openstack.Transient), "AttachVolume")
+
+			// Nova down does not reach CreateVolume, which talks to Cinder.
+			if outage == "keystone" {
+				err = provider.CreateVolume(t.Context(), contractIdentity(), volume)
+				require.Error(t, err)
+				require.True(t, coremanager.Unreachable(err, openstack.Transient), "CreateVolume")
+			}
+		})
+	}
+}
+
 // TestUpdateServerStateReadsAfresh pins that the create-retry gate never sees
 // a kept list: it deletes a server it reads as failed, so one fixed in the
 // cloud since the last list must read as fixed.
