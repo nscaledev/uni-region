@@ -225,7 +225,7 @@ type VolumeInterface interface {
 	DeleteVolume(ctx context.Context, id string) error
 }
 
-// BaremetalInterface lets the live monitor look up the Ironic node bound to a
+// BaremetalInterface lets the projection look up the Ironic node bound to a
 // Nova instance so it can refine Phase for baremetal servers in BUILD.
 type BaremetalInterface interface {
 	GetNodeByInstanceUUID(ctx context.Context, instanceUUID string) (*nodes.Node, error)

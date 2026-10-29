@@ -158,6 +158,8 @@ func TestAttachVolume(t *testing.T) {
 
 		attachment, err := openstack.AttachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)
 		require.ErrorIs(t, err, coreerrors.ErrConflict)
+		// Polled every period: a handled wait, not an error logged each time.
+		require.ErrorIs(t, err, provisioners.ErrRecheck)
 		require.Nil(t, attachment)
 	})
 
@@ -206,14 +208,20 @@ func TestAttachVolume(t *testing.T) {
 		require.Nil(t, attachment)
 	})
 
+	// A 409 with no attachment to show for it is a wait: a soon one while a
+	// task holds the server, otherwise one for the next poll, since a server
+	// that refuses attachment in its current state is not moving.
 	for _, test := range []struct {
 		name       string
 		attachment *volumeattach.VolumeAttachment
 		getError   error
+		taskState  string
 		expected   error
+		recheck    bool
 	}{
-		{"ConcurrentAttachConflictYieldsUntilCinderConverges", novaAttachment, nil, provisioners.ErrYield},
-		{"UnresolvedConflictReturnsConflict", nil, notFound, coreerrors.ErrConflict},
+		{"ConcurrentAttachConflictYieldsUntilCinderConverges", novaAttachment, nil, "", provisioners.ErrYield, false},
+		{"UnresolvedConflictRechecks", nil, notFound, "", coreerrors.ErrConflict, true},
+		{"ConflictWithTaskInFlightYields", nil, notFound, "rebooting", provisioners.ErrYield, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -223,13 +231,17 @@ func TestAttachVolume(t *testing.T) {
 			compute := mock.NewMockComputeInterface(c)
 			blockStorage := mock.NewMockVolumeInterface(c)
 
-			compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+			busy := *openstackServer
+			busy.TaskState = test.taskState
+
+			compute.EXPECT().GetServer(t.Context(), server).Return(&busy, nil)
 			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(cinderVolume, nil)
 			compute.EXPECT().CreateVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(nil, conflict)
 			compute.EXPECT().GetVolumeAttachment(t.Context(), openstackServer.ID, cinderVolume.ID).Return(test.attachment, test.getError)
 
 			attachment, err := openstack.AttachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)
 			require.ErrorIs(t, err, test.expected)
+			require.Equal(t, test.recheck, errors.Is(err, provisioners.ErrRecheck))
 			require.Nil(t, attachment)
 		})
 	}
@@ -292,22 +304,27 @@ func TestAttachVolumeWaitsForCinderConvergence(t *testing.T) {
 		})
 	}
 
-	t.Run("ProviderErrorIsTerminal", func(t *testing.T) {
-		t.Parallel()
+	// The whole error family is rechecked: an operator or Cinder can clear it
+	// without a spec edit, and the volume may hold data.
+	for _, status := range []string{"error", "error_attaching"} {
+		t.Run("ProviderError_"+status, func(t *testing.T) {
+			t.Parallel()
 
-		c := gomock.NewController(t)
-		compute := mock.NewMockComputeInterface(c)
-		blockStorage := mock.NewMockVolumeInterface(c)
-		erroredVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
-		erroredVolume.Status = "error_attaching"
+			c := gomock.NewController(t)
+			compute := mock.NewMockComputeInterface(c)
+			blockStorage := mock.NewMockVolumeInterface(c)
+			erroredVolume := cinderVolumeWithAttachment(cinderVolume, openstackServer.ID, false)
+			erroredVolume.Status = status
 
-		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
-		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(erroredVolume, nil)
+			compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+			blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(erroredVolume, nil)
 
-		attachment, err := openstack.AttachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)
-		require.True(t, provisioners.IsTerminal(err))
-		require.Nil(t, attachment)
-	})
+			attachment, err := openstack.AttachVolumeWithClients(t.Context(), compute, blockStorage, server, volume)
+			require.False(t, provisioners.IsTerminal(err))
+			require.ErrorIs(t, err, provisioners.ErrRecheck)
+			require.Nil(t, attachment)
+		})
+	}
 }
 
 func TestDetachVolume(t *testing.T) {
