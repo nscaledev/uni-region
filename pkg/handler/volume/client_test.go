@@ -39,6 +39,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/handlertest"
 	"github.com/unikorn-cloud/region/pkg/handler/volume"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -568,4 +569,33 @@ func TestDeleteV2DeletesUnattachedVolume(t *testing.T) {
 
 	err := cli.Get(t.Context(), client.ObjectKey{Namespace: testNamespace, Name: testVolumeID}, &regionv1.Volume{})
 	require.True(t, kerrors.IsNotFound(err))
+}
+
+// TestDeleteV2StaleReadRechecksLiveCopy covers an attachment claim made just
+// after the guard's read: the delete preconditions turn the intervening write
+// into a conflict, so the guard is re-run against the live copy.
+func TestDeleteV2StaleReadRechecksLiveCopy(t *testing.T) {
+	t.Parallel()
+
+	store := testClientBuilder(t, testVolume("available")).Build()
+	key := client.ObjectKey{Namespace: testNamespace, Name: testVolumeID}
+
+	stale := &regionv1.Volume{}
+	require.NoError(t, store.Get(t.Context(), key, stale))
+
+	live := stale.DeepCopy()
+	live.Spec.ClaimRef = &regionv1.VolumeClaimRef{Kind: regionv1.VolumeClaimKindServer, ID: testServerID}
+	require.NoError(t, store.Update(t.Context(), live))
+
+	volumeClient := volume.New(common.ClientArgs{
+		Client:    handlertest.StaleRead(store, stale),
+		Namespace: testNamespace,
+	})
+
+	err := volumeClient.DeleteV2(testContext(t, identityapi.Read, identityapi.Delete), idstest.MustParseVolumeID(testVolumeID))
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected 403 forbidden, got: %v", err)
+
+	require.NoError(t, store.Get(t.Context(), key, live))
+	require.Nil(t, live.DeletionTimestamp)
 }

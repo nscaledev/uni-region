@@ -572,48 +572,68 @@ func (c *Client) DeleteV2(ctx context.Context, networkID regionids.NetworkID) er
 // ReferenceCreateV2 adds a external reference to the resource that blocks deletion
 // until it has been removed.
 func (c *Client) ReferenceCreateV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
-	if err != nil {
-		return err
-	}
+	return c.updateReference(ctx, networkID, identityapi.Create, func(resource *regionv1.Network) error {
+		if resource.DeletionTimestamp != nil {
+			return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
+		}
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Create, resource); err != nil {
-		return err
-	}
+		controllerutil.AddFinalizer(resource, reference)
 
-	if resource.DeletionTimestamp != nil {
-		return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
-	}
-
-	if ok := controllerutil.AddFinalizer(resource, reference); !ok {
 		return nil
-	}
-
-	if err := c.Client.Update(ctx, resource); err != nil {
-		return fmt.Errorf("%w: failed to update network", err)
-	}
-
-	return nil
+	})
 }
 
 // ReferenceDeleteV2 removes an external reference from the resource.
 func (c *Client) ReferenceDeleteV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
-	if err != nil {
-		return err
-	}
+	return c.updateReference(ctx, networkID, identityapi.Delete, func(resource *regionv1.Network) error {
+		controllerutil.RemoveFinalizer(resource, reference)
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Delete, resource); err != nil {
-		return err
-	}
-
-	if ok := controllerutil.RemoveFinalizer(resource, reference); !ok {
 		return nil
-	}
+	})
+}
 
-	if err := c.Client.Update(ctx, resource); err != nil {
-		return fmt.Errorf("%w: failed to update project", err)
-	}
+// updateReference reads the network, applies mutate and writes an
+// optimistic-lock patch. The patch is always sent, even when the copy read
+// already looks right, so a write that landed between the read and the patch
+// surfaces as a conflict instead of a silent no-op. A conflict is retried
+// once against a fresh read, and a second conflict is returned as 409. A
+// network deleted under an add is a 404; a remove whose network was deleted
+// succeeds, so removal stays idempotent once deletion has started.
+func (c *Client) updateReference(ctx context.Context, networkID regionids.NetworkID, operation identityapi.AclOperation, mutate func(*regionv1.Network) error) error {
+	return c.RetryConflictOnce(func() error {
+		current, err := c.GetV2Raw(ctx, networkID.String())
+		if err != nil {
+			return err
+		}
 
-	return nil
+		if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", operation, current); err != nil {
+			return err
+		}
+
+		updated := current.DeepCopy()
+
+		if err := mutate(updated); err != nil {
+			return err
+		}
+
+		patch := client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})
+
+		if err := c.Client.Patch(ctx, updated, patch); err != nil {
+			if kerrors.IsConflict(err) {
+				return err
+			}
+
+			if kerrors.IsNotFound(err) {
+				if operation == identityapi.Delete {
+					return nil
+				}
+
+				return errors.HTTPNotFound().WithError(err)
+			}
+
+			return fmt.Errorf("%w: failed to update network", err)
+		}
+
+		return nil
+	})
 }

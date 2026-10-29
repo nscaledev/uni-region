@@ -19,9 +19,10 @@ package main
 
 import (
 	"github.com/unikorn-cloud/core/pkg/manager"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	securitygroup "github.com/unikorn-cloud/region/pkg/managers/security-group"
 )
 
 func main() {
-	manager.Run(&securitygroup.Factory{})
+	manager.RunService(constants.Service, &securitygroup.Factory{})
 }

@@ -26,12 +26,14 @@ import (
 
 	chi "github.com/go-chi/chi/v5"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	"github.com/unikorn-cloud/core/pkg/openapi/helpers"
 	"github.com/unikorn-cloud/core/pkg/options"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/cors"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/logging"
+	metricsmiddleware "github.com/unikorn-cloud/core/pkg/server/middleware/metrics"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/routeresolver"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
@@ -88,11 +90,15 @@ func (s *Server) SetupLogging() {
 	s.CoreOptions.SetupLogging()
 }
 
-// SetupOpenTelemetry adds a span processor that will print root spans to the
-// logs by default, and optionally ship the spans to an OTLP listener.
+// SetupOpenTelemetry optionally ships spans to an OTLP listener, and exports
+// metrics for scraping.
 // TODO: move config into an otel specific options struct.
 func (s *Server) SetupOpenTelemetry(ctx context.Context) error {
-	return s.CoreOptions.SetupOpenTelemetry(ctx)
+	if err := s.CoreOptions.SetupTracing(ctx, constants.Service); err != nil {
+		return err
+	}
+
+	return s.CoreOptions.SetupMetrics(constants.Service)
 }
 
 func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Server, error) {
@@ -117,6 +123,12 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 		}
 	}()
 
+	go func() {
+		if err := s.CoreOptions.ServeMetrics(ctx, ":8080"); err != nil {
+			fmt.Println(err)
+		}
+	}()
+
 	schema, err := helpers.NewSchema(openapi.GetSwagger)
 	if err != nil {
 		return nil, err
@@ -130,15 +142,24 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 	//   establishes a trace ID that is used to correlate logs with user issues.
 	// * Logging ensures at least all errors are captured by logging telemetry and we
 	//   can trigger alerts based on them.
+	// * Request metrics must precede the route resolver, which answers unresolved
+	//   requests without calling the next handler.
 	// * Route resolver provides routing and OpenAPI information to child middlewares.
 	// * CORS emulates OPTIONS endpoints based on OpenAPI (requires route resolver).
 	opentelemetry := opentelemetry.New(constants.Application, constants.Version)
 	logging := logging.New()
+
+	requestMetrics, err := metricsmiddleware.New(otel.Meter(constants.Application))
+	if err != nil {
+		return nil, err
+	}
+
 	routeresolver := routeresolver.New(schema)
 	cors := cors.New(&s.CORSOptions)
 
 	router.Use(opentelemetry.Middleware)
 	router.Use(logging.Middleware)
+	router.Use(requestMetrics.Middleware)
 	router.Use(routeresolver.Middleware)
 	router.Use(cors.Middleware)
 	router.NotFound(http.HandlerFunc(handler.NotFound))

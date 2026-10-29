@@ -621,47 +621,14 @@ var _ = Describe("File Storage Management", func() {
 		var networkName string
 
 		Describe("Given a network and file storage resource", func() {
-			It("should create a network for attachment", func() {
-				networkName = api.UniqueName("attach-network")
-				networkRequest := regionopenapi.NetworkV2CreateRequest{
-					Metadata: coreapi.ResourceWriteMetadata{
-						Name:        networkName,
-						Description: ptr.To("Test network for storage attachment"),
-					},
-					Spec: regionopenapi.NetworkV2CreateSpec{
-						OrganizationId: config.OrgID,
-						ProjectId:      config.ProjectID,
-						RegionId:       idstest.MustParseRegionID(config.RegionID),
-						Prefix:         "172.29.0.0/24",
-						DnsNameservers: []string{"8.8.8.8", "8.8.4.4"},
-					},
-				}
-
-				network, err := regionClient.CreateNetwork(ctx, networkRequest)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(network).NotTo(BeNil())
-				Expect(network.Metadata.Id).NotTo(BeEmpty())
-
-				networkID = network.Metadata.Id
-				GinkgoWriter.Printf("Created network for attachment: %s (%s)\n", networkName, networkID)
-
-				Eventually(func() coreapi.ResourceProvisioningStatus {
-					networks, err := regionClient.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
-					if err != nil {
-						return ""
-					}
-					for _, n := range networks {
-						if n.Metadata.Id == networkID {
-							return n.Metadata.ProvisioningStatus
-						}
-					}
-					return ""
-				}).WithTimeout(5*time.Minute).
-					WithPolling(10*time.Second).
-					Should(Equal(coreapi.ResourceProvisioningStatusProvisioned),
-						"Network should eventually be provisioned")
-
-				GinkgoWriter.Printf("Network provisioned: %s\n", networkID)
+			It("should resolve the shared network for attachment", func() {
+				// Reuse the long-lived shared network instead of creating one per
+				// run; the region VLAN pool is small and per-spec networks exhaust
+				// it. It is returned already provisioned.
+				shared := api.MustResolveSharedNetwork(regionClient, ctx)
+				networkID = shared.Metadata.Id
+				networkName = shared.Metadata.Name
+				GinkgoWriter.Printf("Using shared network for attachment: %s (%s)\n", networkName, networkID)
 			})
 
 			It("should create a file storage resource without attachments", func() {
@@ -841,17 +808,6 @@ var _ = Describe("File Storage Management", func() {
 				filestorageID = "" // suppress AfterAll cleanup; storage has been confirmed deleted
 			})
 
-			It("should delete the network resource", func() {
-				if networkID == "" {
-					Skip("No network ID available")
-				}
-
-				api.MustDeleteNetwork(regionClient, ctx, networkID)
-
-				GinkgoWriter.Printf("Deleted network: %s\n", networkID)
-				GinkgoWriter.Printf("Confirmed network deleted: %s\n", networkID)
-				networkID = "" // suppress cleanup — already deleted
-			})
 		})
 
 		AfterAll(func() {
@@ -865,11 +821,6 @@ var _ = Describe("File Storage Management", func() {
 
 				GinkgoWriter.Printf("Waiting for storage cleanup: %s\n", filestorageID)
 				api.WaitForFileStorageGone(regionClient, ctx, filestorageID)
-			}
-
-			if networkID != "" {
-				GinkgoWriter.Printf("Cleaning up test network: %s\n", networkID)
-				api.MustDeleteNetwork(regionClient, ctx, networkID)
 			}
 		})
 	})
