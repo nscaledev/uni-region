@@ -59,6 +59,13 @@ func ProviderToServerError(err error) error {
 	return err
 }
 
+// Transient reports whether err says a provider could not be reached, rather
+// than giving an answer.  It is the classifier the polling controllers pass to
+// core's WithTransient.
+func Transient(err error) bool {
+	return openstack.Transient(err)
+}
+
 type providersImpl struct {
 	client    client.Client
 	namespace string

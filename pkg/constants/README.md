@@ -17,7 +17,7 @@ small number of contract clusters:
 - an API-generation label used to distinguish old and new external API
   semantics while keeping storage broadly in place
 - specialized image and server-state metadata that drives snapshot/import
-  provenance and monitor-owned pending-state timing
+  provenance and observed pending-state timing
 
 The same package also defines the process-level build metadata for the running
 binary: application name, version, revision, and the derived service

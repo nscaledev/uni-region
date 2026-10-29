@@ -58,6 +58,16 @@ type Options struct {
 	// ProviderCreateMaxAttempts bounds provider server create attempts before
 	// surfacing an error on the Server.
 	ProviderCreateMaxAttempts int32
+
+	// metrics are attached by the controller factory once the meter exists.
+	// Nil until then, and nil in tests.
+	metrics *Metrics
+}
+
+// SetMetrics attaches the lifecycle instruments.  Called by the controller
+// factory after OpenTelemetry setup, which is why this is not a flag.
+func (o *Options) SetMetrics(metrics *Metrics) {
+	o.metrics = metrics
 }
 
 // NewOptions returns server controller options with production defaults.
@@ -165,15 +175,42 @@ func (p *Provisioner) removeSSHCertificateAuthorityReference(ctx context.Context
 
 func (p *Provisioner) addConsumedResourceReferences(ctx context.Context, cli client.Client, reference string) error {
 	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.NetworkList{}, p.identityListOptions(), reference, p.networkIDs()); err != nil {
-		return fmt.Errorf("%w: failed to add network references", err)
+		return consumedReferenceError(err, "networks")
 	}
 
 	if err := manager.AddResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
-		return fmt.Errorf("%w: failed to add security group references", err)
+		return consumedReferenceError(err, "security groups")
 	}
 
-	if err := p.addSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
-		return fmt.Errorf("%w: failed to add SSH certificate authority reference", err)
+	return nil
+}
+
+// consumedReferenceError makes a reference to an ID the cache has not seen a
+// short wait: one created just before the server is usually only a moment from
+// the cache.
+func consumedReferenceError(err error, kind string) error {
+	if errors.Is(err, coreerrors.ErrConsistency) {
+		return fmt.Errorf("%w: %w", provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady, "waiting for referenced "+kind), err)
+	}
+
+	return fmt.Errorf("%w: failed to add %s references", err, kind)
+}
+
+// reconcileSSHCertificateAuthorityReference holds the CA until the stored server
+// has booted, then releases it and never takes it again. A failed release is
+// left to the next poll, never returned: see the README's SSH CA reference
+// section.
+func (p *Provisioner) reconcileSSHCertificateAuthorityReference(ctx context.Context, cli client.Client, reference string) error {
+	if p.server.Status.ProvisionedAt == nil {
+		if err := p.addSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
+			return fmt.Errorf("%w: failed to add SSH certificate authority reference", err)
+		}
+
+		return nil
+	}
+
+	if err := p.removeSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
+		log.FromContext(ctx).Info("SSH certificate authority reference not released, retrying at the next poll", "error", err)
 	}
 
 	return nil
@@ -186,10 +223,6 @@ func (p *Provisioner) removeConsumedResourceReferences(ctx context.Context, cli 
 
 	if err := manager.RemoveResourceReferences(ctx, cli, &unikornv1.SecurityGroupList{}, p.identityListOptions(), reference, p.securityGroupIDs()); err != nil {
 		return fmt.Errorf("%w: failed to remove security group references", err)
-	}
-
-	if err := p.removeSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
-		return fmt.Errorf("%w: failed to remove SSH certificate authority reference", err)
 	}
 
 	return nil
@@ -273,9 +306,9 @@ func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventT
 //     condition cannot serve this role — it is re-derived every reconcile and
 //     flips to a non-provisioned value when a reconcile re-runs against a flaky
 //     provider (for example on a controller restart).
-//   - The failure signal itself is the Active condition: the provider monitor sets
-//     ActiveConditionReasonError when it observes the server in a terminal error
-//     state (e.g. Nova ERROR). Active is the pertinent lifecycle axis for a single
+//   - The failure signal itself is the Active condition, set to
+//     ActiveConditionReasonError by whichever observer sees the server in a
+//     terminal error state (e.g. Nova ERROR). Active is the pertinent lifecycle axis for a single
 //     server's state; the Healthy condition is a legacy cluster-aggregate concept
 //     and nothing here depends on it.
 func ProviderCreateFailure(server *unikornv1.Server) bool {
@@ -304,13 +337,13 @@ func (p *Provisioner) providerCreateFailure() bool {
 // create attempt so the next attempt starts clean. Resetting the Active condition
 // to Pending clears the terminal Error state, so ProviderCreateFailure no longer
 // fires while the retry is in flight. The Healthy condition is left alone: nothing
-// gates on it and the monitor re-derives it on the next observation.
+// gates on it and the next pass re-derives it from its own read.
 func (p *Provisioner) resetProviderCreateRuntimeStatus() {
 	p.server.SetActiveCondition(unikornv1.ActiveConditionReasonPending)
 	p.server.Status.PrivateIP = nil
 	p.server.Status.PublicIP = nil
-	// MACAddress is deliberately not reset: the monitor is its sole owner, and a
-	// stale value self-heals on the next ACTIVE poll rather than flickering to unset.
+	// MACAddress is deliberately not reset: a stale value self-heals on the next
+	// observation rather than flickering to unset.
 	p.server.Status.LaunchedAt = nil
 	p.server.Status.ScheduledAt = nil
 }
@@ -323,7 +356,7 @@ func (p *Provisioner) deleteFailedProviderServer(ctx context.Context, provider t
 	// Provider contract: UpdateServerState must surface ErrResourceNotFound for
 	// an absent provider server — it is the "confirmed gone" signal this gate
 	// depends on. The OpenStack implementation records the absent observation
-	// first and then returns the error (see updateServerStateWithClients).
+	// first and then returns the error (see observeServer).
 	if err := provider.UpdateServerState(ctx, identity, p.server); err != nil {
 		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 			return err
@@ -368,6 +401,17 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 		return false, nil
 	}
 
+	// The failure is recorded status, and at the cap nothing else reads the
+	// server, so read it afresh before deleting it: one fixed in the cloud must
+	// not be.  See the README's create retry section.
+	if err := provider.UpdateServerState(ctx, identity, p.server); err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return true, err
+	}
+
+	if !p.providerCreateFailure() {
+		return false, nil
+	}
+
 	attempt := p.server.Status.ProviderCreateFailures + 1
 
 	if attempt >= maxAttempts {
@@ -376,18 +420,22 @@ func (p *Provisioner) handleProviderCreateRetry(ctx context.Context, provider ty
 		// where the failure predicate still holds) cannot advance it any further,
 		// then abort terminally instead of retrying. Recovery is out of band:
 		// once the underlying fault is fixed an operator resets
-		// ProviderCreateFailures to re-arm the retry process.
+		// ProviderCreateFailures to re-arm the retry process.  Warn when the
+		// cap is reached, not on every poll after it.
+		if p.server.Status.ProviderCreateFailures < maxAttempts {
+			p.recordProviderCreateRetryEvent(
+				ctx,
+				corev1.EventTypeWarning,
+				eventReasonProviderCreateFailed,
+				"provider server create failed after all retry attempts",
+				fmt.Sprintf("Provider server create failed after %d attempts", maxAttempts),
+				maxAttempts,
+				maxAttempts,
+			)
+		}
+
 		p.server.Status.ProviderCreateFailures = maxAttempts
 		p.server.Status.ProviderCreateRetrying = false
-		p.recordProviderCreateRetryEvent(
-			ctx,
-			corev1.EventTypeWarning,
-			eventReasonProviderCreateFailed,
-			"provider server create failed after all retry attempts",
-			fmt.Sprintf("Provider server create failed after %d attempts", maxAttempts),
-			maxAttempts,
-			maxAttempts,
-		)
 
 		// The provisioning reason is the generic Errored (provisioning state is a
 		// closed, generic vocabulary); the provider-create-failure specificity rides
@@ -456,8 +504,8 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 // first, rejecting unknown IDs with ErrConsistency and finalizing each
 // dependency, so a network being deleted lingers (with a deletion timestamp)
 // rather than disappearing. A referenced, finalized dependency that is
-// nonetheless gone is a consistency violation no amount of requeuing will fix —
-// parking it is correct.
+// nonetheless gone is a consistency violation no amount of requeuing will fix,
+// so it is terminal, and polled like any other outcome.
 func (p *Provisioner) blockUntilResourceReady(ctx context.Context, cli client.Client, id string, resource unikornv1core.ManagableResourceInterface) error {
 	if err := cli.Get(ctx, client.ObjectKey{Namespace: p.server.Namespace, Name: id}, resource); err != nil {
 		if kerrors.IsNotFound(err) {
@@ -476,8 +524,8 @@ func (p *Provisioner) blockUntilResourceReady(ctx context.Context, cli client.Cl
 // disposition:
 //
 //   - Provisioned   -> nil, proceed
-//   - Errored       -> DependencyFailed: still yields (it may recover), but names
-//     the failure so the wait is not mistaken for progress
+//   - Errored       -> DependencyFailed: a recheck (it may recover, but is not
+//     moving), named so the wait is not mistaken for progress
 //   - anything else -> DependencyNotReady: still coming up
 func (p *Provisioner) classifyDependency(cli client.Client, resource unikornv1core.ManagableResourceInterface) error {
 	condition, err := unikornv1core.GetAvailableCondition(resource)
@@ -499,9 +547,18 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
+	// The status as read, to diff what this pass observed changing against.
+	// Taken before anything can write to it.
+	before := p.server.DeepCopy()
+
 	// Add references to any resources we consume.
 	reference, err := manager.GenerateResourceReference(cli, p.server)
 	if err != nil {
+		return err
+	}
+
+	// First, so nothing that fails a pass can hold the CA after boot.
+	if err := p.reconcileSSHCertificateAuthorityReference(ctx, cli, reference); err != nil {
 		return err
 	}
 
@@ -514,8 +571,15 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 		return err
 	}
 
-	if err := p.blockUntilDependenciesReady(ctx, cli, identity); err != nil {
-		return err
+	defer p.emitTransitions(ctx, cli.Scheme(), before, provider)
+
+	// The gate protects a create. Once the server has booted, a dependency that
+	// is briefly not ready (a security group mid rule edit) must not mark it
+	// waiting on every poll; after boot a missing one fails the pass instead.
+	if p.server.Status.ProvisionedAt == nil {
+		if err := p.blockUntilDependenciesReady(ctx, cli, identity); err != nil {
+			return err
+		}
 	}
 
 	if handled, err := p.handleProviderCreateRetry(ctx, provider, identity); handled {
@@ -526,29 +590,24 @@ func (p *Provisioner) Provision(ctx context.Context) error {
 }
 
 // createServerAndReleaseReferences reconciles the provider server and then
-// releases references to resources the spec no longer consumes. The release
-// must happen on three dispositions: a successful pass (provisionErr is nil),
-// a yielding pass (ErrYield), and a parked pass (an error satisfying
-// provisioners.IsTerminal, i.e. ErrTerminal or ErrUserActionRequired). A park
-// persists until a spec edit — longer-lived than any yield — so a security
-// group dropped from the spec in the same update whose rebuild then parks must
-// not keep this server's finalizer and block the group's deletion indefinitely.
-// The provider detaches dropped groups from the Neutron port before the image
-// row runs, so releasing on a park is safe. Genuine unclassified errors return
-// early: the provider state is unknown and reference release is not safe.
+// releases references to resources the spec no longer consumes, once the
+// provider reports the port converged: a group the spec dropped is then off the
+// port, whatever the rest of the pass did. Released on that fact alone, so a
+// rebuild that waits or yields for half an hour does not hold a dropped group's
+// finalizer, and a pass that stopped before the port was written never releases
+// a group still on it.
 func (p *Provisioner) createServerAndReleaseReferences(ctx context.Context, cli client.Client, provider types.Provider, identity *unikornv1.Identity, reference string) error {
 	options, err := p.serverCreateOptions(ctx, cli)
 	if err != nil {
 		return err
 	}
 
-	provisionErr := provider.CreateServer(ctx, identity, p.server, options)
-	if provisionErr != nil && !errors.Is(provisionErr, provisioners.ErrYield) && !provisioners.IsTerminal(provisionErr) {
-		return provisionErr
-	}
+	result, provisionErr := provider.CreateServer(ctx, identity, p.server, options)
 
-	if err := p.removeConsumedResourceReferences(ctx, cli, reference); err != nil {
-		return err
+	if result.PortConverged {
+		if err := p.removeConsumedResourceReferences(ctx, cli, reference); err != nil {
+			return err
+		}
 	}
 
 	return provisionErr

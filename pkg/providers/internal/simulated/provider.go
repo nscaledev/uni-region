@@ -481,8 +481,8 @@ func (p *Provider) UpdateVolumeState(_ context.Context, _ *unikornv1.Identity, _
 	return unsupported("UpdateVolumeState")
 }
 
-func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) error {
-	return unsupported("CreateServer")
+func (p *Provider) CreateServer(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *types.ServerCreateOptions) (types.ServerCreateResult, error) {
+	return types.ServerCreateResult{}, unsupported("CreateServer")
 }
 
 func (p *Provider) AttachVolume(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server, _ *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {
@@ -511,10 +511,6 @@ func (p *Provider) DeleteServer(_ context.Context, _ *unikornv1.Identity, _ *uni
 
 func (p *Provider) UpdateServerState(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) error {
 	return unsupported("UpdateServerState")
-}
-
-func (p *Provider) ObserveServers(_ context.Context, _ *unikornv1.Identity) (types.ServerObserver, error) {
-	return nil, unsupported("ObserveServers")
 }
 
 func (p *Provider) CreateConsoleSession(_ context.Context, _ *unikornv1.Identity, _ *unikornv1.Server) (string, error) {
