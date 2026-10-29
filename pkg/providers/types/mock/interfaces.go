@@ -553,11 +553,12 @@ func (mr *MockServerMockRecorder) AttachVolume(ctx, identity, server, volume any
 }
 
 // CreateServer mocks base method.
-func (m *MockServer) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, options *types.ServerCreateOptions) error {
+func (m *MockServer) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, options *types.ServerCreateOptions) (types.ServerCreateResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateServer", ctx, identity, server, options)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(types.ServerCreateResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // CreateServer indicates an expected call of CreateServer.
@@ -578,21 +579,6 @@ func (m *MockServer) DeleteServer(ctx context.Context, identity *v1alpha1.Identi
 func (mr *MockServerMockRecorder) DeleteServer(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteServer", reflect.TypeOf((*MockServer)(nil).DeleteServer), ctx, identity, server)
-}
-
-// ObserveServers mocks base method.
-func (m *MockServer) ObserveServers(ctx context.Context, identity *v1alpha1.Identity) (types.ServerObserver, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ObserveServers", ctx, identity)
-	ret0, _ := ret[0].(types.ServerObserver)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ObserveServers indicates an expected call of ObserveServers.
-func (mr *MockServerMockRecorder) ObserveServers(ctx, identity any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveServers", reflect.TypeOf((*MockServer)(nil).ObserveServers), ctx, identity)
 }
 
 // RebootServer mocks base method.
@@ -649,43 +635,6 @@ func (m *MockServer) UpdateServerState(ctx context.Context, identity *v1alpha1.I
 func (mr *MockServerMockRecorder) UpdateServerState(ctx, identity, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerState", reflect.TypeOf((*MockServer)(nil).UpdateServerState), ctx, identity, server)
-}
-
-// MockServerObserver is a mock of ServerObserver interface.
-type MockServerObserver struct {
-	ctrl     *gomock.Controller
-	recorder *MockServerObserverMockRecorder
-}
-
-// MockServerObserverMockRecorder is the mock recorder for MockServerObserver.
-type MockServerObserverMockRecorder struct {
-	mock *MockServerObserver
-}
-
-// NewMockServerObserver creates a new mock instance.
-func NewMockServerObserver(ctrl *gomock.Controller) *MockServerObserver {
-	mock := &MockServerObserver{ctrl: ctrl}
-	mock.recorder = &MockServerObserverMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockServerObserver) EXPECT() *MockServerObserverMockRecorder {
-	return m.recorder
-}
-
-// Observe mocks base method.
-func (m *MockServerObserver) Observe(ctx context.Context, server *v1alpha1.Server) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Observe", ctx, server)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// Observe indicates an expected call of Observe.
-func (mr *MockServerObserverMockRecorder) Observe(ctx, server any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Observe", reflect.TypeOf((*MockServerObserver)(nil).Observe), ctx, server)
 }
 
 // MockServerConsole is a mock of ServerConsole interface.
@@ -972,11 +921,12 @@ func (mr *MockProviderMockRecorder) CreateSecurityGroup(ctx, identity, securityG
 }
 
 // CreateServer mocks base method.
-func (m *MockProvider) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, options *types.ServerCreateOptions) error {
+func (m *MockProvider) CreateServer(ctx context.Context, identity *v1alpha1.Identity, server *v1alpha1.Server, options *types.ServerCreateOptions) (types.ServerCreateResult, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateServer", ctx, identity, server, options)
-	ret0, _ := ret[0].(error)
-	return ret0
+	ret0, _ := ret[0].(types.ServerCreateResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // CreateServer indicates an expected call of CreateServer.
@@ -1184,21 +1134,6 @@ func (m *MockProvider) ListExternalNetworks(ctx context.Context) (types.External
 func (mr *MockProviderMockRecorder) ListExternalNetworks(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListExternalNetworks", reflect.TypeOf((*MockProvider)(nil).ListExternalNetworks), ctx)
-}
-
-// ObserveServers mocks base method.
-func (m *MockProvider) ObserveServers(ctx context.Context, identity *v1alpha1.Identity) (types.ServerObserver, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ObserveServers", ctx, identity)
-	ret0, _ := ret[0].(types.ServerObserver)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ObserveServers indicates an expected call of ObserveServers.
-func (mr *MockProviderMockRecorder) ObserveServers(ctx, identity any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ObserveServers", reflect.TypeOf((*MockProvider)(nil).ObserveServers), ctx, identity)
 }
 
 // QueryImages mocks base method.

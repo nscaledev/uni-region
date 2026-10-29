@@ -236,10 +236,9 @@ func (p serverCreatePlacementPreflight) check(ctx context.Context, server *uniko
 			"resourceClass", resourceClass,
 			"requiredTraits", required)
 
-		// Typed rather than a %w-wrapped sentinel: the manager lifts a reason and
-		// message onto the Available condition only from a *provisioners.Error, so
-		// wrapped this wait is indistinguishable from every other yield.
-		return provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+		// Typed, so the manager lifts the reason and message onto the condition.
+		// A recheck: a full host is not moving, so wait for the next poll.
+		return provisioners.Recheck(unikornv1core.ConditionReasonDependencyNotReady,
 			"the requested host is not available for this flavor")
 	}
 

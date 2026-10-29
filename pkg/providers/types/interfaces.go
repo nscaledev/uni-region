@@ -108,8 +108,10 @@ type Volume interface {
 }
 
 type Server interface {
-	// CreateServer creates a new server.
-	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) error
+	// CreateServer creates a new server, or converges an existing one onto its
+	// specification. The result reports what the pass did whether or not it
+	// returns an error.
+	CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *ServerCreateOptions) (ServerCreateResult, error)
 	// AttachVolume attaches an existing Region volume to a server.
 	AttachVolume(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, volume *unikornv1.Volume) (*ServerVolumeAttachment, error)
 	// RebootServer soft reboots a server.
@@ -122,28 +124,10 @@ type Server interface {
 	DeleteServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
 	// UpdateServerState checks a server's state and modifies the resource in place.
 	// Implementations MUST return ErrResourceNotFound when the provider server is
-	// absent (after recording any observation they wish to persist): the server
-	// provisioner's create-retry "confirmed gone" gate and the health monitor's
-	// absent-server handling both depend on it.
+	// absent: the server provisioner's create-retry "confirmed gone" gate depends
+	// on it.  It MUST also read the cloud afresh, never from a cache: the gate
+	// deletes on what it sees.
 	UpdateServerState(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) error
-	// ObserveServers takes one provider read of the identity's whole project and
-	// returns an observer over it, so a caller with many servers to observe pays
-	// one read rather than one read per server.
-	ObserveServers(ctx context.Context, identity *unikornv1.Identity) (ServerObserver, error)
-}
-
-// ServerObserver projects provider server state onto Server resources from a
-// single read taken when it was created.
-//
-// Observation only. It must never authorise an action against the provider: an
-// actuation decision takes its own fresh read at decision time, which is why the
-// create path keeps UpdateServerState.
-type ServerObserver interface {
-	// Observe projects the held provider state onto server, in place.
-	// Implementations MUST return ErrResourceNotFound when the provider has no
-	// server of that name, with the same observation recording UpdateServerState
-	// does on that path.
-	Observe(ctx context.Context, server *unikornv1.Server) error
 }
 
 type ServerConsole interface {

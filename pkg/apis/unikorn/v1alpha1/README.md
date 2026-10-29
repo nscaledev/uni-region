@@ -180,71 +180,27 @@ stored objects rely on for linkage, migration, and operational coordination.
   Provider-specific controllers resolve this path against their backing storage
   hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
-  authoritative for live state.
-  A rebuild failure is not attributable: an unrelated host failure on the desired
-  image is indistinguishable from a failed rebuild, whatever is recorded, so it
-  surfaces on the monitor's lifecycle axis rather than as a reconciler diagnosis.
-  Recovery is another image or a replacement server — never data restoration.
-- `Server.Status.Observed` is the partition that lets the two status writers stop
-  arbitrating. `Server` status has two writers: the reconciler drives the provider
-  toward spec, the monitor polls the provider and records what it saw. Anything they
-  share needs an ordering argument between them; anything derived exactly one way
-  does not. Every field under `Observed` comes from a single projection of one fresh
-  provider read. The monitor's poll is the normal caller but not the only one — the
-  reconciler's create-retry existence check reaches the same projection through the
-  same provider method — and that costs nothing because there is nothing to
-  arbitrate: both callers write the same derivation of the same kind of read, neither
-  advances a state, and a losing race loses on `resourceVersion` rather than
-  reverting a field. The retired `Status.Rebuild` marker failed on exactly the
-  opposite property: two writers holding different models of one field.
-  The governing rule is that **an observation never authorizes an action against
-  the provider**. Actuation is decided from a fresh provider read in the acting
-  pass, because an observation is stale by up to one poll interval and acting on
-  one would let a read taken before an operation landed authorize a second one —
-  which for a destructive operation means doing it twice. An observation may be
-  read as a precondition that *refuses* an action. This is the platform
-  specification's rule for projected status, not a local convention.
-  `Generation` is the freshness stamp: `metadata.generation` as read when the
-  snapshot was taken, so a reader can tell whether an observation postdates a spec
-  edit. It is stamped on every poll, which means the subtree exists from the first
-  poll that read the provider at all — a present subtree with no `Image` means
-  "polled, image unreadable", a different fact from an absent subtree meaning
-  "never successfully polled". The monitor patches with an optimistic lock, so a
-  write whose object moved underneath it is rejected outright and the recorded
-  generation is the one in force at write time.
-  `Image` tracks the live provider image rather than latching, but an unreadable
-  ref preserves the previous value and never clears it: a transient read miss must
-  not erase a known image, because a reader cannot tell an erased image from one
-  never observed. `Errored` is a neutral presence marker — "the provider reports
-  the server in an error state" — carrying no provider vocabulary; the provider's
-  own fault detail is written to the observing component's log at the moment of
-  observation, where operator detail belongs. It is live state and does clear on
-  an authoritative non-error read, which is safe only because an unreachable
-  provider aborts the poll without writing at all — connectivity loss can never
-  be mistaken for a recovery.
-  The `Healthy` and `Active` conditions are deliberately not in this region: the API
-  projects health from the condition, and the conditions array is shared with the
-  reconciler either way — it writes both on create and on an accepted rebuild.
-  **What this region can never tell you.** Every field under it is provider state,
-  so it bounds at provider-level truth and stops there. A rebuild onto a
-  well-formed but unbootable image was measured settling as `ACTIVE`, on the target
-  ref, with an empty `task_state` and no fault — byte-identical at the provider
-  layer to a perfect rebuild, with a dead workload inside. No enrichment of this
-  region can distinguish the two, because the difference is not visible to the
-  provider API. So `Image` matching the desired image means "the provider reports
-  the server running that image", never "the workload works", and `Errored` being false
-  means "the provider reports no failure", never "the guest is healthy". Note also
-  that a provider's failure detail may not survive the read the monitor makes: see the
-  OpenStack provider's `GetServer` notes on list responses omitting the fault. Workload
-  liveness is a separate axis needing a signal from inside the guest; treating
-  convergence here as proof of a working workload is a misreading this region
-  cannot protect against.
+  authoritative for live state. A rebuild failure is not attributable: an
+  unrelated host failure on the desired image is indistinguishable from a failed
+  rebuild, so the provider reports the error state without naming a cause.
+  Recovery is another image or a replacement server, never data restoration.
+- `Server` status has one writer, the reconciler. Each pass reads the provider
+  once and projects that read onto `Active`, `Healthy`, the MAC and the latches.
+  **An observation never authorizes an action against the provider.** Actions
+  are decided from a fresh read in the acting pass; a stored status is stale by
+  up to one poll.
+- Provider state bounds at provider-level truth. A rebuild onto a well-formed but
+  unbootable image settles as `ACTIVE` on the target ref with no fault, the same
+  as a perfect rebuild. So "the provider reports the server running that image"
+  never means "the workload works".
 - `Server.SetProvisioningCondition` stamps `metadata.generation` into the
-  `Available` condition's `observedGeneration` on every outcome, distinct from
-  `Status.Observed.Generation`. A zero or mismatched stamp means the result
-  belongs to a previous spec: `Server.ProvisioningConditionCurrent` returns
-  false, and the REST read projects it as `provisioning`. Enforced at the REST
-  boundary only; internal readers still key off the reason.
+  `Available` condition's `observedGeneration` on every outcome. A zero or
+  mismatched stamp means the result belongs to a previous spec:
+  `Server.ProvisioningConditionCurrent` returns false, and the REST read
+  projects it as `provisioning`. Enforced at the REST boundary only; internal
+  readers still key off the reason.
+- `Server` has no `status.observedGeneration`. Core decides what to do with
+  each pass from its outcome.
 
 ## Caveats
 
@@ -285,4 +241,4 @@ stored objects rely on for linkage, migration, and operational coordination.
   into concrete cloud-side resources and, where still necessary, internal
   provider state
 - monitor code consumes the same stored model and status helpers, especially for
-  server lifecycle and health transitions
+  volume lifecycle and health

@@ -22,11 +22,8 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
-	"go.opentelemetry.io/otel"
 
 	"github.com/unikorn-cloud/core/pkg/options"
-	"github.com/unikorn-cloud/region/pkg/constants"
-	serverhealth "github.com/unikorn-cloud/region/pkg/monitor/health/server"
 	volumehealth "github.com/unikorn-cloud/region/pkg/monitor/health/volume"
 	"github.com/unikorn-cloud/region/pkg/providers"
 
@@ -70,20 +67,10 @@ func Run(ctx context.Context, c client.Client, o *Options) error {
 		return err
 	}
 
-	meter := otel.GetMeterProvider().Meter(constants.Application)
-
-	serverMetrics, err := serverhealth.NewMetrics(meter)
-	if err != nil {
-		log.Error(err, "failed to initialize server metrics")
-
-		return err
-	}
-
 	ticker := time.NewTicker(o.pollPeriod)
 	defer ticker.Stop()
 
 	checkers := []Checker{
-		serverhealth.New(c, o.CoreOptions.Namespace, providerCache, serverMetrics),
 		volumehealth.New(c, o.CoreOptions.Namespace, providerCache),
 	}
 

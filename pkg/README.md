@@ -17,7 +17,7 @@ The useful way to read it is not as a directory tree, but as one system:
 
 - handlers shape and validate the lifecycle graph
 - provisioners and managers realize provider-side effects
-- monitors project observed provider truth back into status and metrics
+- reconcile passes project observed provider truth back into status and telemetry
 - providers bind the region model to real or simulated clouds
 - `Volume` is a Region block storage model: a network-anchored,
   quota-carrying block storage resource. Its deployable controller now drives
@@ -119,11 +119,13 @@ relationships.
 ### Monitor Layer
 
 - [monitor](./monitor/README.md)
-- [monitor/health/server](./monitor/health/server/README.md)
 - [monitor/health/volume](./monitor/health/volume/README.md)
 
 These packages cover the part of the system that is intentionally observational
 rather than declarative.
+
+Servers are not polled by this layer: the server controller polls itself, see
+[managers/server](./managers/server/README.md).
 
 They poll provider-backed reality and project it back into Kubernetes status,
 logs, and telemetry. That is an important architectural admission: not all
@@ -208,6 +210,46 @@ This is especially visible in:
 - [handler](./handler/README.md)
 - [provisioners](./provisioners/README.md)
 - [monitor](./monitor/README.md)
+
+### Sizing The Polling Controllers
+
+A polling controller's cost grows with the resources it polls, not with how
+often users change them. These figures were measured with a scale harness that
+ran the real controller and Kubernetes API against a fake cloud answering in
+20ms a request, on a laptop, with a one-minute poll. Real cores and rows
+differ, so treat them as a starting point and watch the pods.
+
+Measured, per 10,000 servers, steady state and in the minutes after a restart:
+
+| | CPU steady | CPU restart | working set | peak |
+|---|---|---|---|---|
+| server controller | 1.0 cores | 1.15 cores | 460MB | 700MB |
+
+Per 1,000 servers that is about 100m and 40MB, plus about 25MB fixed.
+
+Suggested per 10,000 servers: request 1.5 CPU and 768Mi, limit 1Gi. Set no CPU
+limit, or at least 2. Set `GOMEMLIMIT` to about 90% of the memory limit: Go
+takes GOMAXPROCS from the cgroup, but not the memory limit, and without it the
+heap overshoots. At 2,000 servers a 100Mi limit was OOM-killed; with
+`GOMEMLIMIT=85MiB` the same load ran with a peak of 88MB and no restarts, for
+about the same CPU. At 100m CPU, 2,000 servers did not finish their first sweep
+in 45 minutes: a controller needs about 145m steady and up to 170m after a
+restart.
+
+`--max-concurrency` is sized by the cloud's latency, not by CPU. Workers spend a
+pass waiting on the cloud, so the number busy is the passes a second times the
+pass time, and the pass time is the latency times the calls a pass makes in
+series: two for a server. At 100ms and 2,000 servers that is about 8 busy: 4
+workers never caught up, 8 just did, 16 peaked at 12 busy in steady state and
+all 16 after a restart. Set it to about twice the figure: about 90 per 10,000
+servers at 100ms. The default is the node's core count, not the pod's limit.
+More CPU does not reduce the workers needed; it buys headroom for GC and
+restarts.
+
+Most of the cost is decoding cloud lists. Reads are kept per project for up
+to a minute (see the OpenStack provider's
+[Kept Lists](./providers/internal/openstack/README.md#kept-lists) section);
+without that the server controller cost six times as much at 500 servers.
 
 ## Caveats
 

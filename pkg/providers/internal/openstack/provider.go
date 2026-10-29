@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"math/big"
 	"net"
@@ -2428,9 +2429,8 @@ const (
 )
 
 // healthMessageIndeterminate is the Healthy-condition message used whenever a
-// server's health cannot be determined. markServerRebuildAccepted (reconciler)
-// and convertServerHealthStatus's REBUILD branch (monitor) MUST write the same
-// value, or the two writers churn the message on every poll.
+// server's health cannot be determined, by markServerRebuildAccepted and by
+// convertServerHealthStatus's REBUILD branch alike.
 const healthMessageIndeterminate = "unable to determine server status"
 
 // convertServerHealthStatus translates from an OpenStack server status into a Kubernetes one.
@@ -2464,6 +2464,8 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 }
 
 // SetServerHealthStatus attaches the healt status condition to a server.
+// TODO: move this.  Healthy only makes sense for a cluster; a single server's
+// state is the Active condition.
 func setServerHealthStatus(server *unikornv1.Server, openstackserver *servers.Server) {
 	status, reason, message := convertServerHealthStatus(openstackserver)
 
@@ -2510,17 +2512,8 @@ func serverMACAddress(server *unikornv1.Server, openstackserver *servers.Server)
 }
 
 // setServerMACAddress records the server's MAC address from a Nova response.
-//
-// The monitor is the sole owner of Status.MACAddress: the reconciler goes to
-// sleep once the server is provisioned, and for baremetal Ironic rebinds the
-// port to the real NIC MAC asynchronously, so only a live poll can observe the
-// final value. Nova guarantees the port MAC is bound by ACTIVE for VMs and
-// baremetal alike, giving one code path for both.
-//
-// A MAC is only ever written, never cleared: gating on ACTIVE and skipping an
-// empty read means a transient port-read miss can never unset a value we hold,
-// while an unconditional write of a valid MAC self-heals any drift (the
-// monitor's optimistic status PATCH makes a same-value write a harmless no-op).
+// Gated on ACTIVE and never cleared; see the README's Server Observation
+// section.
 func setServerMACAddress(ctx context.Context, server *unikornv1.Server, openstackserver *servers.Server) {
 	if openstackserver == nil || openstackserver.Status != novaStatusActive {
 		return
@@ -2789,8 +2782,8 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 
 	enabled := server.Spec.PublicIPAllocation != nil && server.Spec.PublicIPAllocation.Enabled
 
-	server.Status.PublicIP = nil
-
+	// PublicIP is cleared only once the address is known to be gone: a failed
+	// read leaves it as it was, or a provider blip would blank it fleet-wide.
 	floatingip, err := client.GetFloatingIP(ctx, port.ID)
 	if err == nil {
 		if enabled {
@@ -2807,12 +2800,16 @@ func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInt
 			return err
 		}
 
+		server.Status.PublicIP = nil
+
 		return nil
 	}
 
 	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
+
+	server.Status.PublicIP = nil
 
 	if !enabled {
 		return nil
@@ -2929,62 +2926,6 @@ func openstackServerImageID(server *servers.Server) (regionids.ImageID, bool) {
 	return imageID, true
 }
 
-// setServerObservedStatus is the only writer of status.observed. Both
-// UpdateServerState callers reach it — the monitor's poll and the reconciler's
-// create-retry existence check — and neither arbitrates: both project one fresh
-// read. Only reached after that read succeeded, which is what makes clearing the
-// error safe.
-//
-// The projection is pure: it performs no I/O and owns no enrichment. The caller
-// owns enrichment (e.g. the fault fetch on the false→true error transition) so a
-// hung Nova read can be bounded without stalling the projection, and so the
-// marker decision is decoupled from the fault read's success. It returns true
-// when errored transitioned false→true on this call, signalling the caller to
-// run that enrichment.
-func setServerObservedStatus(server *unikornv1.Server, openstackServer *servers.Server) bool {
-	if server.Status.Observed == nil {
-		server.Status.Observed = &unikornv1.ServerObservedStatus{}
-	}
-
-	observed := server.Status.Observed
-	observed.Generation = server.Generation
-
-	// An unreadable ref preserves the previous image: a reader cannot tell an
-	// erased image from one never observed.
-	if imageID, ok := openstackServerImageID(openstackServer); ok {
-		observed.Image = &imageID
-	}
-
-	// Errored is a neutral presence marker, gated on status rather than on the
-	// fault being populated: Nova leaves a stale fault on a recovered server.
-	// The fault detail itself is provider vocabulary and belongs in the log
-	// stream, not the API; the caller logs it once on the transition into error
-	// so the operator record exists without per-poll noise.
-	errored := openstackServer.Status == novaStatusError
-	enteredError := errored && !observed.Errored
-
-	observed.Errored = errored
-
-	return enteredError
-}
-
-// recordAbsentServerObservation is the not-found analogue of
-// setServerObservedStatus: it stamps the observed subtree for a server whose
-// Nova instance is gone. Generation is taken from metadata.generation as on
-// every successful read; errored is cleared (the absence is not a provider
-// error); the image is preserved as the last-known value. Unlike
-// setServerObservedStatus it takes no observation client and performs no fault
-// fetch — there is no server to read one for.
-func recordAbsentServerObservation(server *unikornv1.Server) {
-	if server.Status.Observed == nil {
-		server.Status.Observed = &unikornv1.ServerObservedStatus{}
-	}
-
-	observed := server.Status.Observed
-	observed.Generation = server.Generation
-	observed.Errored = false
-}
-
 // logServerFault writes the provider's fault detail to the observation log on
 // the transition into error. The list read that noticed the error can carry an
 // empty fault (Nova up to 2025.2 can omit it from a list response), so the
@@ -3031,11 +2972,8 @@ func logServerFault(ctx context.Context, client ServerObservationInterface, serv
 
 // markServerRebuildAccepted stamps the post-acceptance in-flight view: Active
 // Rebuilding and health Unknown, byte-identical to what the monitor derives for
-// a Nova REBUILD (setServerActive + convertServerHealthStatus), including the
-// health message (healthMessageIndeterminate), so the reconciler and monitor
-// writes agree rather than churning the condition every poll. Never call before
-// Nova has accepted: pre-acceptance waits are silent yields and the monitor owns
-// observed state.
+// a Nova REBUILD (setServerActive + convertServerHealthStatus). Never call
+// before Nova has accepted: pre-acceptance waits are silent yields.
 func markServerRebuildAccepted(server *unikornv1.Server) {
 	server.SetActiveCondition(unikornv1.ActiveConditionReasonRebuilding)
 	server.SetHealthCondition(corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate)
@@ -3045,20 +2983,14 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 // action returns when the target image no longer exists (nova
 // api/openstack/compute/servers.py, the ImageNotFound catch). The literal has
 // been frozen upstream for over a decade; if it ever drifts, the match below
-// fails toward retry, never toward a wrong park.
+// fails toward an ordinary error, never toward a wrong wait.
 const novaRebuildImageNotFoundMessage = "Cannot find image for rebuild"
 
 // isRebuildImageNotFound reports whether err is Nova's synchronous rebuild
-// rejection for a deleted target image — the one 400 class that provably
-// cannot self-heal, and therefore the only one that may park. Nova 400s are
-// not homogeneous: ImageNotActive (a deactivated Glance image) is also a 400,
-// but an operator reactivating the image bumps no generation and moves no
-// observed field, so parking it would strand the server with no recovery
-// path. Matching is deliberately a narrow substring of the response body:
-// anything unrecognized — another 400 class, a reworded message, a proxy that
-// strips bodies — falls back to surfacing the error for the ordinary requeue
-// (retry-forever, the status quo ante), which a later spec edit or provider
-// change resolves without operator action.
+// rejection for a deleted target image: the one 400 class that is a wait for
+// the image rather than a fault.  Matching is deliberately a narrow substring of
+// the response body: anything unrecognized — another 400 class, a reworded
+// message, a proxy that strips bodies — surfaces as an ordinary error.
 func isRebuildImageNotFound(err error) bool {
 	var responseErr gophercloud.ErrUnexpectedResponseCode
 
@@ -3069,88 +3001,85 @@ func isRebuildImageNotFound(err error) bool {
 	return bytes.Contains(responseErr.Body, []byte(novaRebuildImageNotFoundMessage))
 }
 
-// submitServerRebuild issues the Nova rebuild. Rejections are synchronous and
-// leave the server untouched, so a 409 yields for a short retry, a 400 parks
-// only on Nova's image-not-found signature (the image is gone and
-// only a spec edit can name another, exactly the R3′ argument), while every
-// other 400 surfaces and retries: the class is not homogeneous — a
-// deactivated image (ImageNotActive) is a 400 an operator can clear by
-// reactivating it, which bumps no generation and moves no observed field, so
-// parking it would strand the server —
-// and anything else surfaces for the ordinary requeue: quota freeing or a provider
-// recovery bumps no generation, so parking a 403 or a 5xx would strand the
-// server. The accepted stamp is fixed, never derived from the response body: a
-// 202 can still describe the pre-destruction server as ACTIVE.
-func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions) (*servers.Server, error) {
-	rebuilt, err := client.RebuildServer(ctx, openstackServer.ID, options)
+// errImageUnavailable is a wait for the desired image: the spec still asks for
+// it, so it is applied if it comes back, and a spec edit can name another.  The
+// message is ours, never Nova's (CWE-209).
+func errImageUnavailable() error {
+	return provisioners.Recheck(unikornv1core.ConditionReasonErrored,
+		"the requested image is not available at the provider; it will be applied when it is, or select a different image")
+}
+
+// submitServerRebuild issues the Nova rebuild, logged at Info because it wipes
+// the disk and may start with no spec edit.  Rejections are synchronous and
+// leave the server untouched: a 409 and Nova's image-not-found are rechecks,
+// and anything else surfaces.  The accepted stamp is fixed, never derived from
+// the response body: a 202 can still describe the pre-destruction server as
+// ACTIVE.  See the README's Server Observation section.
+func submitServerRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, options ServerRebuildOptions) error {
+	log.FromContext(ctx).Info("submitting server rebuild",
+		"server", server.Name, "novaServerID", openstackServer.ID, "imageID", options.ImageID)
+
+	_, err := client.RebuildServer(ctx, openstackServer.ID, options)
 	if err != nil {
+		// A locked server also answers 409, and is not moving.  If an operation
+		// really is running, the next poll sees it and yields as R4′ does, so
+		// same wording.
 		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
 			log.FromContext(ctx).Info("server rebuild refused pending another operation, waiting for a rebuildable state",
 				"server", server.Name, "novaServerID", openstackServer.ID)
 
-			// Same situation as R4′: we lost the race between observing a
-			// quiesced server and asking Nova to rebuild it, so same wording.
-			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+			return provisioners.Recheck(unikornv1core.ConditionReasonProvisioning,
 				"another operation is in progress on the server; the requested image will be applied once it completes")
 		}
 
 		log.FromContext(ctx).Info("the provider rejected the server rebuild",
 			"server", server.Name, "novaServerID", openstackServer.ID, "error", err.Error())
 
-		// The message is ours, never Nova's: the raw rejection body is provider
-		// vocabulary and belongs in the log line above, not the API (CWE-209).
 		if isRebuildImageNotFound(err) {
-			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-				"the desired image no longer exists at the provider; select a different image or replace the server")
+			return errImageUnavailable()
 		}
 
-		return nil, err
+		return err
 	}
 
 	markServerRebuildAccepted(server)
 
 	// An accepted rebuild is in flight, so completing here would report the server
 	// provisioned while its root disk is being rewritten.
-	if rebuilt == nil {
-		rebuilt = openstackServer
-	}
-
-	return rebuilt, provisioners.ErrYield
+	return provisioners.ErrYield
 }
 
 // reconcileServerImage converges the server onto its desired image, deciding only
 // from the fresh openstackServer. Nova commits the image ref and task_state together
 // under a compare-and-swap, above the driver.
 //
-//	R1   Spec.Image == nil              → park; the spec names no image, so the only
-//	                                      remedy is a spec edit.
-//	R2   ref unreadable                 → park; never report success over an image
-//	                                      that cannot be verified.
+//	R1   Spec.Image == nil              → user action; the spec names no image, so
+//	                                      the only remedy is a spec edit.
+//	R2   ref unreadable                 → recheck; never report success over an
+//	                                      image that cannot be verified.
 //	R3   ref == desired, rebuilding      → yield; our own rebuild is mid-flight.
-//	R3′  ref == desired, ERROR, launched → park; Nova moves the ref at accept, not
-//	                                      on a successful write, so a quiesced
+//	R3′  ref == desired, ERROR, launched → recheck; Nova moves the ref at accept,
+//	                                      not on a successful write, so a quiesced
 //	                                      ERROR on the desired ref cannot certify
 //	                                      the image was realized. (It may well be
 //	                                      running — a failed live-migration also
-//	                                      lands here — so the park is cause-neutral
-//	                                      and diagnoses nothing.) The outcome of a
-//	                                      submission belongs to the reconciler's
-//	                                      axis; ambient health of a settled server
-//	                                      remains the monitor's. Never-launched
-//	                                      servers are excluded: an ERROR before
-//	                                      first boot is create-retry's to own.
+//	                                      lands here — so the report is
+//	                                      cause-neutral and diagnoses nothing.)
+//	                                      Never-launched servers are excluded: an
+//	                                      ERROR before first boot is create-retry's
+//	                                      to own.
 //	R3″  ref == desired, otherwise       → done.
 //	R4   ref != desired, never launched  → yield; a server that has never booted
 //	                                      belongs to create-retry, and Nova refuses
 //	                                      a rebuild before first boot regardless.
 //	R4′  ref != desired, task in flight  → yield; something else holds the server.
 //	R4″  ref != desired, quiescent       → submit. The one destructive row.
-func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) error {
 	// R1: the spec names no image. Image is in the CRD's required list, so this
 	// is dead code in practice, but completing would report a server provisioned
-	// onto no image. The only remedy is a spec edit, which is the park contract.
+	// onto no image. The only remedy is a spec edit.
 	if server.Spec.Image == nil {
-		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
+		return provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
 			"the server specifies no image to converge onto; set an image in the specification")
 	}
 
@@ -3159,14 +3088,14 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	currentImageID, refReadable := openstackServerImageID(openstackServer)
 
 	// R2: every server this provider creates is image-booted, so an unreadable ref
-	// is abnormal and must not be reported as success. The park is re-derived per
-	// pass, so a later readable ref un-parks it without any spec change.
+	// is abnormal and must not be reported as success. A recheck: a later
+	// readable ref clears it without any spec change.
 	if !refReadable {
 		log.FromContext(ctx).Info("cannot read the server image from the provider, image convergence cannot be checked",
 			"server", server.Name, "novaServerID", openstackServer.ID)
 
-		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-			"the provider cannot report the server's image, so the desired image cannot be verified; replace the server")
+		return provisioners.Recheck(unikornv1core.ConditionReasonErrored,
+			"the provider cannot report the server's image, so the desired image cannot be verified")
 	}
 
 	if currentImageID == desiredImageID {
@@ -3174,26 +3103,20 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		if serverRebuildInFlight(openstackServer) {
 			markServerRebuildAccepted(server)
 
-			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+			return provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 				"the provider is rebuilding the server onto the requested image")
 		}
 
 		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
-		// write (it moved at accept), so this must not read as provisioned. Park
-		// on the provisioning axis, exactly as create-retry does when its
-		// attempts are exhausted. The remedy is a spec edit — a new image choice
-		// or a replacement server — which is ErrUserActionRequired's contract:
-		// recovery is generation-driven, and there is no retry bookkeeping to
-		// clear here, so the sentinel alone suffices. The park is also
-		// re-derived per pass, so a monitor observed-write after a silent
-		// provider recovery un-parks it without any spec change.
+		// write (it moved at accept), so this must not read as provisioned. A
+		// recheck: the provider can recover the server on its own.
 		if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
-			return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-				"the provider reports the server in an error state; select another image or replace the server")
+			return provisioners.Recheck(unikornv1core.ConditionReasonErrored,
+				"the provider reports the server in an error state")
 		}
 
-		// R3″: converged. Any other task is the monitor's axis.
-		return openstackServer, nil
+		// R3″: converged. Any other task is projected, not acted on.
+		return nil
 	}
 
 	// R4: before first boot the image is a create parameter, so this belongs to
@@ -3202,7 +3125,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		log.FromContext(ctx).Info("image change deferred until first launch",
 			"server", server.Name, "novaServerID", openstackServer.ID)
 
-		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+		return provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 			"the requested image differs from the running one; it will be applied once the server has booted")
 	}
 
@@ -3214,7 +3137,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 			"server", server.Name, "novaServerID", openstackServer.ID,
 			"novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
 
-		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+		return provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 			"another operation is in progress on the server; the requested image will be applied once it completes")
 	}
 
@@ -3224,23 +3147,10 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	})
 }
 
-func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
+// reconcileServer creates the Nova server. The caller has already read Nova and
+// found nothing: only a positive not-found may create.
+func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) error {
 	log := log.FromContext(ctx)
-
-	openstackServer, err := client.GetServer(ctx, server)
-	if err == nil {
-		log.V(1).Info("server already exists")
-
-		return reconcileServerImage(ctx, client, server, openstackServer)
-	}
-
-	// Fail closed on an ambiguous provider read before a creating action — only
-	// a positive not-found may create. GetServer resolves by name via a list, so
-	// a transient list failure or a mis-scoped credential must not fall through
-	// to CreateServer, or a duplicate server would result.
-	if !errors.Is(err, coreerrors.ErrResourceNotFound) {
-		return nil, err
-	}
 
 	networks := []servers.Network{
 		{
@@ -3283,15 +3193,15 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 
 	if preflight != nil {
 		if err := preflight(ctx, server); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	log.V(1).Info("creating server")
 
-	openstackServer, err = client.CreateServer(ctx, server, keyName, networks, nil, metadata)
+	openstackServer, err := client.CreateServer(ctx, server, keyName, networks, nil, metadata)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	setServerHealthStatus(server, openstackServer)
@@ -3299,7 +3209,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	// refines the lifecycle state from observed Ironic state on each poll.
 	setServerActive(ctx, server, openstackServer, nil)
 
-	return openstackServer, nil
+	return nil
 }
 
 // CreateServer creates or updates a server.
@@ -3314,7 +3224,7 @@ func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOption
 	return serverForCreate
 }
 
-// reconcileServerForCreate routes the create/rebuild through the (possibly
+// reconcileServerForCreate routes the create through the (possibly
 // user-data/SSH-CA augmented) copy from serverForCreate, then copies the full
 // resulting status back onto the caller's server. The copy must be taken
 // here, after port and floating IP reconciliation have written
@@ -3323,7 +3233,7 @@ func serverForCreate(server *unikornv1.Server, options *types.ServerCreateOption
 func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, port *ports.Port, keyName string, preflight serverCreatePreflight) error {
 	serverForCreate := serverForCreate(server, options)
 
-	_, err := p.reconcileServer(ctx, client, serverForCreate, port, keyName, preflight)
+	err := p.reconcileServer(ctx, client, serverForCreate, port, keyName, preflight)
 
 	if serverForCreate != server {
 		server.Status = *serverForCreate.Status.DeepCopy()
@@ -3332,40 +3242,63 @@ func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerIn
 	return err
 }
 
-// createServer reconciles the server's port and floating IP (both write
-// status onto the caller's server), then creates/rebuilds the provider
-// server via the augmented-copy path. The ordering is load-bearing; see
-// reconcileServerForCreate.
-func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) error {
+// createServer reads and projects the server, reconciles its port and floating
+// IP (both write status onto the caller's server), then runs the image rows on a
+// found server or creates a missing one via the augmented copy. The result
+// reports whether the port converged. See reconcileServerForCreate and the
+// README's Server Observation section.
+func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) (types.ServerCreateResult, error) {
+	var result types.ServerCreateResult
+
+	// Observe first, so a Neutron fault cannot stop the projection, the
+	// latches or the transitions. See the README's Server Observation section.
+	//
+	// Fail closed on an ambiguous read: only a positive not-found may create.
+	// GetServer resolves by name via a list, so a transient list failure or a
+	// mis-scoped credential must not fall through to a create, or a duplicate
+	// server would result.
+	openstackServer, err := p.observeServer(ctx, identity, server, compute, p.baremetalForPhase)
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return result, err
+	}
+
 	port, err := p.reconcileServerPort(ctx, networking, server)
 	if err != nil {
-		return err
+		return result, err
 	}
+
+	result.PortConverged = true
 
 	if err := p.reconcileFloatingIP(ctx, networking, server, port); err != nil {
-		return err
+		return result, err
 	}
 
-	return p.reconcileServerForCreate(ctx, compute, server, options, port, keyName, preflight)
+	if openstackServer != nil {
+		err := reconcileServerImage(ctx, compute, server, openstackServer)
+
+		return result, err
+	}
+
+	return result, p.reconcileServerForCreate(ctx, compute, server, options, port, keyName, preflight)
 }
 
-func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) error {
+func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions) (types.ServerCreateResult, error) {
 	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
 	if err != nil {
-		return err
+		return types.ServerCreateResult{}, err
 	}
 
 	networking, err := p.networkFromServicePrincipal(ctx, identity)
 	if err != nil {
-		return err
+		return types.ServerCreateResult{}, err
 	}
 
 	compute, err := p.computeForServerCreate(ctx, identity, server)
 	if err != nil {
-		return err
+		return types.ServerCreateResult{}, err
 	}
 
-	return p.createServer(ctx, networking, compute, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
+	return p.createServer(ctx, networking, compute, identity, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
@@ -3380,6 +3313,39 @@ func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.Openstac
 	}
 
 	return *identity.Spec.SSHKeyName
+}
+
+// Transient reports whether err is a failure to reach an OpenStack service
+// rather than an answer from it: a transport error or timeout, a body cut off
+// mid-read, a 429, or any 5xx: a service that failed to answer says nothing
+// about the resource.  See the README's Server Observation section.
+func Transient(err error) bool {
+	// gophercloud wraps a request that needed a token refresh in types with no
+	// Unwrap, so look inside: a failed refresh is transient if Keystone was
+	// unreachable, a failure after one if the retried request was.
+	var reauth *gophercloud.ErrUnableToReauthenticate
+	if errors.As(err, &reauth) {
+		return Transient(reauth.ErrReauth)
+	}
+
+	var afterReauth *gophercloud.ErrErrorAfterReauthentication
+	if errors.As(err, &afterReauth) {
+		return Transient(afterReauth.ErrOriginal)
+	}
+
+	// net.Error covers the *url.Error every failed request returns, and a
+	// timeout while the body is read, which is not one.
+	var netErr net.Error
+	if errors.As(err, &netErr) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+
+	var response gophercloud.ErrUnexpectedResponseCode
+	if errors.As(err, &response) {
+		return response.Actual >= http.StatusInternalServerError || response.Actual == http.StatusTooManyRequests
+	}
+
+	return false
 }
 
 //nolint:cyclop
@@ -3604,7 +3570,14 @@ func (p *Provider) UpdateServerState(ctx context.Context, identity *unikornv1.Id
 		return err
 	}
 
-	return p.updateServerStateWithClients(ctx, identity, server, compute, p.baremetalForPhase)
+	// Only the create-retry gate calls this, and it deletes on what it sees, so
+	// never from a kept list: a server fixed in the cloud must not be deleted.
+	compute.RetireServerLists()
+
+	// The create-retry gate's "confirmed gone" depends on a not-found surfacing.
+	_, err = p.observeServer(ctx, identity, server, compute, p.baremetalForPhase)
+
+	return err
 }
 
 // lookupIronicNodeForPhase fetches the bound Ironic node for a baremetal
@@ -3634,41 +3607,6 @@ func (p *Provider) lookupIronicNodeForPhase(
 	}
 
 	return node
-}
-
-func (p *Provider) updateServerStateWithClients(
-	ctx context.Context,
-	identity *unikornv1.Identity,
-	server *unikornv1.Server,
-	serverClient ServerObservationInterface,
-	baremetalForPhase func(context.Context, *unikornv1.Identity) (BaremetalInterface, error),
-) error {
-	openstackServer, err := serverClient.GetServer(ctx, server)
-	if err != nil {
-		// A server whose Nova instance is gone (deleted out-of-band, e.g. a
-		// parked server whose backing instance was removed) still gets the
-		// observed subtree stamped: errored is cleared (the absence is not a
-		// provider error), generation is stamped as on every successful read,
-		// and the image is preserved as the documented sticky last-known
-		// value. No fault fetch happens — there is no server to read one for
-		// — so this path never touches the observation client. The recording
-		// lets a caller that chooses to persist status on the absent path do
-		// so (the monitor does, firing the observed wake that lets the
-		// reconciler recreate the server), but the error still surfaces
-		// rather than being swallowed: the create-retry provisioner's
-		// "confirmed gone" gate depends on UpdateServerState returning
-		// ErrResourceNotFound (deleteFailedProviderServer,
-		// pkg/provisioners/managers/server/provisioner.go).
-		if errors.Is(err, coreerrors.ErrResourceNotFound) {
-			recordAbsentServerObservation(server)
-		}
-
-		return err
-	}
-
-	p.projectServerState(ctx, identity, server, openstackServer, serverClient, baremetalForPhase)
-
-	return nil
 }
 
 func (p *Provider) CreateConsoleSession(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server) (string, error) {

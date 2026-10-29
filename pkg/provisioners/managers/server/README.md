@@ -13,14 +13,19 @@ Distinctive behaviour:
   gates on the `Available` condition: gates are satisfied by a separate service,
   so this wait can legitimately be long, and a bare sentinel would make it
   indistinguishable from every other wait on the create path
-- preflight checks may still yield inside the provider, after other
-  validation succeeds; those checks are transient and are not recorded
-  as lifecycle transitions
+- preflight checks may still wait inside the provider, after other validation
+  succeeds (a pinned host that is not available is a recheck); those waits are
+  not recorded as lifecycle transitions
+- an unknown network or security group ID (the cache has not seen it yet) is a
+  typed `Yield(DependencyNotReady)`; a dependency that is `Errored` is a recheck
 - augments provider create options with managed cloud-init parts for SSH CA use
 - retries provider-accepted create attempts that later land in provider error,
   deleting the failed provider server before a bounded re-attempt, but only for
   servers that have never been successfully provisioned; once the attempt cap is
-  reached it aborts terminally rather than retrying further
+  reached it aborts terminally rather than retrying further. Before it acts on a
+  recorded failure it reads the server afresh (`UpdateServerState`): a server
+  that is no longer failed is not deleted, and a failed read (other than not
+  found) returns the error with nothing deleted
 - clears or updates consumed-resource references during reprovision and teardown
 
 Create recovery and image rebuild recovery deliberately use different state:
@@ -30,8 +35,8 @@ Create recovery and image rebuild recovery deliberately use different state:
 | Server never launched | Server previously launched |
 | Delete/recreate, bounded by the existing flag | Nothing to recover |
 | `ProviderCreateFailures` | No persisted state |
-| Exhaustion is operator-terminal | The failure surfaces on the monitor's lifecycle axis |
-| Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | No wake needed: `ErrYield` requeues on a timer |
+| Exhaustion is operator-terminal | The failure surfaces on the `Available` and `Active` conditions |
+| Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | No wake needed: the poll re-reads the server |
 
 The image reconcile lives in the OpenStack provider's existing-server path and
 leaves the create retry counter and predicate code untouched. It decides only from
@@ -53,6 +58,52 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 - cloud-init augmentation translates higher-level SSH CA semantics into machine
   bootstrap material
 
+The readiness of the identity, networks and security groups, and the
+provider-create gates, are checked only until the server first boots
+(`status.provisionedAt`). They protect a create. The controller polls, so on a
+booted server the same check would run every period, and a security group
+briefly not ready — mid rule edit — would mark every server on it waiting and
+skip their observation. After boot the provider reports what the gate used to:
+a security group added to the spec that Neutron does not have yet fails the pass
+like any other answer from the cloud, reported at the poll rate; see
+[`pkg/providers/internal/openstack`](../../providers/internal/openstack/README.md).
+
+References to resources the spec no longer names are released when the provider
+reports the port converged (`ServerCreateResult.PortConverged`), and only then:
+a group the spec has just dropped is off the port once it has converged, and may
+still be on it before. The release decides from that fact, not from the shape of
+the error the pass returned.
+
+### SSH CA reference
+
+The SSH certificate authority is read only to build the boot's user data, so its
+reference follows the boot, not the port. It is decided first in each pass,
+from the stored `ProvisionedAt`, before anything that can fail the pass:
+
+- while the stored server has not booted it is taken, and held across every
+  pass whatever the pass returned, so the CA cannot be deleted while a create
+  may still need it;
+- once the stored server has booted it is released, and never taken again.
+  Re-adding it on every poll would write to a CA that many servers share.
+
+The release keys on the stored boot, not the one a pass observes: released on
+the pass that first sees the boot, a status write that then failed would lose
+`ProvisionedAt` and leave a create that needs a CA the user may already have
+deleted. So the release lands one pass later. A failed release is logged at
+Info and left to the next poll, never returned: many servers share a CA, so the
+release meets write conflicts, all at once on the upgrade that first releases
+it, and returning one would show a booted server as errored for a pass.
+
+After boot the CA may therefore be deleted, as it could between passes before
+servers polled. Deleting it does not revoke it: the booted guest keeps the key it
+was given, and a rebuild keeps the stored user data, CA part included, because
+it leaves the user data as Nova holds it. A booted server whose CA is gone
+builds its create options without the CA part instead of failing, so it is not
+`Errored` for ever; a server Nova lost is then re-created without CA logins,
+because its user deleted the CA. The CA is still read on every pass, from the
+informer cache, so a re-create picks it up while it exists. Before boot a
+missing CA stays an error.
+
 Deprovisioning retains consumed-resource references and the Server's finalizer
 until provider deletion succeeds. During failed-create retry, deletion yields
 also preserve `ProviderCreateRetrying`, attempt count, runtime state and satisfied
@@ -71,7 +122,7 @@ Why a shell script, not cloud-config:
 
 - cloud-config parts are merged, and cloud-init's default merge replaces
   lists, so a cloud-config part wiped the customer's `runcmd` and
-  `write_files` (INST-1542). A `merge_how` rule does not save it: with
+  `write_files`. A `merge_how` rule does not save it: with
   `dict(no_replace)`, a customer key left empty (`runcmd:`) keeps its null and
   drops ours.
 - Scripts are never merged. cloud-init runs them once per instance through
@@ -164,17 +215,69 @@ Limits: a container is not a VM (no systemd; `systemctl` and `service` are
 shims that log calls), NoCloud stands in for OpenStack, and only one
 cloud-init version is tested.
 
+## Transition Emission
+
+A pass reports what it observed changing by diffing the status it read against
+the status it wrote. `Provision` snapshots the server before anything can write
+to it and emits from a `defer`, so a waiting or yielding pass reports its
+transition too.
+
+The snapshot must be a copy. Aliasing the server puts the provider's writes on
+both sides of the diff, and every transition is silently swallowed — no error,
+no log, just a stream that goes quiet.
+
+One event, one record. Only an `Active` change is reported, to
+`provisioninglog.StreamLifecycle`, which core documents as the lifecycle stream.
+
+`Healthy` is deliberately not reported. Both conditions are derived from the same
+provider read in the same pass, so a health line sat alongside the lifecycle one
+saying the same thing: a server that stops produces `Active=Stopped` *and*
+`Healthy=Degraded`, and the second carries no fact the first does not.
+
+`Healthy` only makes sense for a cluster; a single server's state is the `Active`
+condition. There is a `TODO: move this` on `setServerHealthStatus`.
+
+The duration histograms record on the first arrival at `Running` from any earlier
+state. The lifecycle path is Pending → Building → Running for VMs and Pending →
+Queued → Building → Running for baremetal, so a strict Pending → Running
+predicate would miss every observation. Each server contributes at most one
+observation of each per persisted status, keyed off the nil-to-set transition of
+the timestamp being measured rather than off the state change, so a stop/start
+cycle does not double count.
+
+It is not yet exactly-once. The emission runs inside `Provision`, before core
+persists the status, so a pass whose status write does not land -- an optimistic
+lock conflict, a missing RBAC verb, the process dying in between -- emits a
+record and observes a duration that the next pass, reading the same unchanged
+status, emits and observes again. core's own rule is to emit only once the change
+is persisted, which needs a hook this package does not have. Until it does, a
+lost status write costs a duplicate rather than a silence, which is the better
+failure of the two. A timestamp predating the resource
+(clock skew between the controller and Nova) is logged and dropped.
+
+Metric label names — the region and flavour display names — are resolved from the
+provider only when an observation is actually recorded, which is once in a
+server's life. Resolving them per pass would put two provider reads on every
+reconcile to label a metric that almost never fires.
+
+There is no fleet gauge. The `unikorn_region_server_state` gauge the old monitor
+exported is gone and has no replacement. Core's
+`reconcile_outcomes_total{operation,outcome,reason}` counts passes, not Nova
+states. Counting servers by state is an aggregate over every server, which a
+per-resource reconcile cannot compute; the state is on the CR, so that
+aggregation belongs to whatever scrapes them.
+
 ## Caveats
 
 - Reference maintenance here is easy to underappreciate, but it is central to
   keeping server deletion and dependent-resource blocking semantics correct.
 - Provider create retry state is stored on `Server.status.providerCreateFailures`.
-  Transient provider create failures return `ErrYield` (a fixed-interval requeue)
-  until the configured attempt cap is reached. At the cap the provisioner returns
-  the core `provisioners.Terminal` disposition, so the reconciler parks the server
-  (writes `Errored`, stops requeuing) instead of looping forever on a failure that
-  cannot self-heal — the bare error it used to return was requeued every yield
-  interval indefinitely, starving the workqueue. The counter is tested against the
+  Provider create failures return `ErrYield` (a fixed-interval requeue) until the
+  configured attempt cap is reached. At the cap the provisioner returns the core
+  `provisioners.Terminal` disposition: the reconciler writes `Errored` and the
+  server is looked at again only at the poll slot, instead of looping every yield
+  interval on a failure that cannot self-heal. The Warning event fires only when
+  the cap is first reached, not on every poll after it. The counter is tested against the
   prospective attempt and clamped to the cap, so it settles at the cap and cannot
   drift on re-reconcile or controller restart (an already-drifted counter heals
   back down on its next pass). Recovery is deliberately out of band: the terminal
@@ -185,7 +288,7 @@ cloud-init version is tested.
   predicate, shared with the controller watch predicate
   (`pkg/managers/server`) so the trigger and the action cannot drift. It fails
   closed: a rebuild destroys data, so any signal that the server has ever booted
-  blocks it. In steady state the load-bearing guard is `launchedAt` (mirrored
+  blocks it. In steady state the main guard is `launchedAt` (mirrored
   from Nova `launched_at`, which Nova sets at first boot and never clears).
   `Server.status.provisionedAt` is a durable, write-once copy of that same Nova
   signal that the retry reset never clears; it closes the one window `launchedAt`
@@ -198,12 +301,13 @@ cloud-init version is tested.
   depth so losing any single status field cannot re-arm the rebuild path.
   Existing servers predating the latch backfill it on the next poll once booted
   and are covered by the `launchedAt` backstop until then.
-- `Server.status.macAddress` is owned exclusively by the monitor (see
-  `pkg/monitor/health/server`), not the reconciler. The reconciler no longer
-  records it at port-create time — that value is the ephemeral Neutron MAC for
-  baremetal, which Ironic later rebinds to the real NIC MAC — and the retry
-  reset deliberately leaves it intact (like `provisionedAt`) so it never
-  flickers to unset; a stale value self-heals on the next `ACTIVE` poll.
+- `Server.status.macAddress` is projected from the provider read, once the
+  server reaches `ACTIVE` — see
+  [`pkg/providers/internal/openstack`](../../../providers/internal/openstack/README.md).
+  It is not recorded at port-create time: that value is the ephemeral Neutron MAC
+  for baremetal, which Ironic later rebinds to the real NIC MAC. The retry reset
+  deliberately leaves it intact (like `provisionedAt`) so it never flickers to
+  unset; a stale value self-heals on the next observation.
 - Provider create retries also emit Kubernetes events and structured logs on
   retry start, retry readiness after delete, and retry exhaustion; avoid
   per-reconcile emissions while deletion is still converging.

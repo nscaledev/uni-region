@@ -98,13 +98,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     any `trait:*` extra specs, unioned with configured `requiredTraits`.
     Required flavor traits are sent as positive Placement `required` entries;
     forbidden flavor traits are sent as `!TRAIT` entries. Empty trait inputs
-    mean no trait filter. A miss yields and lets the controller retry.
+    mean no trait filter. A miss is a recheck: the host is not moving, so the next poll looks again.
   - a miss splits the same way the image rows do: the host, resource class and
     required traits go to the log, and the condition gets wording we choose.
     None of that detail is on the API — the resource class and flavor traits are
     Nova extra specs and `requiredTraits` is region config — so it would be
-    provider vocabulary on a surface the caller cannot act on. The yield is
-    typed `DependencyNotReady`, because a pinned host is a dependency and is not
+    provider vocabulary on a surface the caller cannot act on. The wait is
+    a typed `Recheck(DependencyNotReady)`, because a pinned host is a dependency and is not
     the user's own server.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
@@ -117,25 +117,24 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - A desired server image change is reconciled with Nova rebuild only once the
   server has booted at least once, decided from Nova's `launched_at`
   (`OS-SRV-USG:launched_at`) read fresh on the same `GetServer` — never from the
-  monitor-stamped `status.launchedAt`/`status.provisionedAt` latches, which are
+  stamped `status.launchedAt`/`status.provisionedAt` latches, which are
   observations and must not authorize the gate (observation is stimulus, never
   authorization; keying off them silently dropped image changes whenever the
-  monitor had not yet recorded the first `ACTIVE`, and the clean-completing
-  reconcile then let the API misreport the change as settled). Before first boot
+  latch had not yet been set, and the clean-completing reconcile then let the
+  API misreport the change as settled). Before first boot
   the desired image is a create parameter, not a rebuild target, so a pending
   image change on a server Nova reports with a zero `launched_at` defers: the
   reconcile yields, leaving the resource visibly `provisioning` and re-checking
   every 10s until first boot, after which a pass submits the rebuild once the
   server is quiescent. A
-  never-booted server Nova reports in `ERROR` is likewise deferred here — the
-  reconcile pass yields without writing a health stamp (the monitor owns observed
-  state), though the yield itself is named on the `Available` condition — and
-  absorbed by the bounded provider-create
-  delete-and-retry flow, which recreates it from the already-updated spec
-  image. That retry adoption keys off the `Healthy=Errored` stamp the
-  monitor's poll writes, so it takes effect at worst one poll later. This
+  never-booted server Nova reports in `ERROR` is likewise deferred here (the
+  yield is named on the `Available` condition) and absorbed by the bounded
+  provider-create delete-and-retry flow, which recreates it from the
+  already-updated spec image. That retry adoption keys off the errored lifecycle
+  stamp, which the pass now projects itself, so it takes effect on the next pass
+  rather than at worst one poll later. This
   assumes the cloud exposes
-  `OS-SRV-USG:launched_at` — the same signal the health monitor mirrors and the
+  `OS-SRV-USG:launched_at` — the same signal the projection mirrors and the
   create-retry guard keys off. Deliberately not a goal: recreating a
   never-booted server rather than waiting for it to boot (e.g. a queued
   baremetal deploy, where recreate would skip a wasted provision) is a future
@@ -160,17 +159,17 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 
   | | Condition | Action |
   |---|---|---|
-  | R1 | `Spec.Image == nil` | **park** |
-  | R2 | image ref unreadable | **park** |
+  | R1 | `Spec.Image == nil` | user action required |
+  | R2 | image ref unreadable | **recheck** |
   | R3 | ref == desired, rebuild task active | yield |
-  | R3′ | ref == desired, `ERROR`, launched | **park** |
+  | R3′ | ref == desired, `ERROR`, launched | **recheck** |
   | R3″ | ref == desired, otherwise | done |
   | R4 | ref != desired, `launched_at` zero | yield |
   | R4′ | ref != desired, any task active | yield |
-  | R4″ | ref != desired, quiescent | **submit** |
+  | R4″ | ref != desired, quiescent | **submit**, or recheck if the image is gone |
 
   Every yielding row returns `provisioners.Yield` with a `Provisioning` reason
-  and a message naming the wait, so the row a server is parked on is readable
+  and a message naming the wait, so the row a server is waiting on is readable
   from its `Available` condition. That matters because the rows are not
   equivalent — R3 is our own rebuild, R4 is a server that has never booted, R4′ is
   someone else's operation — and a bare `ErrYield` renders them identical: the
@@ -191,8 +190,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 
   R2 exists because every server this provider creates is image-booted, so an absent,
   empty or unparseable ref is abnormal: the pass must not report success over an image
-  change it cannot verify. The park is re-derived per pass, so a later readable ref
-  un-parks it without any spec change.
+  change it cannot verify. It is a recheck, so a later readable ref clears it at
+  the next poll without any spec change.
 
   `serverRebuildInFlight` tests Nova's own `rebuild_states` family
   (`rebuilding`, `rebuild_block_device_mapping`, `rebuild_spawning` — matched by the
@@ -204,106 +203,90 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   submitting the question is only whether Nova would accept, and it refuses while any
   task holds the server.
 
-  R3′ parks a quiesced `ERROR` on the desired ref as user-action-required
-  (`provisioners.UserActionRequired`, so `provisioningStatus=error` with an
-  actionable, cause-neutral message that advertises the spec-edit remedy),
-  mirroring create-retry's exhausted-attempts park. The
+  R3′ reports a quiesced `ERROR` on the desired ref with `provisioners.Recheck`,
+  so `provisioningStatus=error` with an actionable, cause-neutral message, and
+  is looked at again at the next poll. The
   ref moves at *accept*, not on a successful write, so this state means the spec
-  image was never realized and must not read as `provisioned` (INST-1235: measured
-  on kolla 2025.1, a failed rebuild deploy settles exactly here within seconds on
-  both the sushy and fake-controllable fixtures). The park does not claim to
+  image was never realized and must not read as `provisioned` (measured on kolla
+  2025.1: a failed rebuild deploy settles exactly here within seconds on both the
+  sushy and fake-controllable fixtures). The report does not claim to
   attribute the `ERROR` to the rebuild — an unrelated host failure after a
   successful rebuild presents identically — but under either cause the spec is
-  unrealized, so `error` is the honest report on the provisioning axis; the
-  monitor's health axis carries the ambient view on its own cadence. Deferring the
-  report to the monitor instead was measured to lose short-lived failures
-  entirely: the reconciler settles in one 10s yield cycle while the monitor
-  samples at one-minute cadence. Never-launched servers are excluded from the
-  park (an `ERROR` before first boot is a failed create, owned by the
-  provisioner's bounded retry machinery).
+  unrealized, so `error` is the honest report for provisioning. The same
+  pass projects the lifecycle and health conditions from the same read.
+  Never-launched servers are excluded (an `ERROR` before first boot is a failed
+  create, owned by the provisioner's bounded retry machinery).
 
-  A parked server has no requeue, so it un-parks on exactly three paths. The user
-  edits the spec — the remedy the message advertises — and the generation-change
-  wake resumes reconciliation, monitor-independent. Or the provider recovers
-  without a spec change, in which case the un-park rides the monitor's
-  `status.observed` write firing the observed wake: the park is re-derived per
-  pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
-  measured path as a foreign recovery, below — within one monitor period). Or
-  the provider server disappears entirely — deleted out-of-band — in which case
-  the monitor's `Observe` finds no row for it and `projectServerState`'s absent
-  path records an observation (errored cleared, generation stamped, image
-  sticky) before surfacing the not-found error — surfaced, not swallowed,
-  because the create-retry provisioner's confirmed-gone gate depends on
-  `UpdateServerState` returning `ErrResourceNotFound`. The monitor persists the
-  recorded observation anyway, firing the same observed wake; the reconciler's
-  own fresh read then routes not-found to the create path and recreates the
-  server.
+  **R2 and R3′ are rechecks.** Both are states the provider can leave on its
+  own — an operator resets the server, a host comes back. A recheck is looked at
+  again at the poll slot, not on the 10s yield timeout, so a fleet hit by one
+  fault costs one pass per server per period. A server deleted out of band needs none of this: the next pass's own
+  `GetServer` finds it not-found and routes to the create path, which is also why
+  `UpdateServerState` still surfaces `ErrResourceNotFound` rather than swallowing
+  it — the create-retry provisioner's confirmed-gone gate depends on it.
 
-  The provisioning axis reports *spec-realization*, not attribution. A
+  The provisioning condition reports *spec-realization*, not attribution. A
   rebuild-class operation this provider did not submit — `nova evacuate` is
   implemented as a rebuild, presenting `task_state=rebuilding` with the ref
-  already on the spec image — therefore reads exactly as ours when a pass runs.
-  Measured behaviour: an in-flight foreign rebuild does not move the
-  provisioning axis at all (a foreign operation generates no reconciler wake —
-  no spec change, no observed change — so R3 never runs; only the monitor's
-  phase and health axes read `Rebuilding`/`Unknown` for one poll cycle), a
-  *failed* foreign rebuild parks via the observed-errored wake within one
-  monitor period, and a foreign recovery un-parks the same way. A foreign
-  rebuild onto a *different* image — succeeded or failed — is auto-reverted:
-  the ref flip changes `observed.image`, the wake fires, and R4″ resubmits
-  toward the spec image (measured: ~20s from the foreign act to the corrective
-  rebuild). The park is therefore scoped precisely to failures on the
-  *converged* ref, where the spec image itself is implicated; divergent-ref
-  failures are reconverged instead. Operational consequence: operators must
-  change the spec, never act through Nova — a Nova-side image change is undone
-  within seconds. This is deliberate. During any rebuild-shaped operation the
-  server is not serving its spec — a rebuild is rewriting the root disk, while an
-  evacuation on shared storage rebuilds the instance on another host without
-  touching it — so `provisioning` is honest; after a failed one the spec image is
-  not running. Both reports are true regardless of who initiated the operation, and
-  no destructive row can fire on a foreign operation (R4″ requires a diverged
-  ref, which a foreign rebuild does not present). The park is re-derived per
-  pass, not latched: when a foreign recovery returns the server to `ACTIVE` on
-  the converged ref, the next pass walks to R3″ and the server reads
-  `provisioned` again. What this costs is attribution in the *messages* — a
-  failed evacuation reports the same cause-neutral park message as a failed
-  rebuild — which is the price of having no persisted intent to consult, and
-  why the message names neither.
+  already on the spec image — therefore reads exactly as ours on the next poll:
+  R3 reports `provisioning` while it runs, R3′ reports a failed one and rechecks
+  it, and a recovery clears it at the poll after. A foreign rebuild onto a
+  *different* image — succeeded or failed — is auto-reverted: the next poll reads
+  the flipped ref and R4″ resubmits toward the spec image (up to one period
+  later). The error report is therefore scoped
+  precisely to failures on the *converged* ref, where the spec image itself is
+  implicated; divergent-ref failures are reconverged instead. Operational
+  consequence: operators must change the spec, never act through Nova — the region is
+  the control plane, so a Nova-side image change is undone within a period, as a
+  deleted VM is recreated. This is deliberate. During
+  any rebuild-shaped operation the server is not serving its spec — a rebuild is
+  rewriting the root disk, while an evacuation on shared storage rebuilds the
+  instance on another host without touching it — so `provisioning` is honest;
+  after a failed one the spec image is not running. Both reports are true
+  regardless of who initiated the operation, and no destructive row can fire on a
+  foreign operation (R4″ requires a diverged ref, which a foreign rebuild does not
+  present). Nothing is latched: when a foreign recovery returns the server to
+  `ACTIVE` on the converged ref, the next pass walks to R3″ and the server reads
+  `provisioned` again. What this costs is attribution in the *messages* — a failed
+  evacuation reports the same cause-neutral message as a failed rebuild — which is
+  the price of having no persisted intent to consult, and why the message names
+  neither.
 
   R4 defers to the create-retry path rather than duplicating it, and Nova enforces the
   same precondition itself (`must_have_launched`).
 
   R4″ is the single destructive step. The submission (`submitServerRebuild`) writes a
   fixed accepted stamp on a 2xx (`Active` `Rebuilding`, `Healthy` `Unknown`, matching
-  the monitor's `REBUILD` mapping so the two writers agree rather than churn) and never
+  the projection's `REBUILD` mapping) and never
   derives it from the rebuild response body, whose 202 can still describe the
   pre-destruction server as `ACTIVE` and would stamp a just-accepted destructive
   rebuild as running. Acceptance *yields* rather than completing: Nova now has a
   destructive operation in flight, and completing would map to
   `Available=Provisioned` and report a server whose root disk is being rewritten as
-  settled. A `409` is pre-acceptance — the server is untouched — so it
-  also yields, silently, for a short retry.
+  settled. Every submit is logged at Info ("submitting server rebuild"), because it
+  wipes the disk and may start with no spec edit. A `409` is pre-acceptance — the
+  server is untouched — so it is a `Recheck(Provisioning)`, looked at again at the
+  next poll. A deleted image costs one rejected rebuild request a poll until it
+  comes back or the spec names another: the controllers run without the image
+  cache, so there is nothing cheaper to ask.
 
   Nova's accept gate refuses an unresolvable or non-`active` image, an image
   whose `min_ram`/`min_disk` exceeds the flavor, non-bootable image properties, a
   locked or wrongly-stated instance, and quota — all *before* writing any state.
-  `status.observed` structurally cannot carry the rejection, so the body stays
-  in the log and never reaches the API surface. A synchronous HTTP 400 parks
-  the server as user-action-required (a spec edit resumes it) only when the
+  The body stays in the log and never reaches the API surface. A synchronous HTTP
+  400 is `Recheck(Errored, "the requested image is not available at the provider;
+  it will be applied when it is, or select a different image")` only when the
   body carries Nova's image-not-found signature ("Cannot find image for
-  rebuild") — the one refusal that provably cannot self-heal. Nova 400s are
-  not homogeneous: a *deactivated* image (`ImageNotActive`) is also a 400, but
-  an operator reactivating it bumps no generation and moves no observed field,
-  so parking it would strand the server; it retries instead and converges on
-  the pass after reactivation. Every other 400 — and a reworded or stripped
-  body — likewise surfaces as the pass's error and retries, failing safe
-  toward the retry loop rather than toward a wrong park. An HTTP 409 yields
-  awaiting quiescence, and every other rejection class surfaces as the pass's
-  error and retries on the yield interval.
+  rebuild"). It is not user-action-required: if the image comes back, the next poll
+  rebuilds with no spec edit. Nova 400s are not homogeneous: a *deactivated*
+  image (`ImageNotActive`) is also a 400, and is not matched. Every other 400 —
+  and a reworded or stripped body — surfaces as the pass's error, failing safe
+  toward the error path rather than toward a wrong wait. An HTTP 409 is a
+  recheck, and every other rejection class surfaces as the pass's error.
 
-  The reconciler writes `Active`/`Healthy` when it acts and re-asserts the
-  accepted stamp while a rebuild it submitted is still in flight (R3); on every other
-  waiting row it writes nothing and the monitor owns observed state.
+  The reconciler projects `Active`/`Healthy` on every row from the read it
+  decided on (see Server Observation) and re-asserts the accepted stamp while a
+  rebuild it submitted is still in flight (R3).
 - Nova rebuild retains the server UUID, network ports and IP relationships,
   attached data volumes, flavor, metadata, and placement, but recreates the
   root disk. It stays on the same compute host; evacuation is a separate
@@ -334,8 +317,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   later reconciles delete matching instances through the same path, including
   separate instances from retried creates. Failed lookups retain ownership.
   Neutron DELETE 404 is idempotent success; other provider errors retain cleanup
-  ownership. This assumes the microversion-2.90 name-filtered
-  lookup is complete and Nova keeps instances discoverable until network
+  ownership. This assumes the shared project list (see
+  [Kept Lists](#kept-lists)) is complete, which it is for
+  instances visible before its walk began; one that first becomes visible mid-walk
+  can be missed, so the final lookup's window is one walk rather than one request.
+  An absence is only ever answered from a list opened after the lookup began,
+  so after the port delete, never from a kept list.
+  It also assumes Nova keeps instances discoverable until network
   teardown finishes. It requires `[api] list_records_by_skipping_down_cells = False`
   on every Nova API replica and `reclaim_instance_interval = 0` on API and
   compute services. Credential retention depends on the existing Server
@@ -533,36 +521,30 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   `Active` condition. The node lifecycle eventually terminates via delete;
   splitting "in the pipeline" from "in the pipeline but unhappy" across both the
   `Active` and `Healthy` conditions would just duplicate one concept across two
-  axes). Provisioning status itself is a separate axis (the `Available` condition),
-  provisioner-owned and the monitor never writes it; `setServerActive`
-  does, however, latch the monitor-owned `status.provisionedAt` field from Nova
+  dimensions). Provisioning status itself is separate (the `Available` condition),
+  provisioner-owned and the projection never writes it; `setServerActive`
+  does, however, latch `status.provisionedAt` from Nova
   `launched_at` the first time a server is seen booted (write-once, never
   cleared, independent of live power state), which the controller's bounded
   provider-create delete-and-retry guard relies on (so a server that has booted
   is never destroyed and recreated). The image-rebuild gate does not read this
-  latch: it authorizes from Nova `launched_at` read fresh each pass. Alongside it, `setServerMACAddress` records the other monitor-owned
-  field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
-  (the port MAC rides inline in `addresses`, reused from the read the caller
-  already took — no extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
+  latch: it authorizes from Nova `launched_at` read fresh each pass. Alongside it, `setServerMACAddress` records
+  `status.macAddress` from the Nova response once the server is `ACTIVE`
+  (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
+  extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
   real NIC MAC asynchronously; the value is only ever written, never cleared.
   `GetServer` resolves by name, which forces a list, and **the list response can omit
   `fault` entirely** on Nova up to 2025.2, so a listed errored server carries no
   fault detail. `GetServer` itself does not compensate: the fault is operator log
   detail, not part of the returned server, so it is fetched by a dedicated by-ID
   read exactly once, on the observed transition into the errored state, and
-  written to the observation log — status records only the neutral
-  `observed.errored` marker. Best-effort: a failed fetch logs the transition
+  written to the log — status records no fault detail. Best-effort: a failed fetch logs the transition
   without the detail rather than failing anything, because the fault is an
   enrichment and not the reason for the read; healthy servers, and servers
   already known to be errored, never pay the extra call.
-  `setServerObservedStatus` records the monitor's `status.observed` region from
-  whichever read the caller took — `Observe`'s batch for the monitor, `GetServer`
-  for the create path: `generation` unconditionally, the image via `openstackServerImageID`
-  (an unreadable ref preserves the previous value rather than clearing it), and
-  the neutral `errored` marker when Nova reports `ERROR`. The marker is gated on
-  `Status == "ERROR"` and not on `Fault` being populated, because Nova leaves a
-  stale `fault` on a recovered server, so keying off the struct would report a
-  cleared failure forever. The logged detail is the fault's code, message, and
+  The error edge is gated on `Status == "ERROR"` and not on `Fault` being
+  populated, because Nova leaves a stale `fault` on a recovered server, so keying
+  off the struct would report a cleared failure forever. The logged detail is the fault's code, message, and
   created timestamp; `fault.details` is excluded as an admin-only stack trace,
   and nothing from the fault reaches projected status. The Ironic lookup is
   filtered by `instance_uuid`. Because Ironic node ownership and visibility
@@ -574,9 +556,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   narrow `bm-mapper`-style role or equivalent admin, service, or system-reader
   policy that permits `baremetal:node:list_all`/node-detail visibility. If the
   privileged client cannot be created or Ironic rejects or fails the lookup,
-  the monitor logs the failure and falls back to the VM default `Building`
+  the pass logs the failure and falls back to the VM default `Building`
   `Active` state so API responses still see a coherent live signal rather than
-  failing the monitor path.
+  failing the pass.
 - Some OpenStack list APIs are not safe to treat as exact lookup, notably
   server, network, Cinder volume, and Octavia load-balancer `name` filters:
   - `name` filters behave like prefix or regular-expression matches rather than
@@ -590,6 +572,91 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   port is reused without a `PUT`, while private-IP status projection still runs.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
+
+## Server Observation
+
+`projectServerState` projects one fresh provider read onto a `Server`'s status: health,
+MAC once Nova has bound one, and live lifecycle state via `setServerActive`. It
+takes the read rather than fetching one, so neither caller can observe at a
+different moment from the one it decided at.
+
+`UpdateServerState` is `observeServer` alone: it reads Nova, projects the read,
+and returns `ErrResourceNotFound` for an absent server. The projection also logs
+the provider's fault detail once, when the server enters error.
+
+`createServer` calls it first in the pass, through `observeServer`, and so
+**before the image rows**; the ordering is not free choice:
+
+- `setServerActive` is where `ScheduledAt`, `LaunchedAt` and the write-once
+  `ProvisionedAt` latch. `reconcileServerImage` returns early on most of its rows,
+  so observing afterwards would skip the latch on exactly the passes that wait or
+  yield — including the bounded create-retry guard that reads `ProvisionedAt`, so
+  a skipped latch re-arms delete-and-retry on a server that has booted.
+- An accepted rebuild stamps `Active=Rebuilding` from within the image rows. The
+  read predates the submission, so projecting it afterwards reverts that stamp.
+
+Observing first does not weaken the rule that an observation never authorises an
+action: the image rows decide from the `GetServer` result directly, never from the
+status the projection wrote.
+
+The create branch deliberately does not observe. There is no Ironic node bound
+yet, and Nova has not bound a port MAC, so it stamps health and lifecycle from the
+create response alone.
+
+`status.macAddress` is written from the Nova response once the server reaches
+`ACTIVE`, which is the barrier at which the port MAC is guaranteed bound for VMs
+and baremetal alike. Earlier values — the one visible at port-create time — are
+the ephemeral Neutron MAC, which Ironic rebinds to the real NIC MAC during a
+baremetal deploy, so `reconcileServerPort` must not record it. It is only ever
+written, never cleared: gating on `ACTIVE` and skipping an empty read means a
+transient read miss cannot unset a value already held, while writing a valid MAC
+unconditionally self-heals drift.
+
+**The pass observes first.** `createServer` reads Nova and projects the read
+(`observeServer`) before it touches Neutron, so a Neutron fault cannot stop the
+lifecycle, health, MAC and latches being observed. It then converges the port
+and floating IP, and only then runs the image rows on a found server or creates
+a missing one. An existing server never reaches the create, its preflight, or
+the augmented copy `reconcileServerForCreate` makes.
+
+**An outage is not an answer.** The server controller polls and passes
+`providers.Transient`, which is `Transient` here, to core's `WithTransient`.
+`Transient` is true for a network error or timeout, a body cut off mid-read
+(unexpected EOF), a 429, and any 5xx: a service that failed to answer says
+nothing about the resource. The cost is that a Nova returning 500 for ever
+leaves a create showing its last condition for ever; operators see it in
+core's `reconcile_outcomes_total{outcome="transient"}` and the Info log.
+gophercloud wraps a request that needed a token refresh in types with no
+`Unwrap`; `Transient` looks inside them, because every credential refreshes when
+its token runs out.
+
+- A failure with no disposition that `Transient` accepts leaves the `Available`
+  condition as it was, saves the rest of status, and is logged at Info. Without
+  this a blip would turn every server `Errored` on every poll.
+- Any other untyped failure (a 4xx such as a refused refresh after a credential
+  rotation, a resource deleted underneath) is `Errored`, logged at Error on
+  every pass, and retried at the poll slot.
+- A typed outcome (the image rows' yields, rechecks and user-action waits) passes
+  through as it is. Handled failures log at Info.
+- Delete ignores the classifier.
+
+Status the pass did write is still saved, so it must only clear a field once it
+knows the value is gone: `reconcileFloatingIP` clears `PublicIP` on a confirmed
+absence, never before the read. A permanent transport fault, such as a bad CA
+bundle or a wrong endpoint, also reads as an outage on a server; its only trace
+there is the Info log line.
+
+**References follow a fact, not an error.** `CreateServer` returns whether the
+port converged: whether it now carries exactly the security groups the
+specification asks for. The provisioner releases references to dropped groups on
+that alone, whatever else the pass returned, so a rebuild that yields or waits
+for half an hour does not hold a dropped group, and a pass that failed before the
+port was written never releases a group still on it.
+
+Each pass on a booted server also reads Neutron: the network, each security
+group, the port and its floating IP, so four or more requests per server per
+period, about 130 a second at 2000 servers with one group each (modelled, not
+measured). They are not shared the way the Nova list is.
 
 ## Credential Sessions
 
@@ -709,55 +776,132 @@ of an eviction is one login.
 
 ### What this deliberately does not do
 
-It does not share provider *reads*. Collapsing `GetServer` was measured and
-rejected. Nova's name filter is a regular expression, so a filtered read scans the
-project and returns one row; dropping the filter would let concurrent callers
-share one list, but it returns every row in the project to every caller. A bulk
-create emitted three orders of magnitude more instance records because each
-create retires the sharing anyway, and sharing the reads would have needed a
-guard against a caller joining a read opened before its own create and building
-a second server.
+It caches no provider *read* itself. Server, network and security group reads
+are kept, by a separate mechanism with its own freshness rule; see
+[Kept Lists](#kept-lists).
 
-The figures that comparison rested on came from a model whose service times were
-plausible rather than measured, and a real deployment contradicted them by two
-orders of magnitude: over a representative estate of around 1500 servers a
-sequential cycle took tens of minutes, where the model put it at 35 seconds. The
-model counted requests and rows; it did not price what a loaded Nova charges for
-a regular expression scan over a project. Do not size anything off the 35s
-figure — neither read form ever fitted the one-minute poll period.
+## Kept Lists
 
-The saving on the monitor's path was never a shared read but a single read, and
-`ObserveServers` is now that: one unfiltered, paginated list of the identity's
-project per cycle, indexed by name, replacing a read per server with a read per
-identity — two orders of magnitude fewer Nova calls against the same estate.
-Observation-only reads are allowed to do this; see the note on projected status in
-[the API package](../../../apis/unikorn/v1alpha1/README.md).
+`GetServer` reads the project's servers unfiltered and picks its row by exact
+name, from a list kept per project for a minute (`keptListTTL`) and shared by
+every caller in the project: at most one list runs at a time per project, and
+everyone who arrives while it runs joins it (`keptLists`). Nova evaluates
+a name filter as a regular expression over the whole project, so a filtered read
+per server made polling N servers cost N project scans per period.
 
-It pages explicitly rather than using `AllPages`, which holds every page as a
-generic map tree and re-marshals the whole thing through JSON to decode it, so
-that overhead scales with the project rather than the page.
+The list is kept, not just shared, because sharing alone merged almost nothing
+once every server and volume was polled: passes are spread over the period and
+rarely overlap. The scale harness (`test/scale`) measured 500 servers in 10
+projects, steady state, against a fake cloud: each pass decoded its whole
+project to use one row, about 50,000 rows and 28 CPU-seconds a minute, where
+the monitor this replaced cost 1.5. The cost grew with servers times servers per
+project. Freshness is not a goal: a period of staleness is fine.
 
-Paging bounds the overhead, not the peak: the decoded slice is the whole project
-by construction, and `ObserveServers` retains it for the length of its caller's
-projection. For a project of around 1500 realistic Nova rows that is about 14MiB
-live, or 43MiB of heap arena once the per-page decode churn is counted — against
-roughly 15MiB for a project of 80. That retention is the dominant term. No page size changes that. It is bounded instead by the caller reading one
-project at a time, and by a project being bounded by the region's physical
-footprint. Trimming the retained row to the fields the projection actually uses
-would bound it properly, at the cost of changing a signature the create path also
-depends on.
+This was measured and rejected once, against the health monitor, which walked
+servers one at a time: at concurrency 1 a shared read merges nothing, so the
+larger response was pure cost. The figures behind that came from a model whose
+service times were plausible rather than measured, and a real deployment
+contradicted them by two orders of magnitude: over a representative estate of
+around 1500 servers a sequential cycle took tens of minutes, where the model put
+it at 35 seconds. The model counted requests and rows; it did not price what a
+loaded Nova charges for a regular expression scan over a project. Do not size
+anything off the 35s figure.
 
-Because an unfiltered list is walked by marker, a server created between two
-pages can be missed and read as absent for that cycle. Harmless here — the absent
-path stamps an observation and touches no condition, and it self-heals on the next
-poll — but it is a way to reach that path which a filtered read of one name could
-not. Nothing destructive keys off it: the create-retry gate goes through
-`UpdateServerState`'s own fresh read, never the batch.
+**Freshness.** What a kept or shared read must never do is tell a caller a
+server is absent, or failed, when the cloud has moved on since. Two decisions
+act on what a read says:
 
-`UpdateServerState` keeps its own per-server filtered read, and must. An
-observation may only refuse an action, never authorise one, so the create path's
-"is there already a server with exactly this name" question takes a fresh read at
-decision time rather than consulting a batch someone else took.
+- Not-found. The pass is check-then-act — `createServer` reads, and only a
+  not-found lets `reconcileServer` create — so a reconcile told that the server
+  it just created does not exist creates a second one. The network cleanup's
+  final lookup and volume detach act on not-found too.
+- Failed. The create-retry gate deletes a server it reads as failed, so a
+  server fixed in the cloud since the last list must not read as failed.
+
+So:
+
+- Every Nova server mutation retires its project's lists once it has returned,
+  whether or not it succeeded: no list opened before then answers a read that
+  begins after. A read takes that line once, when it begins, so writes landing
+  while its list runs cannot send it round again: at most two lists.
+- Only a list opened after a read began may answer it not-found. A server
+  missing from a kept list is looked for again in a fresh one, because a kept
+  list can predate a server something else made: another process, a former
+  leader, an operator.
+- `UpdateServerState`, the create-retry gate's read, retires the project's
+  lists before reading, so it always asks the cloud.
+
+A not-found retires nothing: a server missing for good costs one list per read
+of it, and the rest of its project keeps the kept list. Lists are per project,
+not per credential, because a pinned server is created with the Region admin
+credential and read with the service principal's, both scoped to one project.
+The two credentials see the same rows; the admin's also carry `user_data`, which
+no reader uses. A token with no project shares nothing: an empty key would merge
+projects.
+
+`DeleteServer` does not retire. A list from before a delete can only show the
+server still present, and every reader treats that as "not gone yet": teardown
+yields, and the create-retry gate holds off. Teardown re-sends DELETE every
+pass, so retiring there would stop a project mid-deletion keeping a list at all.
+Console calls do not retire either; they change nothing a list shows.
+
+The kept list is per process. The server controller, the volume controller and
+the API each keep their own, and a mutation in one does not retire another's.
+A stale row there is answered with an error from the cloud (a 404 or 409 on the
+old ID), not acted on destructively.
+
+**Networks and security groups.** `GetNetwork` and `GetSecurityGroup` keep each
+project's list under the same rules. Every server in a project reads the same
+network and the same groups each pass, and a group row carries all its rules: a
+CPU profile at 500 servers put these reads at 30% of the server controller,
+decoding the same rows about a hundred times a minute per project. Where they
+differ from servers:
+
+- Keyed by project and user, not project alone: Neutron shows an admin fields a
+  member does not, such as the segmentation ID.
+- Filtered by `project_id`: an admin token lists every project's.
+- Every Neutron write retires the project's network and security group lists,
+  as a Nova server write retires its server lists; the two are separate.
+- The network and security group controllers write these from other processes,
+  which never retire the server controller's lists. A stale row gives an ID
+  that is either right or gone, because names are never reused; a gone ID fails
+  the port write with a 404 and the next pass retries. Not-found is always
+  fresh, so their own create gates are covered.
+
+Ports and floating IPs are not kept. Each server reads only its own, so a
+project list decodes the same rows and saves only requests, against the risk of
+a second port or public IP from a stale not-found. Cinder volumes are read the
+same way and are not kept either.
+
+**Paging.** The server list pages explicitly rather than using `AllPages`, which holds every
+page as a generic map tree and re-marshals the whole thing through JSON to decode
+it, so that overhead scales with the project rather than the page. Because the
+list is walked by marker, a server created mid-walk can be missed and read as
+absent. That cannot reach the create gate: a reader is only answered from a list
+opened after its own last mutation, so its own server existed before the walk
+began. A server someone else created mid-walk is missed for that read only.
+
+**Costs.**
+
+- Steady state. Each process lists each project about once a TTL, whatever the
+  poll period: the reader that finds the kept list expired opens the next one.
+  Up to three processes keep their own, so up to three lists per project a
+  minute. Each server missing from Nova for good adds one list per read of it.
+- Bursts. A create or attachment burst retires lists as fast as it mutates, but
+  callers held back by one list share the next, so a project still runs one
+  list at a time. After a restart the first reader in each project lists and the
+  rest join it.
+- Outages. A failed list is never kept, so while Nova fails each pass sends its
+  own list; a slow Nova still runs one at a time per project.
+- Decode. Measured on one laptop core against an in-process fake, 1150 rows of
+  about 3KB: 0.40s of CPU and 147MB allocated per list; rows read with the admin
+  credential carry `user_data` and cost more. Production rows and cores differ.
+- Memory. The decoded list is the whole project by construction, kept for up to
+  a TTL after it is read: about 14MiB live for 1500 realistic rows, or 43MiB of
+  heap arena counting the per-page decode churn, per project, per process. A
+  quiet project's list is dropped when any later list is stored. Copies share
+  nested maps with the kept list for its whole life, so nothing may write to
+  them.
 
 ## Octavia Load Balancers
 
@@ -866,9 +1010,9 @@ There are a few Octavia-specific constraints worth preserving:
   the server, and Nova's 409 becomes the only guard. It was visible
   to a project-scoped admin credential on a kolla 2025.1 all-in-one.
 
-  `OS-SRV-USG:launched_at` is likewise policy-gated and is now load-bearing for
-  the image-row decisions — the before-first-boot deferral and the
-  never-launched exclusion on the failed-rebuild park — so a cloud hiding it
+  `OS-SRV-USG:launched_at` is likewise policy-gated and the image-row
+  decisions depend on it — the before-first-boot deferral and the
+  never-launched exclusion on the failed-rebuild report — so a cloud hiding it
   breaks those rows the same way a hidden `task_state` breaks the in-flight
   tests.
 
@@ -898,14 +1042,13 @@ There are a few Octavia-specific constraints worth preserving:
   "Cannot find image for rebuild") and touches nothing: the server stays on its
   image, no wipe, no `ERROR`. Nova resolves the image before mutating anything,
   so a bad image ID can never produce a converged-looking ref on a broken server.
-  The controller parks only this signature ("Cannot find image for rebuild",
-  matched in the 400 response body) as user-action-required, since a deleted
-  image can never be re-resolved and the remedy is a spec edit. Other rebuild
-  400s retry: notably `ImageNotActive` from a *deactivated* Glance image,
-  which an operator can clear with an image reactivation that bumps no
-  generation and moves no observed field — a park there would have no recovery
-  path. An HTTP 409 yields awaiting quiescence, and every other rejection
-  class retries. A valid image Nova can resolve but qemu cannot use
+  The controller treats only this signature ("Cannot find image for rebuild",
+  matched in the 400 response body) as an image wait, a recheck: the spec still
+  asks for the image, so it is applied if the image returns, and a spec edit can
+  name another. Other rebuild 400s are the pass's error: notably `ImageNotActive`
+  from a *deactivated* Glance image, which an operator can clear by reactivating
+  it. An HTTP 409 is a recheck, and every other rejection class surfaces as an
+  error. A valid image Nova can resolve but qemu cannot use
   (measured with a truncated qcow2, which Glance accepts as `active`) behaves
   the opposite way: accepted, ref flipped, then an asynchronous failure to
   `ERROR`. Its fault carries `code: 400` despite the request having been
