@@ -13,10 +13,6 @@ v{{ .Chart.Version }}
 {{- .Values.projectConsumer.image | default (printf "%s/unikorn-region-project-consumer:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}
 
-{{- define "unikorn.regionMonitorImage" -}}
-{{- .Values.monitor.image | default (printf "%s/unikorn-region-monitor:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
-{{- end }}
-
 {{- define "unikorn.identityControllerImage" -}}
 {{- .Values.identityController.image | default (printf "%s/unikorn-identity-controller:%s" (include "unikorn.defaultRepositoryPath" .) (.Values.tag | default (include "unikorn.defaultTag" .))) }}
 {{- end }}
