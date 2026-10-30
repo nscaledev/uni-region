@@ -44,6 +44,29 @@ on:
         description: 'Override TEST_REGION_ID (leave empty to use default)'
         type: string
         required: false
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Target environment for the evidence run (dev or uat)'
+        type: string
+        required: true
+      expected_version:
+        description: 'Version being promoted; the gate fails if the deployed version differs'
+        type: string
+        required: true
+      focus:
+        description: 'Test suite to run'
+        type: string
+        required: false
+        default: 'All'
+      region_id:
+        description: 'Override TEST_REGION_ID'
+        type: string
+        required: false
+    # No `secrets:` block: `inherit` is caller-side only and is invalid under workflow_call;
+    # callers set `jobs.<id>.secrets: inherit`. No `outputs:`: the evidence contract is the
+    # uploaded artifact, and a workflow output is only needed by the (deferred) k8s-cluster-nks
+    # caller.
 
 permissions:
   contents: read
@@ -76,10 +99,39 @@ jobs:
         - **Region ID Override:** \`$REGION_ID_OVERRIDE\`
         EOF
 
+  # Validates a workflow_call invocation before any resolver runs. Skipped on
+  # schedule/dispatch, so the nightly job graph is unchanged; the resolvers use a
+  # status-tolerant `if:` so a skipped guard passes while a failed guard blocks.
+  validate-call-inputs:
+    name: Validate workflow_call inputs
+    if: inputs.environment != '' || inputs.expected_version != ''
+    runs-on: ubuntu-latest
+    steps:
+    - name: Guard the called path
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        EXPECTED: ${{ inputs.expected_version }}
+        FOCUS: ${{ inputs.focus }}
+      run: |
+        case "$ENVIRONMENT" in
+          dev|uat) ;;
+          *) echo "::error::workflow_call requires environment=dev|uat, got '$ENVIRONMENT'"; exit 1;;
+        esac
+        [ -n "$EXPECTED" ] || { echo "::error::workflow_call requires a non-empty expected_version"; exit 1; }
+        case "${FOCUS:-All}" in
+          All|'Region Discovery'|'Flavor Discovery'|'Image Discovery'|'External Network Discovery'|'File Storage Management'|'Block Storage'|'Network Management'|'SecurityGroup'|'LoadBalancer') ;;
+          *) echo "::error::unknown focus '$FOCUS'"; exit 1;;
+        esac
+
   find-dev-deployed-version:
     name: Resolve Dev test ref
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event.inputs.run_dev == 'true'
+    needs: [validate-call-inputs]
+    if: >-
+      ${{ !cancelled() && needs.validate-call-inputs.result != 'failure'
+      && ( (github.event_name == 'schedule' && inputs.expected_version == '')
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_dev == 'true')
+      || inputs.environment == 'dev' ) }}
     outputs:
       ref: ${{ steps.find.outputs.ref }}
       version: ${{ steps.find.outputs.version }}
@@ -97,6 +149,63 @@ jobs:
         fallback-to-constellation: false
         summary-title: Dev API Test Version
 
+    - name: Gate on expected version
+      id: gate
+      if: inputs.expected_version != ''
+      env:
+        EXPECTED: ${{ inputs.expected_version }}
+        DEPLOYED: ${{ steps.find.outputs.version }}
+      run: |
+        norm() { printf '%s' "${1#v}"; }
+        exp="$(norm "$EXPECTED")"; got="$(norm "$DEPLOYED")"
+        if [ -z "$got" ]; then
+          echo "::error::no deployed version resolved for the gate"; exit 1
+        fi
+        if [ "$exp" != "$got" ]; then
+          echo "::error::version mismatch: expected '$exp' but '$got' is deployed; not running evidence tests"; exit 1
+        fi
+        echo "version gate passed: $got"
+
+    - name: Write versions summary
+      if: ${{ always() && inputs.expected_version != '' }}
+      env:
+        ENVIRONMENT_NAME: dev
+        EXPECTED: ${{ inputs.expected_version }}
+        DEPLOYED: ${{ steps.find.outputs.version }}
+        REF: ${{ steps.find.outputs.ref }}
+        FIND_OUTCOME: ${{ steps.find.outcome }}
+        GATE_OUTCOME: ${{ steps.gate.outcome }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        if [ "$FIND_OUTCOME" != "success" ] || [ -z "$DEPLOYED" ]; then
+          gate_result="unresolved"
+        elif [ "$GATE_OUTCOME" = "success" ]; then
+          gate_result="passed"
+        else
+          gate_result="failed"
+        fi
+        jq -n \
+          --arg component uni-region \
+          --arg environment "$ENVIRONMENT_NAME" \
+          --arg expected "$EXPECTED" \
+          --arg tested "$DEPLOYED" \
+          --arg ref "$REF" \
+          --arg gate "$gate_result" \
+          --arg run_url "$RUN_URL" \
+          --arg timestamp "$ts" \
+          '{component:$component, environment:$environment, expected_version:$expected,
+            tested_version:$tested, ref:$ref, gate_result:$gate, run_url:$run_url,
+            timestamp:$timestamp}' > versions-summary.json
+
+    - name: Archive versions summary
+      if: ${{ always() && inputs.expected_version != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: versions-summary-dev
+        path: versions-summary.json
+        retention-days: 180
+
   API-Tests-Dev:
     name: API Tests (dev)
     needs: find-dev-deployed-version
@@ -106,9 +215,13 @@ jobs:
       # Required for Teleport-backed Grafana lookup and OTLP collector shipping.
       id-token: write
     # Runs only when the resolver produced a Dev checkout ref.
-    if: (github.event_name == 'schedule' || github.event.inputs.run_dev == 'true') && needs.find-dev-deployed-version.outputs.ref != ''
+    if: >-
+      ${{ ( (github.event_name == 'schedule' && inputs.expected_version == '')
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_dev == 'true')
+      || inputs.environment == 'dev' ) && needs.find-dev-deployed-version.outputs.ref != '' }}
     env:
       ENVIRONMENT: dev
+      FOCUS: ${{ inputs.focus || 'All' }}
       API_BASE_URL: ${{ vars.DEV_API_BASE_URL }}
       REGION_BASE_URL: ${{ vars.DEV_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.DEV_API_AUTH_TOKEN }}
@@ -142,12 +255,12 @@ jobs:
       run: make touch
 
     - name: Run API Tests
-      if: github.event.inputs.focus == '' || github.event.inputs.focus == 'All'
+      if: inputs.focus == '' || inputs.focus == 'All'
       run: make test-api
 
     - name: Run API Tests with Focus
-      if: github.event.inputs.focus != '' && github.event.inputs.focus != 'All'
-      run: make test-api-focus FOCUS="${{ github.event.inputs.focus }}"
+      if: inputs.focus != '' && inputs.focus != 'All'
+      run: make test-api-focus FOCUS="$FOCUS"
 
     - name: Archive API Test Results
       if: ${{ !cancelled() }}
@@ -155,6 +268,7 @@ jobs:
       with:
         name: api-test-results-dev
         path: test-results.json
+        retention-days: 180
 
     - name: Archive API Test JUnit Report
       if: ${{ !cancelled() }}
@@ -162,6 +276,7 @@ jobs:
       with:
         name: api-test-junit-dev
         path: junit.xml
+        retention-days: 180
 
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
@@ -205,7 +320,12 @@ jobs:
   find-uat-deployed-version:
     name: Resolve UAT test ref
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event.inputs.run_uat == 'true'
+    needs: [validate-call-inputs]
+    if: >-
+      ${{ !cancelled() && needs.validate-call-inputs.result != 'failure'
+      && ( (github.event_name == 'schedule' && inputs.expected_version == '')
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_uat == 'true')
+      || inputs.environment == 'uat' ) }}
     outputs:
       ref: ${{ steps.find.outputs.ref }}
       version: ${{ steps.find.outputs.version }}
@@ -223,6 +343,63 @@ jobs:
         fallback-to-constellation: false
         summary-title: UAT API Test Version
 
+    - name: Gate on expected version
+      id: gate
+      if: inputs.expected_version != ''
+      env:
+        EXPECTED: ${{ inputs.expected_version }}
+        DEPLOYED: ${{ steps.find.outputs.version }}
+      run: |
+        norm() { printf '%s' "${1#v}"; }
+        exp="$(norm "$EXPECTED")"; got="$(norm "$DEPLOYED")"
+        if [ -z "$got" ]; then
+          echo "::error::no deployed version resolved for the gate"; exit 1
+        fi
+        if [ "$exp" != "$got" ]; then
+          echo "::error::version mismatch: expected '$exp' but '$got' is deployed; not running evidence tests"; exit 1
+        fi
+        echo "version gate passed: $got"
+
+    - name: Write versions summary
+      if: ${{ always() && inputs.expected_version != '' }}
+      env:
+        ENVIRONMENT_NAME: uat
+        EXPECTED: ${{ inputs.expected_version }}
+        DEPLOYED: ${{ steps.find.outputs.version }}
+        REF: ${{ steps.find.outputs.ref }}
+        FIND_OUTCOME: ${{ steps.find.outcome }}
+        GATE_OUTCOME: ${{ steps.gate.outcome }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        if [ "$FIND_OUTCOME" != "success" ] || [ -z "$DEPLOYED" ]; then
+          gate_result="unresolved"
+        elif [ "$GATE_OUTCOME" = "success" ]; then
+          gate_result="passed"
+        else
+          gate_result="failed"
+        fi
+        jq -n \
+          --arg component uni-region \
+          --arg environment "$ENVIRONMENT_NAME" \
+          --arg expected "$EXPECTED" \
+          --arg tested "$DEPLOYED" \
+          --arg ref "$REF" \
+          --arg gate "$gate_result" \
+          --arg run_url "$RUN_URL" \
+          --arg timestamp "$ts" \
+          '{component:$component, environment:$environment, expected_version:$expected,
+            tested_version:$tested, ref:$ref, gate_result:$gate, run_url:$run_url,
+            timestamp:$timestamp}' > versions-summary.json
+
+    - name: Archive versions summary
+      if: ${{ always() && inputs.expected_version != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: versions-summary-uat
+        path: versions-summary.json
+        retention-days: 180
+
   API-Tests-UAT:
     name: API Tests (uat)
     needs: find-uat-deployed-version
@@ -232,9 +409,13 @@ jobs:
       # Required for Teleport-backed Grafana lookup and OTLP collector shipping.
       id-token: write
     # Runs only when the resolver produced a UAT checkout ref.
-    if: (github.event_name == 'schedule' || github.event.inputs.run_uat == 'true') && needs.find-uat-deployed-version.outputs.ref != ''
+    if: >-
+      ${{ ( (github.event_name == 'schedule' && inputs.expected_version == '')
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_uat == 'true')
+      || inputs.environment == 'uat' ) && needs.find-uat-deployed-version.outputs.ref != '' }}
     env:
       ENVIRONMENT: uat
+      FOCUS: ${{ inputs.focus || 'All' }}
       API_BASE_URL: ${{ vars.UAT_API_BASE_URL }}
       REGION_BASE_URL: ${{ vars.UAT_REGION_BASE_URL }}
       API_AUTH_TOKEN: ${{ secrets.UAT_API_AUTH_TOKEN }}
@@ -296,12 +477,12 @@ jobs:
         echo "INTERNAL_API_CLIENT_KEY=$key_path" >> "$GITHUB_ENV"
 
     - name: Run API Tests
-      if: github.event.inputs.focus == '' || github.event.inputs.focus == 'All'
+      if: inputs.focus == '' || inputs.focus == 'All'
       run: make test-api
 
     - name: Run API Tests with Focus
-      if: github.event.inputs.focus != '' && github.event.inputs.focus != 'All'
-      run: make test-api-focus FOCUS="${{ github.event.inputs.focus }}"
+      if: inputs.focus != '' && inputs.focus != 'All'
+      run: make test-api-focus FOCUS="$FOCUS"
 
     - name: Archive API Test Results
       if: ${{ !cancelled() }}
@@ -309,6 +490,7 @@ jobs:
       with:
         name: api-test-results-uat
         path: test-results.json
+        retention-days: 180
 
     - name: Archive API Test JUnit Report
       if: ${{ !cancelled() }}
@@ -316,6 +498,7 @@ jobs:
       with:
         name: api-test-junit-uat
         path: junit.xml
+        retention-days: 180
 
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
