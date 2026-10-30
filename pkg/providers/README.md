@@ -65,31 +65,36 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
-- `types.Volume` is the focused create/delete/state-update capability embedded in the full
+- `types.Volume` is the focused create/delete capability embedded in the full
   `types.Provider` contract and consumed through `LookupCloud` by the Volume
   controller. Discovery-only providers remain on `types.CommonProvider` and do
   not implement workload lifecycle:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
-    create, delete, or state update; `UpdateVolumeState` mutates the CRD status
-    without exposing provider SDK types
+    create or delete, and project what they read onto the CRD status without
+    exposing provider SDK types
   - create success means the rediscovered backing volume is usable, not merely
     that an asynchronous provider request was accepted. Providers return
-    `provisioners.ErrYield` while creation is still converging and a safe typed
-    terminal provisioning error when the backing object has entered an
-    unrecoverable error state
+    `provisioners.ErrYield` while creation is still converging and a typed
+    recheck while the backing object is in an error state it may leave
   - delete success means rediscovery confirms the backing volume is absent, not
     merely that an asynchronous provider request was accepted. Accepted delete
     requests return `provisioners.ErrYield` so allocation cleanup and finalizer
     removal wait for provider convergence
-  - `UpdateVolumeState` projects observed size and health directly onto the
-    native Region `Volume` status for the Volume monitor
+  - the same pass projects observed size and health directly onto the native
+    Region `Volume` status
   - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
     client/request failures remain Go errors, while successfully observed
     provider `error` and unrecognized/empty `unknown` lifecycle values remain
     successful observations
   - VolumeClass inventory remains on `CommonProvider`; Server attach and
     Volume-based detach are separate capabilities
+- `providers.Transient` is the classifier a polling controller passes to core's
+  `WithTransient`. It says whether an error means a provider could not be reached
+  (network error, timeout, unexpected EOF, 429, any 5xx) rather than gave an
+  answer. The server controller uses it, so an outage
+  leaves the `Available` condition as it was. The rule lives in
+  [`internal/openstack`](./internal/openstack/README.md).
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or

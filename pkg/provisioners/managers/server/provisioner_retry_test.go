@@ -32,7 +32,9 @@ import (
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 	serverprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
 
@@ -97,7 +99,7 @@ func retryClient(t *testing.T, objects ...client.Object) client.Client {
 
 // withProviderCreateFailure marks a server as a terminal provider-create failure
 // via the Active condition — the axis ProviderCreateFailure now keys off (Nova
-// ERROR is surfaced as ActiveConditionReasonError by the monitor).
+// ERROR is surfaced as ActiveConditionReasonError by the projection).
 func withProviderCreateFailure(server *regionv1.Server) {
 	server.SetActiveCondition(regionv1.ActiveConditionReasonError)
 }
@@ -112,6 +114,13 @@ func activeReason(t *testing.T, server *regionv1.Server) regionv1.ActiveConditio
 	require.NoError(t, err)
 
 	return active.Reason
+}
+
+// stillFailed is a fresh provider read that finds the server still in error.
+func stillFailed(_ context.Context, _ *regionv1.Identity, server *regionv1.Server) error {
+	withProviderCreateFailure(server)
+
+	return nil
 }
 
 func withProviderCreateRetrying(server *regionv1.Server) {
@@ -176,8 +185,11 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	server := retryServer(withProviderCreateFailure, withRuntimeStatus, withSatisfiedProviderCreateGate)
 
 	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), server).Return(nil)
-	provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).Return(coreerrors.ErrResourceNotFound)
+	gomock.InOrder(
+		provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).DoAndReturn(stillFailed),
+		provider.EXPECT().DeleteServer(gomock.Any(), gomock.Any(), server).Return(nil),
+		provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).Return(coreerrors.ErrResourceNotFound),
+	)
 
 	cli := retryClient(t, retryIdentity(), server)
 	recorder := record.NewFakeRecorder(2)
@@ -190,8 +202,8 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	require.Equal(t, regionv1.ActiveConditionReasonPending, activeReason(t, server))
 	require.Nil(t, server.Status.PrivateIP)
 	require.Nil(t, server.Status.PublicIP)
-	// The MAC is owned exclusively by the monitor; the reconciler's create-failure
-	// reset must not clear it. A stale value self-heals on the next ACTIVE poll.
+	// The create-failure reset must not clear the MAC; a stale value self-heals
+	// on the next observation.
 	require.Equal(t, ptr.To("00:11:22:33:44:55"), server.Status.MACAddress)
 	require.Nil(t, server.Status.ScheduledAt)
 	// The gate satisfied on the first attempt is reset to Unknown so external
@@ -326,6 +338,7 @@ func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {
 	server.Status.ProviderCreateFailures = 2
 
 	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).DoAndReturn(stillFailed)
 
 	cli := retryClient(t, retryIdentity(), server)
 	recorder := record.NewFakeRecorder(1)
@@ -340,9 +353,10 @@ func TestProvision_ProviderCreateFailureStopsAtAttemptLimit(t *testing.T) {
 }
 
 // TestProvision_ProviderCreateFailureAtLimitDoesNotAdvance proves that a
-// re-reconcile of an already-exhausted server (e.g. after a controller restart,
-// where the failure predicate still holds) aborts terminally without advancing
-// the counter past the cap.
+// re-reconcile of an already-exhausted server (every poll, or after a
+// controller restart, where the failure predicate still holds) aborts
+// terminally without advancing the counter past the cap, and without warning
+// again: the event fires when the cap is reached, not on every poll.
 func TestProvision_ProviderCreateFailureAtLimitDoesNotAdvance(t *testing.T) {
 	t.Parallel()
 
@@ -352,6 +366,7 @@ func TestProvision_ProviderCreateFailureAtLimitDoesNotAdvance(t *testing.T) {
 	server.Status.ProviderCreateFailures = 3
 
 	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).DoAndReturn(stillFailed)
 
 	cli := retryClient(t, retryIdentity(), server)
 	recorder := record.NewFakeRecorder(1)
@@ -361,7 +376,62 @@ func TestProvision_ProviderCreateFailureAtLimitDoesNotAdvance(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrTerminal)
 	require.Equal(t, int32(3), server.Status.ProviderCreateFailures)
 	require.False(t, server.Status.ProviderCreateRetrying)
+	requireNoEvent(t, recorder)
 }
+
+// TestProvision_ProviderCreateRetrySparesBootedServer proves a failed create is
+// read afresh before it is deleted.  The failure is recorded status, and at the
+// cap nothing else reads the server: an operator who fixed it in the cloud and
+// reset the counter would otherwise have a booted server deleted on the next
+// pass.
+func TestProvision_ProviderCreateRetrySparesBootedServer(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(withProviderCreateFailure)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().
+		UpdateServerState(gomock.Any(), gomock.Any(), server).
+		DoAndReturn(func(_ context.Context, _ *regionv1.Identity, s *regionv1.Server) error {
+			launchedAt := metav1.NewTime(time.Now())
+			s.Status.LaunchedAt = &launchedAt
+			s.SetActiveCondition(regionv1.ActiveConditionReasonRunning)
+
+			return nil
+		})
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(types.ServerCreateResult{PortConverged: true}, nil)
+
+	cli := retryClient(t, retryIdentity(), server)
+	prov := retryProvisioner(t, server, nil, provider)
+
+	require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
+	require.Zero(t, server.Status.ProviderCreateFailures)
+	require.False(t, server.Status.ProviderCreateRetrying)
+}
+
+// TestProvision_ProviderCreateRetryUnreadableServerWaits proves a failed create
+// is not deleted when the fresh read itself fails: what the server is now is
+// unknown, so the pass reports the read failure and nothing is deleted.
+func TestProvision_ProviderCreateRetryUnreadableServerWaits(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(withProviderCreateFailure)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().UpdateServerState(gomock.Any(), gomock.Any(), server).Return(errTestProviderRead)
+
+	cli := retryClient(t, retryIdentity(), server)
+	prov := retryProvisioner(t, server, nil, provider)
+
+	require.ErrorIs(t, prov.Provision(coreclient.NewContext(t.Context(), cli)), errTestProviderRead)
+	require.Zero(t, server.Status.ProviderCreateFailures)
+}
+
+var errTestProviderRead = errors.New("provider read failed")
 
 func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
 	t.Parallel()
@@ -373,7 +443,7 @@ func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
 	server.Status.LaunchedAt = &launchedAt
 
 	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(nil)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(types.ServerCreateResult{PortConverged: true}, nil)
 
 	cli := retryClient(t, retryIdentity(), server)
 	prov := retryProvisioner(t, server, nil, provider)
@@ -397,7 +467,7 @@ func TestProvision_ProvisionedServerHealthErrorDoesNotRetryCreate(t *testing.T) 
 	server.Status.ProvisionedAt = &provisionedAt
 
 	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(nil)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(types.ServerCreateResult{PortConverged: true}, nil)
 
 	cli := retryClient(t, retryIdentity(), server)
 	prov := retryProvisioner(t, server, nil, provider)
@@ -433,7 +503,7 @@ func TestProvision_YieldStillReleasesConsumedReferences(t *testing.T) {
 	}
 
 	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(provisioners.ErrYield)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(types.ServerCreateResult{PortConverged: true}, provisioners.ErrYield)
 
 	cli := retryClient(t, retryIdentity(), server, droppedGroup)
 	prov := retryProvisioner(t, server, nil, provider)
@@ -474,7 +544,7 @@ func TestProvision_ParkStillReleasesConsumedReferences(t *testing.T) {
 	}
 
 	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(types.ServerCreateResult{PortConverged: true},
 		provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider rejected the rebuild toward the desired image; select a different image or replace the server"))
 
 	cli := retryClient(t, retryIdentity(), server, droppedGroup)
@@ -491,9 +561,9 @@ func TestProvision_ParkStillReleasesConsumedReferences(t *testing.T) {
 // errProviderBoom is a sentinel for a genuine (non-yield) provider failure.
 var errProviderBoom = errors.New("provider boom")
 
-// TestProvision_NonYieldErrorDoesNotReleaseReferences pins that a genuine
-// provider error returns early: reference release only accompanies a pass that
-// reached the provider and left it in a known state (success or yield).
+// TestProvision_NonYieldErrorDoesNotReleaseReferences pins that a failed pass
+// whose port did not converge releases nothing: a group the spec dropped may
+// still be on the port.
 func TestProvision_NonYieldErrorDoesNotReleaseReferences(t *testing.T) {
 	t.Parallel()
 
@@ -513,7 +583,7 @@ func TestProvision_NonYieldErrorDoesNotReleaseReferences(t *testing.T) {
 	}
 
 	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(errProviderBoom)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(types.ServerCreateResult{}, errProviderBoom)
 
 	cli := retryClient(t, retryIdentity(), server, droppedGroup)
 	prov := retryProvisioner(t, server, nil, provider)
@@ -523,4 +593,30 @@ func TestProvision_NonYieldErrorDoesNotReleaseReferences(t *testing.T) {
 	updated := &regionv1.SecurityGroup{}
 	require.NoError(t, cli.Get(t.Context(), client.ObjectKey{Namespace: "default", Name: "dropped-group"}, updated))
 	require.NotEmpty(t, updated.Finalizers)
+}
+
+// TestProvision_UnknownReferenceYields proves a network the cache has not seen
+// yet is waited on soon, not at the next poll: one created just before the
+// server is usually only a moment from the cache, and a create should not
+// stall a minute for it.
+func TestProvision_UnknownReferenceYields(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(func(server *regionv1.Server) {
+		server.Spec.Networks = []regionv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID("5b0f3b6e-2d4c-4b8f-9f0e-2a6f5e1d3c7b")}}
+	})
+
+	cli := retryClient(t, retryIdentity(), server)
+	prov := serverprovisioner.NewForTest(server, mockproviders.NewMockProviders(ctrl), nil)
+
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.NotErrorIs(t, err, provisioners.ErrRecheck)
+
+	var outcome *provisioners.Error
+
+	require.ErrorAs(t, err, &outcome)
+	require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, outcome.Reason())
 }

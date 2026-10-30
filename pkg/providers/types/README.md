@@ -61,25 +61,19 @@ continue to be passed directly through many provider interface methods.
   native `unikornv1.Volume` lifecycle intent and is embedded in the full
   `Provider` composition. `CreateVolume` is a reconciliation operation rather
   than a one-shot request: implementations return `provisioners.ErrYield` until
-  the backing resource is usable, return `nil` only after convergence, and may
-  return a typed terminal provisioning error for an unrecoverable provider
-  state. `DeleteVolume` likewise yields after an accepted asynchronous delete
-  and succeeds only when provider absence is confirmed. `UpdateVolumeState`
-  mutates the repository-native Volume status with observed size and health,
-  rather than exposing provider SDK types.
+  the backing resource is usable, return `nil` only after convergence, and
+  return a typed recheck for a provider error state it may leave. The same pass
+  projects observed size and health onto the repository-native Volume status,
+  rather than exposing provider SDK types. `DeleteVolume` likewise yields after
+  an accepted asynchronous delete and succeeds only when provider absence is
+  confirmed.
   VolumeClass inventory and server attachment remain separate operations.
   Discovery-only substrates implement `CommonProvider` instead of the full
   workload lifecycle contract.
-- `UpdateVolumeState` distinguishes absence, failed reads, and observed lifecycle
-  truth. Providers own status mapping and missing-volume semantics; read and
-  validation failures are returned so monitors preserve the last state.
-- `ServerObserver` is the batched half of server observation. `ObserveServers`
-  takes one provider read of an identity's whole project and returns an observer
-  whose `Observe` projects it onto individual servers, so a caller with many
-  servers to observe pays one read rather than one per server. It is observation
-  only: an observation may refuse an action but never authorise one, so an
-  actuation decision keeps `UpdateServerState`, which takes its own fresh
-  per-server read at decision time. Both reach the same projection.
+- Volume reconciliation distinguishes absence, failed reads, and observed
+  lifecycle truth. Providers own status mapping and missing-volume semantics;
+  read and validation failures are returned so the caller preserves the last
+  state.
 - `ServerCreateOptions` carries launch-time derived inputs without forcing them
   into the persisted `Server` CRD shape.
 - `ServerVolumeAttachment` contains only provider-neutral observation needed by
@@ -129,5 +123,5 @@ continue to be passed directly through many provider interface methods.
 - [../../handler](../../handler/README.md) and specific handler subpackages
   consume these types when converting provider-derived information into API
   reads and actions
-- [../../monitor](../../monitor/README.md) consumes provider-projected
+- [../../provisioners](../../provisioners/README.md) consumes provider-projected
   repository-native status when observing runtime state

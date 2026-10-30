@@ -7,9 +7,9 @@ Provisioning resolves the full cloud provider and backing service-principal
 `Identity`, waits for that Identity to be ready, then delegates idempotent
 Volume creation. Provider `ErrYield` results keep the Volume
 `Available=False` with reason `Provisioning` and schedule another reconcile;
-only provider convergence allows `Provisioned`. A typed terminal provider
-failure is surfaced as the provider's safe reason/message and parked until
-deletion or operator intervention. This package does not check quota; the HTTP
+only provider convergence allows `Provisioned`. A typed provider failure is
+surfaced as the provider's safe reason/message and looked at again at the next
+poll; nothing parks. This package does not check quota; the HTTP
 create handler allocates the requested capacity and stores the Identity
 allocation ID before the controller can observe the Volume.
 
@@ -42,8 +42,25 @@ Attachment setup starts only after the backing Volume converges. Teardown intent
 is evaluated first so provider creation readiness cannot block claim release or
 detachment. The provisioner reads the Volume claim created by the Server handler
 and the Server intent, then calls the provider attachment boundary. A
-provisioning or errored Server yields; its condition can recover without a
-Volume generation change.
+Server that has not booted gates attachment on its own pass. One still coming up
+(`Provisioning`, `DependencyNotReady`) is progress, so the Volume yields. A failed
+Server (`Errored`, `DependencyFailed`,
+`DependencyNotFound`) may recover but is not moving: the attachment row reads
+errored, and the Volume reports `DependencyFailed` naming the Server and waits
+for its next poll. The Volume does not watch the Server's conditions, so once
+the Server recovers its errored attachment row can show for up to a poll period
+before the Volume's next pass rewrites it. Once the Server has booted
+(`ProvisionedAt`), its pass no longer gates attachment: it is polled and can read
+`Errored` or `Provisioning` with no spec edit, an image gone from Glance or a
+rebuild in flight, while the attachment is fine. Attaching again is safe, since an
+existing attachment is read rather than made twice.
+
+A pass that could not reach the cloud leaves the attachment row as it was, by
+the same `Unreachable` test core applies to the condition, so the two agree.
+Nova refusing an attach with a 409 and no attachment to show for it is a yield
+while a task holds the server, and a recheck otherwise, since a server that
+refuses attachment in its current state is not moving. A volume attached to
+another server is a recheck too.
 Claims are created before the terminal Server write. While `AttachedAt` is nil,
 the provisioner retains a claim if the Server is absent or does not yet request
 the Volume. This wait lets the handler persist attachment intent or complete
@@ -67,7 +84,14 @@ requests the Volume. Teardown does not require Identity readiness; provider
 state is authoritative. A provider yield or error retains the claim, reference,
 and recovery context.
 An attachment conflict is projected as errored and retained for retry or
-operator repair; it never authorizes detaching the conflicting attachment.
+operator repair; it never authorizes detaching the conflicting attachment. A
+recheck from the attachment is projected as errored with its own message, not as
+a wait: it is a yield to the manager, but it reports a fault. In practice the
+backing volume's own pass reports a Cinder error first, before attachment runs,
+so the attachment sees one only if Cinder moves between the two reads. A bare
+recheck — the attachment could not reach the cloud — leaves the row as it was:
+it has nothing new to say, and writing errored would flip every attachment in
+the fleet on a blip.
 The provider remains authoritative for attachment and detach work. The
 provisioner projects `AttachmentProvisioning` with a waiting message until the
 claimed Cinder attachment `in-use`, then records the first confirmed current
@@ -81,12 +105,14 @@ claim are removed only after the provider confirms detachment.
 After releasing a claim, the provisioner yields so the refreshed Volume is
 reconciled before its generation is observed.
 Each projection re-reads the Server and retries status conflicts while merging
-only the claimed Volume's entry.
+only the claimed Volume's entry. The entry is replaced where it stands and not
+written at all when unchanged: order is part of the object, so moving it is a
+real write, which a polling controller would otherwise make every period for
+every server with two volumes.
 
-Provider observation/status projection lives in
-[`pkg/monitor/health/volume`](../../../monitor/health/volume/README.md). Quota
-policy, Network graph-edge reconciliation, and HTTP handlers remain outside
-this package. The provider-specific state classification needed to decide
+Provider observation and status projection happen in the reconcile pass, which
+polls because Cinder moves a volume underneath us. Quota policy, Network
+graph-edge reconciliation, and HTTP handlers remain outside this package. The provider-specific state classification needed to decide
 whether create has converged remains inside the provider implementation.
 
 ## Cross-Package Context

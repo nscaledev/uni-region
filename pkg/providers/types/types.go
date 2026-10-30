@@ -287,6 +287,15 @@ type ExternalNetwork struct {
 // ExternalNetworks is a list of provider networks.
 type ExternalNetworks []ExternalNetwork
 
+// ServerCreateResult reports what a CreateServer pass did, so its caller decides
+// from facts rather than from the shape of an error.
+type ServerCreateResult struct {
+	// PortConverged is true once the server's port carries the security groups
+	// the specification asks for, and no others: a group the specification
+	// dropped is off the port, so references to it may be released.
+	PortConverged bool
+}
+
 // ServerCreateOptions contains launch-time options derived from a server resource.
 type ServerCreateOptions struct {
 	// UserData overrides the user data passed to the provider when specified.

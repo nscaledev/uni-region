@@ -79,7 +79,7 @@ belongs to human administrators rather than this package contract summary.
 
 ## Cross-Package Context
 
-- [../types](../types/README.md) defines the `CommonProvider` and `Flavor`
+- [../types](../../types/README.md) defines the `CommonProvider` and `Flavor`
   contract this package satisfies
 - [../../../handler/region](../../../handler/region/README.md) consumes the
   exported flavor view

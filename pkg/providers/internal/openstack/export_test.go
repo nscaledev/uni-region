@@ -119,7 +119,7 @@ var MetadataKey = metadataKey
 //nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
-func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
+func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) error {
 	return reconcileServerImage(ctx, client, server, openstackServer)
 }
 
@@ -278,10 +278,6 @@ func ReconcileVolume(ctx context.Context, client VolumeInterface, identity *unik
 	return reconcileVolume(ctx, client, identity, volume)
 }
 
-func UpdateVolumeStateWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
-	return updateVolumeState(ctx, client, volume)
-}
-
 func DeleteVolumeWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
 	return deleteVolume(ctx, client, volume)
 }
@@ -322,11 +318,16 @@ func ReconcileLoadBalancerFloatingIP(ctx context.Context, p *Provider, client Fl
 	return p.reconcileLoadBalancerFloatingIP(ctx, client, loadBalancer, vipPortID)
 }
 
-func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) (*servers.Server, error) {
+func ReconcileServer(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string) error {
 	return p.reconcileServer(ctx, client, server, port, keyName, nil)
 }
 
-func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) (*servers.Server, error) {
+// ObserveServer exercises the read and projection a pass makes first.
+func ObserveServer(ctx context.Context, p *Provider, client ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server) (*servers.Server, error) {
+	return p.observeServer(ctx, identity, server, client, p.baremetalForPhase)
+}
+
+func ReconcileServerWithPreflight(ctx context.Context, p *Provider, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight func(context.Context, *unikornv1.Server) error) error {
 	return p.reconcileServer(ctx, client, server, port, keyName, serverCreatePreflight(preflight))
 }
 
@@ -338,11 +339,11 @@ func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInt
 }
 
 // CreateServerWithClients exercises the client-independent core of
-// CreateServer — port and floating IP reconciliation (which write status onto
-// the caller's server) followed by the augmented-copy reconcile and status
-// copy-back — pinning the production interleaving of those steps.
-func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) error {
-	return p.createServer(ctx, networking, compute, server, options, keyName, nil)
+// CreateServer — the read and projection, port and floating IP reconciliation,
+// then the image rows for a found server or the augmented-copy create for a
+// missing one — pinning the production order of those steps.
+func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) (types.ServerCreateResult, error) {
+	return p.createServer(ctx, networking, compute, identity, server, options, keyName, nil)
 }
 
 func ServerDeleteHeld(openstackServer *servers.Server) bool {

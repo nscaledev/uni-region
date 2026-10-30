@@ -74,8 +74,8 @@ development, while keeping behaviour deterministic and cheap to run.
 
 ## Cross-Package Context
 
-- [../types](../types/README.md) defines the full provider contract this package
+- [../types](../../types/README.md) defines the full provider contract this package
   implements
-- [../../../handler](../../../handler/README.md), [../../../monitor](../../../monitor/README.md),
+- [../../../handler](../../../handler/README.md),
   and higher-order integration tests consume this provider to exercise
   contract-shaped region behaviour without a real cloud

@@ -26,6 +26,7 @@ import (
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/managers"
+	"github.com/unikorn-cloud/region/pkg/providers"
 	volumeprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/volume"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -61,7 +62,10 @@ func (*Factory) Options() coremanager.ControllerOptions {
 
 // Reconciler returns a Volume reconciler.
 func (f *Factory) Reconciler(options *options.Options, controllerOptions coremanager.ControllerOptions, manager manager.Manager) reconcile.Reconciler {
-	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(volumeprovisioner.New))
+	// Cinder moves a volume underneath us -- size, attachment and error state --
+	// and none of that writes to the CRD, so no watch fires.  A pass that cannot
+	// reach the cloud leaves the condition alone.
+	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(volumeprovisioner.New), coremanager.WithPolling(), coremanager.WithTransient(providers.Transient))
 }
 
 // RegisterWatches registers Volume desired-state and Server attachment-intent watches.
