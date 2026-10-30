@@ -243,6 +243,16 @@ func (c *Client) reboot(ctx context.Context, identity *unikornv1.Identity, serve
 		return fmt.Errorf("%w: failed to soft reboot server", err)
 	}
 
+	// Stamp the transitional state so the 202 is observable immediately: a VM
+	// reboot can complete within one monitor poll, so the monitor alone may
+	// never see Nova's HARD_REBOOT/REBOOT. The monitor returns it to Running.
+	updated := server.DeepCopy()
+	updated.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+
+	if err := c.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(server, &client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("%w: failed to patch server", err)
+	}
+
 	return nil
 }
 
