@@ -562,6 +562,7 @@ publish-contracts-consumer:
 	@echo "Publishing consumer pacts to Pact Broker..."
 	@echo "Consumer Version: $(CONSUMER_VERSION)"
 	@echo "Pact Broker URL: $(PACT_BROKER_URL)"
+	@# Exit with the publisher's status: piping into tee returned tee's, so a failed publish passed.
 	@docker run --rm \
 		--network host \
 		-v $(PWD)/test/contracts/consumer:/consumer \
@@ -573,7 +574,8 @@ publish-contracts-consumer:
 		--broker-password="$(PACT_BROKER_PASSWORD)" \
 		--consumer-app-version="$(CONSUMER_VERSION)" \
 		--branch="$(BRANCH)" \
-		./*/pacts | tee /tmp/pact-publish-output.txt
+		./*/pacts > /tmp/pact-publish-output.txt 2>&1; \
+		status=$$?; cat /tmp/pact-publish-output.txt; exit $$status
 	@if grep -q "contract_content_changed" /tmp/pact-publish-output.txt; then \
 		echo "true" > /tmp/pact-changed.flag; \
 	else \
