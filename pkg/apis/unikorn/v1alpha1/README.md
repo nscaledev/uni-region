@@ -110,6 +110,14 @@ stored objects rely on for linkage, migration, and operational coordination.
   [lifecycle contract](../../../handler/storage/README.md#manual-snapshot-lifecycle)
   describes creation-time blocking owner references, foreground parent cascade,
   deterministic ID reuse, and customer expiration visibility.
+- `FileStorage.Spec.Source` optionally records where a File Storage's initial
+  data comes from; omission means the File Storage starts empty. It is a
+  single-member union: exactly one member must be set, and `snapshot.id` names
+  the source `FileStorageSnapshot`. New source kinds are added as further union
+  members under the same exactly-one rule. The source is create-time intent: the
+  CRD rejects adding, removing, or changing it after creation. The presence rule
+  sits on `FileStorageSpec` because a transition rule on an optional field only
+  runs when both old and new values exist.
 - `FileStorage.Spec.NFS` stores POSIX ACL and atime update interval desired state
   as required, defaulted values. The CRD defaults missing values to `false` and
   `0` before validation. An atime value of `0` means read-driven updates are
