@@ -59,7 +59,25 @@ server wrapper:
 
 As with identity, those are applied in reverse by the generated wrapper, so the
 validator/authorizer stage runs before audit and both run before the handler
-implementation.
+implementation. A request the validator rejects, such as a bad body or a failed
+ACL lookup, never reaches audit and leaves no record.
+
+### Audit Delivery
+
+Audit always writes one structured log line per authenticated write. When
+`--audit-host` is set, records also go to the collector over mutual TLS, signed,
+with an optional bearer token. The chart sets these flags from `audit` or
+`global.audit` values (unikorn-common's `unikorn.audit.flags`).
+
+- A configured collector whose credentials cannot be read stops the server at
+  startup, rather than letting it run without delivering records.
+- The secrets are read with the server's uncached client, which its existing
+  cluster-wide `get` on secrets covers.
+- With audit values set, the chart and the image must roll back together: an
+  older image does not know the `--audit-*` flags and will not start with them.
+
+See identity's
+[audit README](https://github.com/nscaledev/uni-identity/blob/main/pkg/middleware/audit/README.md).
 
 ## The Big Difference From Identity
 
@@ -96,7 +114,7 @@ At a high level, server construction is:
 2. create the raw router
 3. install the shared pre-routing middleware stack
 4. create the remote identity-backed authorizer
-5. build validator and audit middleware
+5. build validator and audit middleware, with the collector sink if configured
 6. construct the outbound identity API client
 7. construct the provider registry, including image-cache warmup
 8. assemble [`handler/common.ClientArgs`](../handler/common/README.md)
