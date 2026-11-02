@@ -102,7 +102,7 @@ func allowedOrganizations(ctx context.Context, orgIDs []string) []identityids.Or
 			continue
 		}
 
-		if err := rbac.AllowOrganizationScopeID(ctx, "region:images", identityapi.Read, organizationID); err == nil {
+		if rbac.PermitsOrganizationScopeID(ctx, "region:images", identityapi.Read, organizationID) {
 			allowed = append(allowed, organizationID)
 		}
 	}

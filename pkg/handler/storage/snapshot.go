@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -52,7 +53,19 @@ const snapshotEndpoint = "region:filestoragesnapshots:v2"
 // CreateSnapshot records immutable Manual Snapshot intent. The lifecycle
 // controller owns the lifecycle finalizer, provider mutations, and cleanup;
 // the request writes only the CR.
+//
+// A refusal answers 404, as for a parent the caller cannot see, so its audit
+// record says 404 too.
 func (c *Client) CreateSnapshot(ctx context.Context, storageID regionids.FileStorageID, request *openapi.FileStorageSnapshotV2Create) (*openapi.FileStorageSnapshotV2Read, error) {
+	target := authz.Target{
+		Endpoint:   snapshotEndpoint,
+		Operation:  authz.Create,
+		Kind:       authz.Primary,
+		ObjectName: request.Metadata.Name,
+	}
+
+	authz.Declare(ctx, target)
+
 	parent, err := c.getSnapshotParent(ctx, storageID)
 	if err != nil {
 		return nil, err
@@ -62,7 +75,7 @@ func (c *Client) CreateSnapshot(ctx context.Context, storageID regionids.FileSto
 		return nil, fmt.Errorf("%w: unable to set snapshot principal scope", err)
 	}
 
-	if err := rbac.AllowProjectScopeCreateReader(ctx, c.Identity, snapshotEndpoint, identityapi.Create, parent); err != nil {
+	if err := rbac.AllowProjectScopeCreateReaderOn(ctx, c.Identity, target, parent); err != nil {
 		return nil, snapshotAuthorizationError(err)
 	}
 
@@ -147,6 +160,15 @@ func validateSnapshotCreate(request *openapi.FileStorageSnapshotV2Create, now ti
 // DeleteSnapshot records customer deletion intent without changing attribution,
 // immutable capture intent, status, or any controller-installed finalizer.
 func (c *Client) DeleteSnapshot(ctx context.Context, storageID regionids.FileStorageID, snapshotID regionids.FileStorageSnapshotID) error {
+	target := authz.Target{
+		Endpoint:  snapshotEndpoint,
+		Operation: authz.Delete,
+		Kind:      authz.Primary,
+		ObjectID:  uuid.UUID(snapshotID),
+	}
+
+	authz.Declare(ctx, target)
+
 	now := c.Clock.Now()
 
 	resource := &regionv1.FileStorageSnapshot{}
@@ -161,7 +183,9 @@ func (c *Client) DeleteSnapshot(ctx context.Context, storageID regionids.FileSto
 		return fmt.Errorf("%w: unable to lookup snapshot", err)
 	}
 
-	if err := rbac.AllowProjectScopeReader(ctx, snapshotEndpoint, identityapi.Delete, resource); err != nil {
+	target.ObjectName = resource.Labels[coreconstants.NameLabel]
+
+	if err := rbac.AllowProjectScopeReaderOn(ctx, target, resource); err != nil {
 		return snapshotAuthorizationError(err)
 	}
 
@@ -231,7 +255,7 @@ func (c *Client) ListSnapshots(ctx context.Context, storageID regionids.FileStor
 			return true
 		}
 
-		return rbac.AllowProjectScopeReader(ctx, snapshotEndpoint, identityapi.Read, &snapshot) != nil
+		return !rbac.PermitsProjectScopeReader(ctx, snapshotEndpoint, identityapi.Read, &snapshot)
 	})
 	slices.SortStableFunc(result.Items, func(a, b regionv1.FileStorageSnapshot) int {
 		return cmp.Or(cmp.Compare(a.Spec.Name, b.Spec.Name), cmp.Compare(a.Name, b.Name))

@@ -99,9 +99,9 @@ related dependencies rather than from nested path scope.
   authenticated service actor, reason, and message on the status subresource
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
-  already be able to see the server and also be allowed to create images in the
-  owning organization
-- the package exposes operational verbs:
+  be allowed to update the server and to create images in the owning
+  organization
+- the package exposes operational verbs, each needing update on the server:
   - start
   - stop
   - soft reboot
@@ -184,9 +184,10 @@ related dependencies rather than from nested path scope.
   existing gate list and the CRD marks it immutable; only Region writes the
   derived status entries.
 - The provider-create gate action has its own
-  `region:servers:v2/provider-create-gates` permission. It also requires normal
-  server read access because callers must not satisfy gates on servers they
-  cannot see.
+  `region:servers:v2/provider-create-gates` permission, and needs nothing else
+  on the server. It is for internal services; of the built-in roles only the
+  platform administrator also holds it.
+- `v1` update needs update on the server.
 - The Kubernetes resource name for a `v2` server is a deterministic UUID v5
   derived from `(networkID, serverName)` at creation time, making the name
   immutable for the lifetime of the resource — consistent with OpenStack not

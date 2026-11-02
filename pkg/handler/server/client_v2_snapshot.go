@@ -19,7 +19,7 @@ package server
 import (
 	"context"
 
-	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/image"
@@ -28,22 +28,28 @@ import (
 )
 
 func (c *ClientV2) CreateV2Snapshot(ctx context.Context, serverID regionids.ServerID, request *openapi.SnapshotCreate) (*openapi.ImageResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	// A snapshot is an action on the server, which needs update on it, and it
+	// makes an image, which needs region:images/create in the server's
+	// organization.  The server is what the request acts on.
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, actionTarget("snapshot"))
 	if err != nil {
 		return nil, err
 	}
 
-	// You need region:servers/read to get the server in the first place, then
-	// region:images/create to make the image. The first of those is implicitly
-	// checked when the server is fetched. Recover the typed organization ID so a
-	// malformed owner label fails closed rather than silently denying access; it
-	// is the single source for the string form used in tags below.
+	// Recover the typed organization ID so a malformed owner label fails closed
+	// rather than silently denying access; it is the single source for the
+	// string form used in tags below.
 	organizationScopeID, err := server.OrganizationID()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowOrganizationScopeID(ctx, "region:images", identityapi.Create, organizationScopeID); err != nil {
+	images := authz.Target{
+		Endpoint:  "region:images",
+		Operation: authz.Create,
+	}
+
+	if err := rbac.AllowOrganizationScopeOn(ctx, images, organizationScopeID); err != nil {
 		return nil, err
 	}
 

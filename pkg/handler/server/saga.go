@@ -24,8 +24,8 @@ import (
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
-	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -43,6 +43,7 @@ import (
 type createV2Saga struct {
 	client  *ClientV2
 	request *openapi.ServerV2Create
+	target  authz.Target
 
 	network        *regionv1.Network
 	organizationID identityids.OrganizationID
@@ -51,18 +52,15 @@ type createV2Saga struct {
 	volumes        map[string]*regionv1.Volume
 }
 
-func (s *createV2Saga) resolveNetwork(ctx context.Context) error {
-	network, err := network.New(s.client.Client.ClientArgs).GetV2Raw(ctx, s.request.Spec.NetworkId.String())
+// resolveScope finds the project the server is created in.  The create is
+// checked in it before the network is read, so a caller refused the network is
+// recorded in that project.
+func (s *createV2Saga) resolveScope(ctx context.Context) error {
+	organizationID, projectID, err := network.New(s.client.Client.ClientArgs).Scope(ctx, s.request.Spec.NetworkId.String())
 	if err != nil {
 		return err
 	}
 
-	organizationID, projectID, err := network.OrganizationAndProjectID()
-	if err != nil {
-		return err
-	}
-
-	s.network = network
 	s.organizationID = organizationID
 	s.projectID = projectID
 
@@ -70,7 +68,18 @@ func (s *createV2Saga) resolveNetwork(ctx context.Context) error {
 }
 
 func (s *createV2Saga) authorize(ctx context.Context) error {
-	return rbac.AllowProjectScopeCreateID(ctx, s.client.Identity, "region:servers", identityapi.Create, s.organizationID, s.projectID)
+	return rbac.AllowProjectScopeCreateOn(ctx, s.client.Identity, s.target, s.organizationID, s.projectID)
+}
+
+func (s *createV2Saga) resolveNetwork(ctx context.Context) error {
+	network, err := network.New(s.client.Client.ClientArgs).GetV2Raw(ctx, s.request.Spec.NetworkId.String())
+	if err != nil {
+		return err
+	}
+
+	s.network = network
+
+	return nil
 }
 
 func (s *createV2Saga) validate(ctx context.Context) error {
@@ -131,8 +140,9 @@ func (s *createV2Saga) release(ctx context.Context) error {
 // write compensates the claims, but has no Server compensation of its own.
 func (s *createV2Saga) Actions() []saga.Action {
 	return []saga.Action{
-		saga.NewAction("resolve network", s.resolveNetwork, nil),
+		saga.NewAction("resolve scope", s.resolveScope, nil),
 		saga.NewAction("authorize create", s.authorize, nil),
+		saga.NewAction("resolve network", s.resolveNetwork, nil),
 		saga.NewAction("validate request", s.validate, nil),
 		saga.NewAction("generate server", s.generate, nil),
 		saga.NewAction("claim volumes", s.claim, s.release),
@@ -154,8 +164,9 @@ type updateV2Saga struct {
 	volumesToAdd    map[string]*regionv1.Volume
 }
 
+// getCurrent loads the server and authorizes the update on it.
 func (s *updateV2Saga) getCurrent(ctx context.Context) error {
-	current, err := s.client.GetV2Raw(ctx, s.serverID.String())
+	current, err := s.client.getV2(ctx, s.serverID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Update, Kind: authz.Primary})
 	if err != nil {
 		return err
 	}
@@ -170,10 +181,6 @@ func (s *updateV2Saga) getCurrent(ctx context.Context) error {
 	s.projectID = projectID
 
 	return nil
-}
-
-func (s *updateV2Saga) authorize(ctx context.Context) error {
-	return rbac.AllowProjectScopeID(ctx, "region:servers", identityapi.Update, s.organizationID, s.projectID)
 }
 
 func (s *updateV2Saga) validateImmutability(context.Context) error {
@@ -280,8 +287,7 @@ func (s *updateV2Saga) update(ctx context.Context) error {
 // A failed final Server write compensates both kinds of claim.
 func (s *updateV2Saga) Actions() []saga.Action {
 	return []saga.Action{
-		saga.NewAction("get server", s.getCurrent, nil),
-		saga.NewAction("authorize update", s.authorize, nil),
+		saga.NewAction("get and authorize server", s.getCurrent, nil),
 		saga.NewAction("validate immutable fields", s.validateImmutability, nil),
 		saga.NewAction("validate security groups", s.validateSecurityGroups, nil),
 		saga.NewAction("resolve network", s.resolveNetwork, nil),
