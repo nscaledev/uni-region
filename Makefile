@@ -310,7 +310,7 @@ test-api-focus: test-api-setup
 test-api-smoke: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
-	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --label-filter='smoke' $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --fail-on-empty --label-filter='smoke' $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
 .PHONY: test-api-suite
 test-api-suite: test-api-setup
