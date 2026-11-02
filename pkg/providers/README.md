@@ -140,6 +140,29 @@ packages are the concrete provider implementations.
   - the failure is not remembered, so a region whose substrate is permanently
     misconfigured is re-initialized on every lookup. That is the accepted cost
     of self-healing without a restart
+  - a build runs outside the cache lock, and concurrent lookups of one missing
+    region wait for a single build: the region's entry goes in the cache before
+    its build starts, and comes out again if the build fails. Building a
+    provider authenticates against the cloud, so a build held under the lock
+    made every region's lookup, in the controllers and the API server, wait out
+    one unreachable region's build each time that region was looked up: the dial
+    timeout, about 30 seconds, for an endpoint that does not answer, and up to
+    the 60 second request timeout for each of the build's requests to one that
+    accepts and then hangs
+  - a region is built successfully at most once per process, and a build on
+    lookup runs on a background context, never a caller's. Builds at startup run
+    on the context `New` is given, which lives as long as the process, so the
+    difference only shows at shutdown. In the API server a build starts an image
+    refresher that runs until the process exits: a second successful build would
+    leave one polling the image service every minute with nothing holding it,
+    and a caller's context would stop it when that caller returned. A failed
+    build is retried on the next lookup, which leaks nothing only because the
+    refresher starts after the build's first image fetch succeeds
+  - a lookup cannot give up on a build: lookups take no context, so every lookup
+    of a region waits out its build, even after an API client has gone. That is
+    the accepted cost of not tying a provider to any caller. Lookups that wait
+    on one build also share its result: if it fails, they all get its error,
+    where before each waiter tried again in turn
   - callers that want startup to gate on more than this own that policy
     themselves; see `Options.WarmImageCache`
 - The provider layer is allowed to carry compensating local mechanisms where the
