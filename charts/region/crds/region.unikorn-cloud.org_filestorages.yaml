@@ -212,6 +212,27 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
+              source:
+                description: |-
+                  Source describes where the File Storage's initial data comes from. When
+                  omitted, the File Storage starts empty. Add future source kinds as new
+                  members while preserving the rule that exactly one member is set.
+                properties:
+                  snapshot:
+                    description: Snapshot restores from a manual File Storage snapshot.
+                    properties:
+                      id:
+                        description: ID of the source FileStorageSnapshot.
+                        type: string
+                    required:
+                    - id
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: source is immutable
+                  rule: self == oldSelf
+                - message: exactly one source must be set
+                  rule: '(has(self.snapshot) ? 1 : 0) == 1'
               storageClassID:
                 description: StorageClassID is the storage class ID.
                 type: string
@@ -238,6 +259,9 @@ spec:
             - size
             - storageClassID
             type: object
+            x-kubernetes-validations:
+            - message: source cannot be added or removed after creation
+              rule: has(self.source) == has(oldSelf.source)
           status:
             properties:
               attachments:
