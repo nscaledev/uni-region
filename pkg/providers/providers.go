@@ -45,6 +45,9 @@ var (
 	// ErrRegionProviderUnimplemented is raised when you haven't written
 	// it yet!
 	ErrRegionProviderUnimplemented = errors.New("region provider unimplemented")
+
+	// errBuildAbandoned is what lookups waiting on a build see if it panics.
+	errBuildAbandoned = errors.New("region provider build did not finish")
 )
 
 func ProviderToServerError(err error) error {
@@ -64,8 +67,16 @@ type providersImpl struct {
 	namespace string
 	opts      Options
 
-	mu    sync.RWMutex
-	cache map[string]types.CommonProvider
+	mu    sync.Mutex
+	cache map[string]*entry
+}
+
+// entry is a region's provider, or its build in progress.  provider and err
+// are set before done closes, and not written after.
+type entry struct {
+	done     chan struct{}
+	provider types.CommonProvider
+	err      error
 }
 
 type Options struct {
@@ -88,7 +99,7 @@ func New(ctx context.Context, initClient client.Client, runtimeClient client.Cli
 		return nil, fmt.Errorf("%w: failed to list regions", err)
 	}
 
-	cache := map[string]types.CommonProvider{}
+	cache := map[string]*entry{}
 
 	// TODO: we can avoid long warm ups in future by doing this concurrently
 	// if it becomes too slow.
@@ -100,7 +111,10 @@ func New(ctx context.Context, initClient client.Client, runtimeClient client.Cli
 			continue
 		}
 
-		cache[regions.Items[i].Name] = provider
+		done := make(chan struct{})
+		close(done)
+
+		cache[regions.Items[i].Name] = &entry{done: done, provider: provider}
 	}
 
 	providers := &providersImpl{
@@ -133,13 +147,13 @@ func newProvider(ctx context.Context, initClient client.Client, runtimeClient cl
 
 // LookupCommon returns a provider as identified by the region ID of any type.
 func (p *providersImpl) LookupCommon(regionID string) (types.CommonProvider, error) {
-	return p.lookup(context.Background(), regionID)
+	return p.lookup(regionID)
 }
 
 // LookupCloud returns a provider as identified by the region ID and must be
 // a cloud type.
 func (p *providersImpl) LookupCloud(regionID string) (types.Provider, error) {
-	provider, err := p.lookup(context.Background(), regionID)
+	provider, err := p.lookup(regionID)
 	if err != nil {
 		return nil, err
 	}
@@ -152,45 +166,61 @@ func (p *providersImpl) LookupCloud(regionID string) (types.Provider, error) {
 	return cloudProvider, nil
 }
 
-// lookup returns a provider for the given region.
-func (p *providersImpl) lookup(ctx context.Context, regionID string) (types.CommonProvider, error) {
-	p.mu.RLock()
-	provider, ok := p.cache[regionID]
-	p.mu.RUnlock()
+// lookup returns a region's provider, building it on first use.  The entry
+// goes in the map before its build starts, so concurrent lookups share one
+// build, and the build runs outside mu, so it holds up no other region.  See
+// the README's Invariants And Guard Rails section.
+func (p *providersImpl) lookup(regionID string) (types.CommonProvider, error) {
+	p.mu.Lock()
+
+	e, ok := p.cache[regionID]
+	if !ok {
+		e = &entry{done: make(chan struct{})}
+		p.cache[regionID] = e
+	}
+
+	p.mu.Unlock()
 
 	if !ok {
-		return p.load(ctx, regionID)
+		p.build(regionID, e)
 	}
 
-	return provider, nil
+	<-e.done
+
+	return e.provider, e.err
 }
 
-func (p *providersImpl) load(ctx context.Context, regionID string) (types.CommonProvider, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+// build fills in e, and removes it if the build fails or panics, so the next
+// lookup retries.  It MUST NOT take a caller's context: a provider can start
+// work that outlives the lookup, so it takes none.
+func (p *providersImpl) build(regionID string, e *entry) {
+	e.err = errBuildAbandoned
 
-	// Another goroutine may have populated the cache after the read-side miss
-	// and before we acquired the write lock, so recheck under exclusive access.
-	if provider, ok := p.cache[regionID]; ok {
-		return provider, nil
-	}
+	defer func() {
+		if e.err != nil {
+			p.mu.Lock()
+			delete(p.cache, regionID)
+			p.mu.Unlock()
+		}
+
+		close(e.done)
+	}()
+
+	ctx := context.Background()
 
 	region := &unikornv1.Region{}
 
 	if err := p.client.Get(ctx, client.ObjectKey{Namespace: p.namespace, Name: regionID}, region); err != nil {
 		if client.IgnoreNotFound(err) == nil {
-			return nil, ErrRegionNotFound
+			e.err = ErrRegionNotFound
+
+			return
 		}
 
-		return nil, fmt.Errorf("%w: failed to get region", err)
+		e.err = fmt.Errorf("%w: failed to get region", err)
+
+		return
 	}
 
-	provider, err := newProvider(ctx, p.client, p.client, region, p.opts)
-	if err != nil {
-		return nil, err
-	}
-
-	p.cache[regionID] = provider
-
-	return provider, nil
+	e.provider, e.err = newProvider(ctx, p.client, p.client, region, p.opts)
 }
