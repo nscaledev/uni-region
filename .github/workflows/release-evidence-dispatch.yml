@@ -30,7 +30,9 @@ jobs:
           set -euo pipefail
           exp="${EXPECTED#v}"
           for i in $(seq 1 30); do
-            got="$(curl -fsS -H "Authorization: Bearer $TOKEN" "$URL" | jq -r '.version // empty')"
+            # A transient error mid-rollout must not end the wait; treat it as
+            # "not yet" and keep polling until the real timeout.
+            got="$(curl -fsS -H "Authorization: Bearer $TOKEN" "$URL" | jq -r '.version // empty' || true)"
             got="${got#v}"
             echo "attempt $i: deployed='$got' expected='$exp'"
             [ "$got" = "$exp" ] && { echo "deployed"; exit 0; }
@@ -69,6 +71,9 @@ jobs:
         env:
           COMPONENT: ${{ github.event.client_payload.component }}
           VERSION: ${{ github.event.client_payload.version }}
+          # The gate-only summary cannot tell a failed smoke run from a passed
+          # one; the suite job's conclusion carries the test outcome.
+          SUITE_RESULT: ${{ needs.evidence.result }}
         run: |
           set -euo pipefail
           if [ -f versions-summary.json ]; then
@@ -79,9 +84,11 @@ jobs:
           jq -n \
             --arg component "$COMPONENT" \
             --arg version "$VERSION" \
+            --arg suite_result "$SUITE_RESULT" \
             --argjson summary "$summary" \
             '{event_type: "release-evidence-result",
-              client_payload: {component: $component, version: $version, summary: $summary}}' \
+              client_payload: {component: $component, version: $version,
+                               suite_result: $suite_result, summary: $summary}}' \
             > payload.json
       - name: Mint caller dispatch token
         id: token
