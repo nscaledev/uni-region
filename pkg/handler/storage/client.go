@@ -25,6 +25,8 @@ import (
 	"net"
 	"slices"
 
+	"github.com/google/uuid"
+
 	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
@@ -32,6 +34,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -326,7 +329,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2FilestorageP
 			return true
 		}
 
-		return rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Read, &resource) != nil
+		return !rbac.PermitsProjectScopeReader(ctx, endpoint, identityapi.Read, &resource)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.FileStorage) int {
@@ -348,7 +351,26 @@ func convertV2List(in *regionv1.FileStorageList) openapi.StorageV2List {
 	return out
 }
 
+// endpoint is the permission that governs file storage.
+const endpoint = "region:filestorage:v2"
+
+// GetRaw loads a file storage the caller may read.
 func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileStorage, error) {
+	return c.get(ctx, storageID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
+}
+
+// get loads a file storage and authorizes the target on it, naming it.  A
+// primary target is declared before the fetch, so a request that fails on it
+// is still recorded.  Unlike the other v2 resources, file storage carries no
+// API version label, so this does not use common.GetV2.
+func (c *Client) get(ctx context.Context, storageID string, target authz.Target) (*regionv1.FileStorage, error) {
+	// A malformed ID names no object; the fetch below answers 404 for it.
+	target.ObjectID, _ = uuid.Parse(storageID)
+
+	if target.Kind == authz.Primary {
+		authz.Declare(ctx, target)
+	}
+
 	result := &regionv1.FileStorage{}
 
 	err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: storageID}, result)
@@ -360,7 +382,9 @@ func (c *Client) GetRaw(ctx context.Context, storageID string) (*regionv1.FileSt
 		return nil, fmt.Errorf("%w: unable to lookup storage", err)
 	}
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Read, result); err != nil {
+	target.ObjectName = result.Labels[coreconstants.NameLabel]
+
+	if err := rbac.AllowProjectScopeReaderOn(ctx, target, result); err != nil {
 		return nil, err
 	}
 
@@ -594,12 +618,21 @@ func generateRequestFromUpdate(in *openapi.StorageV2Update, currentDefaultProtec
 // It does this leveraging the saga system which acts as a tape to enable rollbacks
 // in case of errors.
 func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create) (*openapi.StorageV2Read, error) {
+	target := authz.Target{
+		Endpoint:   endpoint,
+		Operation:  authz.Create,
+		Kind:       authz.Primary,
+		ObjectName: request.Metadata.Name,
+	}
+
+	authz.Declare(ctx, target)
+
 	s, err := newCreateSaga(c, request)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:filestorage:v2", identityapi.Create, s.organizationID, s.projectID); err != nil {
+	if err := rbac.AllowProjectScopeCreateOn(ctx, c.Identity, target, s.organizationID, s.projectID); err != nil {
 		return nil, err
 	}
 
@@ -615,12 +648,8 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.StorageV2Create)
 // it leverages the update saga system, which acts as a tape to enable rollbacks
 // in case of errors.
 func (c *Client) Update(ctx context.Context, storageID regionids.FileStorageID, request *openapi.StorageV2Update) (*openapi.StorageV2Read, error) {
-	current, err := c.GetRaw(ctx, storageID.String())
+	current, err := c.get(ctx, storageID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Update, Kind: authz.Primary})
 	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Update, current); err != nil {
 		return nil, err
 	}
 
@@ -647,12 +676,8 @@ func (c *Client) Update(ctx context.Context, storageID regionids.FileStorageID, 
 // It does not leverage the saga system because we can rely on finalizers
 // to handle this for us.
 func (c *Client) Delete(ctx context.Context, storageID regionids.FileStorageID) error {
-	resource, err := c.GetRaw(ctx, storageID.String())
+	resource, err := c.get(ctx, storageID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Delete, Kind: authz.Primary})
 	if err != nil {
-		return err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:filestorage:v2", identityapi.Delete, resource); err != nil {
 		return err
 	}
 
@@ -776,5 +801,5 @@ func authorizeFileStorageClassRead(ctx context.Context, resource *regionv1.FileS
 		return fmt.Errorf("%w: invalid organization ID in file storage class labels", err)
 	}
 
-	return rbac.AllowOrganizationScopeID(ctx, "region:filestorageclass:v2", identityapi.Read, organizationID)
+	return rbac.AllowOrganizationScopeOn(ctx, authz.Target{Endpoint: "region:filestorageclass:v2", Operation: authz.Read}, organizationID)
 }

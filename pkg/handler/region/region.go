@@ -73,7 +73,7 @@ func checkAccess(ctx context.Context, resource *unikornv1.Region, organizationID
 	}
 
 	// Anyone with super cow powers can access everything (platform admin, services).
-	if rbac.AllowGlobalScope(ctx, "region:regions", identityapi.Read) == nil {
+	if rbac.PermitsGlobalScope(ctx, "region:regions", identityapi.Read) {
 		return nil
 	}
 
@@ -238,7 +238,7 @@ func withTimeout(timeout time.Duration) volumeClassDiscoveryOption {
 }
 
 func hasVolumeClassReadAccess(ctx context.Context) bool {
-	if rbac.AllowGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) == nil {
+	if rbac.PermitsGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) {
 		return true
 	}
 
@@ -248,7 +248,7 @@ func hasVolumeClassReadAccess(ctx context.Context) bool {
 			continue
 		}
 
-		if rbac.AllowOrganizationScopeID(ctx, volumeClassReadEndpoint, identityapi.Read, organizationID) == nil {
+		if rbac.PermitsOrganizationScopeID(ctx, volumeClassReadEndpoint, identityapi.Read, organizationID) {
 			return true
 		}
 	}

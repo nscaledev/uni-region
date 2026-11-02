@@ -38,6 +38,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
@@ -67,6 +68,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// endpoint is the permission that governs servers, v1 and v2 alike.
+const endpoint = "region:servers"
 
 const providerCreateGatesEndpoint = "region:servers:v2/provider-create-gates"
 
@@ -709,7 +713,7 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 			return true
 		}
 
-		return rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Read, &resource) != nil
+		return !rbac.PermitsProjectScopeReader(ctx, endpoint, identityapi.Read, &resource)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Server) int {
@@ -756,7 +760,18 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	s := &createV2Saga{client: c, request: request}
+	s := &createV2Saga{
+		client:  c,
+		request: request,
+		target: authz.Target{
+			Endpoint:   endpoint,
+			Operation:  authz.Create,
+			Kind:       authz.Primary,
+			ObjectName: request.Metadata.Name,
+		},
+	}
+
+	authz.Declare(ctx, s.target)
 
 	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
@@ -765,34 +780,18 @@ func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create
 	return convertV2(s.server)
 }
 
+// GetV2Raw loads a server the caller may read.
 func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
+	return c.getV2(ctx, serverID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
+}
+
+// getV2 loads a server and authorizes the target on it.  See
+// common.GetV2.
+func (c *ClientV2) getV2(ctx context.Context, serverID string, target authz.Target) (*regionv1.Server, error) {
 	result := &regionv1.Server{}
 
-	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: serverID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup server", err)
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Read, result); err != nil {
+	if err := common.GetV2(ctx, c.Client.Client, c.Namespace, serverID, target, result); err != nil {
 		return nil, err
-	}
-
-	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound().WithValues("serverID", serverID)
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse API version", coreerrors.ErrConsistency)
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
 	}
 
 	return result, nil
@@ -834,12 +833,8 @@ func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, re
 }
 
 func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) error {
-	resource, err := c.GetV2Raw(ctx, serverID.String())
+	resource, err := c.getV2(ctx, serverID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Delete, Kind: authz.Primary})
 	if err != nil {
-		return err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Delete, resource); err != nil {
 		return err
 	}
 
@@ -895,6 +890,16 @@ func providerCreateGateActionChanged(current *regionv1.Server, conditionType, ac
 }
 
 func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
+	target := authz.Target{
+		Endpoint:  providerCreateGatesEndpoint,
+		Operation: authz.Action(identityapi.Update, "satisfy-create-gate"),
+		Kind:      authz.Primary,
+		ObjectID:  uuid.UUID(serverID),
+	}
+
+	// Declared before the request is validated, so a refused one is recorded.
+	authz.Declare(ctx, target)
+
 	if request.ConditionType == "" {
 		return errors.OAuth2InvalidRequest("conditionType must be specified")
 	}
@@ -907,12 +912,8 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		return errors.OAuth2InvalidRequest("message must be specified")
 	}
 
-	current, err := c.GetV2Raw(ctx, serverID.String())
+	current, err := c.getV2(ctx, serverID.String(), target)
 	if err != nil {
-		return err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, providerCreateGatesEndpoint, identityapi.Update, current); err != nil {
 		return err
 	}
 
@@ -947,8 +948,10 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 	return nil
 }
 
-func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID regionids.ServerID) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
-	server, err := c.GetV2Raw(ctx, serverID.String())
+// getServerIdentityAndProviderV2 loads a server, authorizing the operation on
+// it, with what is needed to act on it in the cloud.
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID regionids.ServerID, target authz.Target) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
+	server, err := c.getV2(ctx, serverID.String(), target)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1012,8 +1015,18 @@ func (c *ClientV2) SSHKey(ctx context.Context, serverID regionids.ServerID) (*op
 	return out, nil
 }
 
+// actionTarget is the request's own operation for an action on a server.
+// Actions change the server, so they need update.
+func actionTarget(action string) authz.Target {
+	return authz.Target{
+		Endpoint:  endpoint,
+		Operation: authz.Action(identityapi.Update, action),
+		Kind:      authz.Primary,
+	}
+}
+
 func (c *ClientV2) StartV2(ctx context.Context, serverID regionids.ServerID) error {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, actionTarget("start"))
 	if err != nil {
 		return err
 	}
@@ -1022,7 +1035,7 @@ func (c *ClientV2) StartV2(ctx context.Context, serverID regionids.ServerID) err
 }
 
 func (c *ClientV2) StopV2(ctx context.Context, serverID regionids.ServerID) error {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, actionTarget("stop"))
 	if err != nil {
 		return err
 	}
@@ -1031,7 +1044,12 @@ func (c *ClientV2) StopV2(ctx context.Context, serverID regionids.ServerID) erro
 }
 
 func (c *ClientV2) RebootV2(ctx context.Context, serverID regionids.ServerID, hard bool) error {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	action := "softreboot"
+	if hard {
+		action = "hardreboot"
+	}
+
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, actionTarget(action))
 	if err != nil {
 		return err
 	}
@@ -1040,7 +1058,7 @@ func (c *ClientV2) RebootV2(ctx context.Context, serverID regionids.ServerID, ha
 }
 
 func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID regionids.ServerID, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
 	if err != nil {
 		return nil, err
 	}
@@ -1049,7 +1067,7 @@ func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID regionids.Serve
 }
 
 func (c *ClientV2) ConsoleSessionV2(ctx context.Context, serverID regionids.ServerID) (*openapi.ConsoleSessionResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
 	if err != nil {
 		return nil, err
 	}
