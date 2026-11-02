@@ -24,6 +24,10 @@ on:
         description: 'Skip Slack notifications'
         type: boolean
         default: false
+      smoke:
+        description: 'Run only the curated smoke subset'
+        type: boolean
+        default: false
       focus:
         description: 'Test suite to run'
         required: false
@@ -59,6 +63,11 @@ on:
         type: string
         required: false
         default: 'All'
+      smoke:
+        description: 'Run only the curated smoke subset (release-evidence default)'
+        type: boolean
+        required: false
+        default: false
       region_id:
         description: 'Override TEST_REGION_ID'
         type: string
@@ -254,12 +263,16 @@ jobs:
     - name: Touch
       run: make touch
 
+    - name: Run API Tests (smoke)
+      if: inputs.smoke == true
+      run: make test-api-smoke
+
     - name: Run API Tests
-      if: inputs.focus == '' || inputs.focus == 'All'
+      if: inputs.smoke != true && (inputs.focus == '' || inputs.focus == 'All')
       run: make test-api
 
     - name: Run API Tests with Focus
-      if: inputs.focus != '' && inputs.focus != 'All'
+      if: inputs.smoke != true && inputs.focus != '' && inputs.focus != 'All'
       run: make test-api-focus FOCUS="$FOCUS"
 
     - name: Archive API Test Results
@@ -476,12 +489,16 @@ jobs:
         echo "INTERNAL_API_CLIENT_CERT=$cert_path" >> "$GITHUB_ENV"
         echo "INTERNAL_API_CLIENT_KEY=$key_path" >> "$GITHUB_ENV"
 
+    - name: Run API Tests (smoke)
+      if: inputs.smoke == true
+      run: make test-api-smoke
+
     - name: Run API Tests
-      if: inputs.focus == '' || inputs.focus == 'All'
+      if: inputs.smoke != true && (inputs.focus == '' || inputs.focus == 'All')
       run: make test-api
 
     - name: Run API Tests with Focus
-      if: inputs.focus != '' && inputs.focus != 'All'
+      if: inputs.smoke != true && inputs.focus != '' && inputs.focus != 'All'
       run: make test-api-focus FOCUS="$FOCUS"
 
     - name: Archive API Test Results

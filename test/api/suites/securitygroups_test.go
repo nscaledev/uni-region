@@ -186,7 +186,7 @@ var _ = Describe("SecurityGroup", func() {
 		})
 	})
 
-	Context("When getting a non-existent security group", func() {
+	Context("When getting a non-existent security group", Label("smoke"), func() {
 		Describe("Given a non-existent security group ID", func() {
 			It("should return not found", func() {
 				_, err := regionClient.GetSecurityGroup(ctx, "00000000-0000-0000-0000-000000000000")
@@ -196,7 +196,7 @@ var _ = Describe("SecurityGroup", func() {
 		})
 	})
 
-	Context("When creating a security group with an invalid request body", func() {
+	Context("When creating a security group with an invalid request body", Label("smoke"), func() {
 		Describe("Given an empty request body", func() {
 			It("should reject the request", func() {
 				path := regionClient.GetEndpoints().CreateSecurityGroup()

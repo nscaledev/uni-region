@@ -343,7 +343,7 @@ var _ = Describe("LoadBalancer", func() {
 		})
 	})
 
-	Context("When accessing a load balancer that does not exist", func() {
+	Context("When accessing a load balancer that does not exist", Label("smoke"), func() {
 		Describe("Given a non-existent load balancer ID", func() {
 			It("should return not found on GET", func() {
 				_, err := regionClient.GetLoadBalancer(ctx, "00000000-0000-0000-0000-000000000000")
@@ -359,7 +359,7 @@ var _ = Describe("LoadBalancer", func() {
 		})
 	})
 
-	Context("When creating a load balancer with an invalid request body", func() {
+	Context("When creating a load balancer with an invalid request body", Label("smoke"), func() {
 		Describe("Given an empty request body", func() {
 			It("should reject the request", func() {
 				path := regionClient.GetEndpoints().CreateLoadBalancer()
