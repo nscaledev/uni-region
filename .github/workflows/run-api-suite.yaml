@@ -84,6 +84,10 @@ jobs:
       id: find
       with:
         service: uni-region
+        # Pin to uni-region: inside a cross-repo workflow_call, github.repository is the
+        # caller's repo, so the action's service-repo default would validate the tag in the
+        # wrong repository. uni-region is public, so the default github.token can read it.
+        service-repo: nscaledev/uni-region
         releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
         use-staging-constellation: ${{ inputs.use_deployed_version }}
         use-version-api: true
@@ -182,6 +186,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
+        # Explicit: checkout defaults to the caller's repo on a cross-repo workflow_call.
+        repository: nscaledev/uni-region
         ref: ${{ needs.find-dev-deployed-version.outputs.ref }}
 
     - name: Setup Go
@@ -274,6 +280,10 @@ jobs:
       id: find
       with:
         service: uni-region
+        # Pin to uni-region: inside a cross-repo workflow_call, github.repository is the
+        # caller's repo, so the action's service-repo default would validate the tag in the
+        # wrong repository. uni-region is public, so the default github.token can read it.
+        service-repo: nscaledev/uni-region
         releases-read-token: ${{ secrets.RELEASES_READ_TOKEN }}
         use-staging-constellation: ${{ inputs.use_deployed_version }}
         use-version-api: true
@@ -372,6 +382,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
+        # Explicit: checkout defaults to the caller's repo on a cross-repo workflow_call.
+        repository: nscaledev/uni-region
         ref: ${{ needs.find-uat-deployed-version.outputs.ref }}
 
     - name: Setup Go
