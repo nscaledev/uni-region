@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Fails if any pod in the namespace has restarted or is not ready.
+# helm --wait passes as soon as each Deployment is first available, which a
+# container without a readiness probe is the moment it starts, even if it
+# exits a second later. Run this after the tests, so it covers their duration.
+set -euo pipefail
+
+NAMESPACE="${1:?usage: $0 NAMESPACE}"
+
+pods=$(kubectl -n "${NAMESPACE}" get pods -o json)
+
+bad=$(jq -r '
+  .items[]
+  | select(.status.phase != "Succeeded")
+  | .metadata.name as $pod
+  | (.status.containerStatuses // [])[]
+  | select(.restartCount > 0 or .ready != true)
+  | "\($pod)/\(.name): ready=\(.ready) restarts=\(.restartCount)"
+' <<< "${pods}")
+
+if [[ -z "${bad}" ]]; then
+  echo "==> All pods in ${NAMESPACE} are ready with no restarts."
+  exit 0
+fi
+
+echo "ERROR: unhealthy pods in ${NAMESPACE}:" >&2
+echo "${bad}" >&2
+
+jq -r '
+  .items[]
+  | .metadata.name as $pod
+  | (.status.containerStatuses // [])[]
+  | select(.restartCount > 0 or .ready != true)
+  | "\($pod) \(.name)"
+' <<< "${pods}" | while read -r pod container; do
+  echo "--- ${pod}/${container} logs:" >&2
+  kubectl -n "${NAMESPACE}" logs "${pod}" -c "${container}" --previous --tail=20 >&2 2>/dev/null ||
+    kubectl -n "${NAMESPACE}" logs "${pod}" -c "${container}" --tail=20 >&2 || true
+done
+
+exit 1
