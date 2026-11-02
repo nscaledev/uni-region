@@ -33,8 +33,9 @@ jq -r '
   | select(.restartCount > 0 or .ready != true)
   | "\($pod) \(.name)"
 ' <<< "${pods}" | while read -r pod container; do
-  echo "--- ${pod}/${container} previous logs:" >&2
-  kubectl -n "${NAMESPACE}" logs "${pod}" -c "${container}" --previous --tail=20 >&2 || true
+  echo "--- ${pod}/${container} logs:" >&2
+  kubectl -n "${NAMESPACE}" logs "${pod}" -c "${container}" --previous --tail=20 >&2 2>/dev/null ||
+    kubectl -n "${NAMESPACE}" logs "${pod}" -c "${container}" --tail=20 >&2 || true
 done
 
 exit 1
