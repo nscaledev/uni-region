@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/onsi/ginkgo/v2"
 
@@ -704,25 +705,59 @@ func (c *APIClient) GetFileStorageSnapshotExpectError(ctx context.Context, paren
 
 // UpdateFileStorage updates a file storage resource.
 func (c *APIClient) UpdateFileStorage(ctx context.Context, filestorageID string, request regionopenapi.StorageV2UpdateRequest) (*regionopenapi.StorageV2Read, error) {
-	path := c.endpoints.UpdateFileStorage(filestorageID)
-
 	reqBody, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling filestorage update request: %w", err)
 	}
 
+	// Update uses optimistic locking: a controller write landing between the
+	// handler's read and its patch surfaces as 409 Conflict, which the API
+	// contract documents as retryable (pkg/handler/storage/README.md). The PUT
+	// re-reads server-side, so retry on conflict until the write wins; ceiling 2m.
+	deadline := time.Now().Add(2 * time.Minute)
+
+	for {
+		storage, conflict, err := c.putFileStorage(ctx, filestorageID, reqBody)
+		if err != nil || !conflict {
+			return storage, err
+		}
+
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("updating filestorage: still conflicting after 2m: %w", coreclient.ErrUnexpectedStatus)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("updating filestorage: %w", ctx.Err())
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// putFileStorage sends one update PUT. It returns conflict=true when the server
+// responds 409 (an optimistic-lock conflict), which the caller retries.
+func (c *APIClient) putFileStorage(ctx context.Context, filestorageID string, reqBody []byte) (*regionopenapi.StorageV2Read, bool, error) {
+	path := c.endpoints.UpdateFileStorage(filestorageID)
+
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), 0)
 	if err != nil {
-		return nil, fmt.Errorf("updating filestorage: %w", err)
+		return nil, false, fmt.Errorf("updating filestorage: %w", err)
 	}
 
-	var storage regionopenapi.StorageV2Read
-	if err := json.Unmarshal(respBody, &storage); err != nil {
-		return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
-	}
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		var storage regionopenapi.StorageV2Read
+		if err := json.Unmarshal(respBody, &storage); err != nil {
+			return nil, false, fmt.Errorf("unmarshaling filestorage: %w", err)
+		}
 
-	return &storage, nil
+		return &storage, false, nil
+	case http.StatusConflict:
+		return nil, true, nil
+	default:
+		return nil, false, fmt.Errorf("updating filestorage: status %d, body %q: %w", resp.StatusCode, respBody, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // DeleteFileStorage deletes a file storage resource.

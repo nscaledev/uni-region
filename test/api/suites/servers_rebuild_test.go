@@ -81,8 +81,8 @@ func skipUnlessRebuildEnvironmentConfigured() {
 // mustProvisionServerForRebuild provisions a network and a server, registers
 // their cleanup, and returns the server once it has settled as provisioned.
 func mustProvisionServerForRebuild() *regionopenapi.ServerV2Read {
-	networkReq := api.NewNetworkPayload(config.OrgID, config.ProjectID, config.RegionID).Build()
-	network := api.MustProvisionNetwork(regionClient, ctx, networkReq)
+	// Reuse the long-lived shared network so the run does not consume a region VLAN.
+	network := api.MustResolveSharedNetwork(regionClient, ctx)
 
 	builder := api.NewServerPayload(network.Metadata.Id, config.ServerFlavorID, config.ServerImageID)
 

@@ -107,6 +107,11 @@ related dependencies rather than from nested path scope.
   - soft reboot
   - hard reboot
   - console output/session
+- an accepted stop or reboot is stamped on the `Active` condition before the 202
+  returns (`Stopping`, `Rebooting`), so the request is observable without waiting
+  for a monitor poll; a VM reboot can finish inside one poll period and would
+  otherwise leave no trace. A rejected request (e.g. Nova 409) stamps nothing.
+  The health monitor owns the transition back out (`Rebooting` → `Running`)
 - server-name uniqueness is enforced per network to avoid aliasing cloud-side
   host identity; the Kubernetes resource name is derived deterministically from
   `(networkID, serverName)` so a duplicate create collides at the Kubernetes

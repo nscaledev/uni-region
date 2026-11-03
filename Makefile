@@ -306,6 +306,12 @@ test-api-focus: test-api-setup
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
 	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --focus="$(FOCUS)" $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
+.PHONY: test-api-smoke
+test-api-smoke: test-api-setup
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --fail-on-empty --label-filter='smoke' $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+
 .PHONY: test-api-suite
 test-api-suite: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
@@ -402,6 +408,11 @@ CONTRACTS_KIND_CLUSTER ?= contract-testing
 CONTRACTS_KUBECONFIG = $(CURDIR)/.kind-$(CONTRACTS_KIND_CLUSTER).kubeconfig
 CONTRACTS_KIND_KUBECONFIG = kind get kubeconfig --name $(CONTRACTS_KIND_CLUSTER) > "$(CONTRACTS_KUBECONFIG)"
 
+# A local pact file is verified by one provider package, the one whose state handlers serve its consumer:
+# kubernetes for uni-kubernetes and nscale-environments, compute for uni-compute. Every package has a
+# local-files spec, so running them all fails the package that doesn't know the pact's states.
+CONTRACTS_LOCAL_PACKAGE ?= ./test/contracts/provider/kubernetes/
+
 # Run provider contract verification tests
 .PHONY: test-contracts-provider
 test-contracts-provider:
@@ -449,7 +460,7 @@ test-contracts-provider-local:
 	@echo "Running provider verification from local pact file..."
 	@if [ -z "$(PACT_FILE)" ]; then \
 		echo "Error: PACT_FILE environment variable must be set"; \
-		echo "Usage: make test-contracts-provider-local PACT_FILE=/path/to/pact.json"; \
+		echo "Usage: make test-contracts-provider-local PACT_FILE=/path/to/pact.json [CONTRACTS_LOCAL_PACKAGE=./test/contracts/provider/compute/]"; \
 		exit 1; \
 	fi
 	$(CONTRACTS_KIND_KUBECONFIG)
@@ -460,7 +471,7 @@ test-contracts-provider-local:
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	GIT_BRANCH="$(GIT_BRANCH)" \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1 -p 1 -args -ginkgo.focus="local files"
+	go test $(CONTRACTS_LOCAL_PACKAGE) -v -count=1 -args -ginkgo.focus="local files"
 
 # Run provider verification and publish results to Pact Broker (works on both macOS and Linux)
 # Sets CI=true which triggers auto-publishing to Pact Broker

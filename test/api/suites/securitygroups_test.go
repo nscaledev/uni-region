@@ -177,20 +177,16 @@ var _ = Describe("SecurityGroup", func() {
 			})
 
 			It("should not be found after deletion", func() {
-				Eventually(func() error {
-					_, err := regionClient.GetSecurityGroup(ctx, deletedSGID)
-					return err
-				}).WithTimeout(30*time.Second).
-					WithPolling(2*time.Second).
-					Should(And(HaveOccurred(), MatchError(coreclient.ErrResourceNotFound)),
-						"deleted security group should eventually return not found")
-
+				// Deletion is asynchronous and routinely runs close to the old
+				// inline 30s bound; use the shared gone-wait budget so a correct
+				// but slow deletion is not read as a failure.
+				api.WaitForSecurityGroupGone(regionClient, ctx, deletedSGID)
 				GinkgoWriter.Printf("Confirmed security group deleted: %s\n", deletedSGID)
 			})
 		})
 	})
 
-	Context("When getting a non-existent security group", func() {
+	Context("When getting a non-existent security group", Label("smoke"), func() {
 		Describe("Given a non-existent security group ID", func() {
 			It("should return not found", func() {
 				_, err := regionClient.GetSecurityGroup(ctx, "00000000-0000-0000-0000-000000000000")
@@ -200,7 +196,7 @@ var _ = Describe("SecurityGroup", func() {
 		})
 	})
 
-	Context("When creating a security group with an invalid request body", func() {
+	Context("When creating a security group with an invalid request body", Label("smoke"), func() {
 		Describe("Given an empty request body", func() {
 			It("should reject the request", func() {
 				path := regionClient.GetEndpoints().CreateSecurityGroup()

@@ -298,6 +298,11 @@ type RegionOpenstackImageSpec struct {
 	// Selector defines a set of rules to lookup images.
 	// If not specified, all images are selected.
 	Selector *ImageSelector `json:"selector,omitempty"`
+	// IncludeCommunity additionally exposes images with community visibility, so
+	// development environments can share images without admin rights. Any project
+	// may publish a community image, so never enable this in production. Community
+	// images claiming to belong to an organization are ignored.
+	IncludeCommunity bool `json:"includeCommunity,omitempty"`
 }
 
 type ImageSelector struct {
@@ -1472,7 +1477,15 @@ type FileStorageSnapshotStatus struct {
 }
 
 // FileStorageSpec defines the storage request.
+// +kubebuilder:validation:XValidation:rule="has(self.source) == has(oldSelf.source)",message="source cannot be added or removed after creation"
 type FileStorageSpec struct {
+	// Source describes where the File Storage's initial data comes from. When
+	// omitted, the File Storage starts empty. Add future source kinds as new
+	// members while preserving the rule that exactly one member is set.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="source is immutable"
+	Source *FileStorageSource `json:"source,omitempty"`
+
 	// StorageClassID is the storage class ID.
 	StorageClassID string `json:"storageClassID"`
 
@@ -1503,6 +1516,22 @@ type FileStorageSpec struct {
 
 	// NFS is fulfilled when leveraging the NFS storage class.
 	NFS *NFS `json:"nfs,omitempty"`
+}
+
+// FileStorageSource is the origin of a File Storage's initial data.
+// Exactly one member must be set. Absent means the File Storage starts empty.
+// Add future source kinds as new members while preserving the single-member union rule.
+// +kubebuilder:validation:XValidation:rule="(has(self.snapshot) ? 1 : 0) == 1",message="exactly one source must be set"
+type FileStorageSource struct {
+	// Snapshot restores from a manual File Storage snapshot.
+	// +optional
+	Snapshot *FileStorageSnapshotSource `json:"snapshot,omitempty"`
+}
+
+// FileStorageSnapshotSource restores initial data from a FileStorageSnapshot.
+type FileStorageSnapshotSource struct {
+	// ID of the source FileStorageSnapshot.
+	ID string `json:"id"`
 }
 
 type FileStorageSnapshotPolicy struct {

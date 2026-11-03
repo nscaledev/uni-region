@@ -44,7 +44,7 @@ func skipUnlessImageCreated(imageID string) {
 	}
 }
 
-var _ = Describe("Image Management", Ordered, func() {
+var _ = Describe("Image Management", Ordered, Label("smoke"), func() {
 	Context("When listing images", func() {
 		Describe("Given invalid parameters", func() {
 			It("should return an error for an invalid organization ID", func() {

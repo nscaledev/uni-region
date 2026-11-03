@@ -162,6 +162,14 @@ func ImageSchemaValid(image *images.Image, schema *jsonschema.Schema) bool {
 // imageValid returns true when the image is matches the schema and optionally is signed
 // by a trusted image building pipeline.
 func (c *ImageClient) imageValid(image *images.Image, schema *jsonschema.Schema) bool {
+	// Organization images are only ever published as public, so a community one
+	// is forged or was demoted by its owner. Either way it must not be trusted
+	// as an organization image, which skips signature verification.
+	organizationID, _ := image.Properties[organizationIDLabel].(string)
+	if image.Visibility == images.ImageVisibilityCommunity && organizationID != "" {
+		return false
+	}
+
 	if !ImageSchemaValid(image, schema) {
 		return false
 	}
@@ -196,6 +204,15 @@ func (c *ImageClient) UpdateImage(ctx context.Context, id string, opts images.Up
 	return images.Update(ctx, c.client, id, opts).Extract()
 }
 
+func (c *ImageClient) listImages(ctx context.Context, visibility images.ImageVisibility) ([]images.Image, error) {
+	page, err := images.List(c.client, &images.ListOpts{Visibility: visibility}).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return images.ExtractImages(page)
+}
+
 // ListImages returns a list of images.
 func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 	_, span := traceStart(ctx, "GET /image/v2/images")
@@ -206,18 +223,18 @@ func (c *ImageClient) ListImages(ctx context.Context) ([]images.Image, error) {
 		return nil, err
 	}
 
-	opts := &images.ListOpts{
-		Visibility: images.ImageVisibilityPublic,
-	}
-
-	page, err := images.List(c.client, opts).AllPages(ctx)
+	result, err := c.listImages(ctx, images.ImageVisibilityPublic)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := images.ExtractImages(page)
-	if err != nil {
-		return nil, err
+	if c.options != nil && c.options.IncludeCommunity {
+		community, err := c.listImages(ctx, images.ImageVisibilityCommunity)
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, community...)
 	}
 
 	// Filter out images that aren't compatible.

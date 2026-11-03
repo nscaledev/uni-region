@@ -25,12 +25,19 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
+	"maps"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 	"github.com/stretchr/testify/require"
 
+	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -302,6 +309,134 @@ func TestImageSigning(t *testing.T) {
 			}
 
 			require.Equal(t, c.valid, openstack.ImageSignatureValid(fixture, publicKey.Bytes()))
+		})
+	}
+}
+
+// glanceImage renders a schema-valid image as Glance returns it, with custom
+// properties as top-level keys, which gophercloud folds back into Properties.
+func glanceImage(id string, visibility images.ImageVisibility, createdAt time.Time, organizationID string) map[string]any {
+	image := maps.Clone(basicImageFixture().Properties)
+	image["id"] = id
+	image["name"] = id
+	image["status"] = images.ImageStatusActive
+	image["visibility"] = visibility
+	image["created_at"] = createdAt.Format(time.RFC3339)
+
+	if organizationID != "" {
+		image[organizationIDProperty] = organizationID
+	}
+
+	return image
+}
+
+func TestListImagesVisibility(t *testing.T) {
+	t.Parallel()
+
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	createdAt := func(hours int) time.Time {
+		return created.Add(time.Duration(hours) * time.Hour)
+	}
+
+	// Creation times interleave across visibilities so ordering proves the
+	// combined listing is sorted.
+	responses := map[string][]map[string]any{
+		"public": {
+			glanceImage("public-new", images.ImageVisibilityPublic, createdAt(3), ""),
+			glanceImage("public-org", images.ImageVisibilityPublic, createdAt(1), "organization"),
+		},
+		"community": {
+			glanceImage("community-new", images.ImageVisibilityCommunity, createdAt(4), ""),
+			glanceImage("community-org", images.ImageVisibilityCommunity, createdAt(2), "organization"),
+			glanceImage("community-old", images.ImageVisibilityCommunity, createdAt(0), ""),
+		},
+	}
+
+	cases := []struct {
+		name           string
+		options        *unikornv1.RegionOpenstackImageSpec
+		communityFails bool
+		visibilities   []string
+		want           []string
+	}{
+		{
+			name:         "PublicOnly",
+			visibilities: []string{"public"},
+			want:         []string{"public-org", "public-new"},
+		},
+		{
+			name:         "IncludeCommunity",
+			options:      &unikornv1.RegionOpenstackImageSpec{IncludeCommunity: true},
+			visibilities: []string{"public", "community"},
+			want:         []string{"community-old", "public-org", "public-new", "community-new"},
+		},
+		{
+			// A partial listing would silently hide community images, so a
+			// failed community call fails the whole listing.
+			name:           "CommunityError",
+			options:        &unikornv1.RegionOpenstackImageSpec{IncludeCommunity: true},
+			communityFails: true,
+			visibilities:   []string{"public", "community"},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				lock         sync.Mutex
+				visibilities []string
+			)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				visibility := r.URL.Query().Get("visibility")
+
+				response, ok := responses[visibility]
+				if r.URL.Path != "/images" || !ok {
+					http.Error(w, "unexpected request", http.StatusBadRequest)
+
+					return
+				}
+
+				lock.Lock()
+				visibilities = append(visibilities, visibility)
+				lock.Unlock()
+
+				if c.communityFails && visibility == "community" {
+					http.Error(w, "community listing failed", http.StatusInternalServerError)
+
+					return
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"images": response})
+			}))
+			t.Cleanup(server.Close)
+
+			client := openstack.NewTestImageClient(server.URL+"/", c.options)
+
+			result, err := client.ListImages(t.Context())
+
+			lock.Lock()
+			defer lock.Unlock()
+
+			require.Equal(t, c.visibilities, visibilities)
+
+			if c.communityFails {
+				require.Error(t, err)
+
+				return
+			}
+
+			require.NoError(t, err)
+
+			got := make([]string, len(result))
+			for i := range result {
+				got[i] = result[i].ID
+			}
+
+			require.Equal(t, c.want, got)
 		})
 	}
 }
