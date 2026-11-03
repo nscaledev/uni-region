@@ -32,7 +32,7 @@ import (
 	regionopenapi "github.com/unikorn-cloud/region/pkg/openapi"
 )
 
-var _ = Describe("Region Discovery", func() {
+var _ = Describe("Region Discovery", Label("smoke"), func() {
 	Context("When listing regions", func() {
 		Describe("Given valid organization access", func() {
 			It("should return all available regions", func() {
@@ -134,7 +134,7 @@ var _ = Describe("Region Discovery", func() {
 // - Not part of critical user-facing services
 // - Client method exists at api_client.go:102-118 if needed in future
 
-var _ = Describe("Flavor Discovery", func() {
+var _ = Describe("Flavor Discovery", Label("smoke"), func() {
 	Context("When listing flavors for a region", func() {
 		Describe("Given valid region and organization", func() {
 			It("should return all available flavors", func() {
@@ -177,7 +177,7 @@ var _ = Describe("Flavor Discovery", func() {
 	})
 })
 
-var _ = Describe("Image Discovery", func() {
+var _ = Describe("Image Discovery", Label("smoke"), func() {
 	Context("When listing images for a region", func() {
 		Describe("Given valid region and organization", func() {
 			It("should return all available images", func() {

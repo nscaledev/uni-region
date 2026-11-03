@@ -101,7 +101,7 @@ var _ = Describe("SSHCertificateAuthority", func() {
 		})
 	})
 
-	Context("When getting a non-existent SSH certificate authority", func() {
+	Context("When getting a non-existent SSH certificate authority", Label("smoke"), func() {
 		Describe("Given a non-existent SSH certificate authority ID", func() {
 			It("should return not found", func() {
 				_, err := regionClient.GetSSHCertificateAuthority(ctx, "00000000-0000-0000-0000-000000000000")
@@ -111,7 +111,7 @@ var _ = Describe("SSHCertificateAuthority", func() {
 		})
 	})
 
-	Context("When creating an SSH certificate authority with an invalid key", func() {
+	Context("When creating an SSH certificate authority with an invalid key", Label("smoke"), func() {
 		Describe("Given a malformed public key", func() {
 			It("should return 422 Unprocessable Entity", func() {
 				req := api.NewSSHCertificateAuthorityPayload(config.OrgID, config.ProjectID).
