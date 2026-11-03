@@ -2420,11 +2420,13 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 // and image reconciliation.
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
 const (
-	novaStatusActive  = "ACTIVE"
-	novaStatusBuild   = "BUILD"
-	novaStatusError   = "ERROR"
-	novaStatusRebuild = "REBUILD"
-	novaStatusUnknown = "UNKNOWN"
+	novaStatusActive     = "ACTIVE"
+	novaStatusBuild      = "BUILD"
+	novaStatusError      = "ERROR"
+	novaStatusHardReboot = "HARD_REBOOT"
+	novaStatusReboot     = "REBOOT"
+	novaStatusRebuild    = "REBUILD"
+	novaStatusUnknown    = "UNKNOWN"
 )
 
 // healthMessageIndeterminate is the Healthy-condition message used whenever a
@@ -2455,6 +2457,12 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 		// Active condition (ActiveConditionReasonRebuilding); it is not serving
 		// during the reimage, so health is reported as indeterminate rather than
 		// asserting a verdict. Message shared with markServerRebuildAccepted.
+		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate
+	case novaStatusHardReboot, novaStatusReboot:
+		// A rebooting server is likewise carried on the Active condition
+		// (ActiveConditionReasonRebooting). A user-requested reboot is not a fault,
+		// so it must not read as Degraded; the server is briefly not serving, so
+		// health is indeterminate until Nova settles.
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate
 	case novaStatusUnknown:
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
@@ -2596,6 +2604,20 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		}
 	}
 
+	// A reboot task (hard or soft) is a reboot in flight. PowerState does not
+	// express it: it may still read RUNNING before the power cycle lands
+	// (baremetal: Ironic power-cycles the node, which takes minutes), which would
+	// otherwise hide that the user's reboot is running at all. It precedes the
+	// ERROR check because a hard reboot is how an errored server is recovered,
+	// and Nova keeps the ERROR display status until the reboot finishes. Nova
+	// refuses to reboot a server that never launched, so this cannot mask the
+	// Error the provider-create-failure guard keys off.
+	if serverRebootInFlight(openstackserver) {
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+
+		return
+	}
+
 	// Nova ERROR is a terminal lifecycle state that PowerState cannot express
 	// (it is NOSTATE for an errored server, which would otherwise leave the
 	// state untouched). Surface it explicitly so the provider-create-failure
@@ -2627,7 +2649,14 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 
 	switch openstackserver.PowerState {
 	case servers.NOSTATE:
-		// No state information available. We will keep the state as it is.
+		// No state information available. We will keep the state as it is, with
+		// one exception: Rebooting is a transient we stamp, and Nova only clears
+		// the reboot task once the driver reports the reboot done, so an ACTIVE
+		// server with no task has finished rebooting. Without this a baremetal
+		// node surfacing NOSTATE would be stuck reading Rebooting.
+		if rebootSettled(server, openstackserver) {
+			server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+		}
 	case servers.RUNNING:
 		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	case servers.SHUTDOWN:
@@ -2645,6 +2674,31 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 	case servers.PAUSED, servers.SUSPENDED:
 		log.FromContext(ctx).Info("caught unsupported server power state", "powerState", openstackserver.PowerState.String())
 	}
+}
+
+// Nova's reboot task states are "rebooting", "reboot_pending", "reboot_started"
+// and their "_hard" variants, matched by prefix like the rebuild family.
+const novaTaskStateRebootPrefix = "reboot"
+
+// serverRebootInFlight reports whether Nova holds the server in a reboot task.
+// The task state, not the display status, is the signal: Nova only projects it
+// to HARD_REBOOT/REBOOT for an ACTIVE server, while a hard reboot of a STOPPED,
+// PAUSED or SUSPENDED server keeps that display status. Nova sets the task
+// before the reboot API returns 202 and clears it when the reboot finishes,
+// whether it succeeded or failed, so a cleared task means the reboot is over.
+func serverRebootInFlight(openstackserver *servers.Server) bool {
+	return strings.HasPrefix(openstackserver.TaskState, novaTaskStateRebootPrefix)
+}
+
+// rebootSettled reports whether a server last recorded as Rebooting is now
+// reported by Nova as ACTIVE with no task in flight, i.e. the reboot completed.
+func rebootSettled(server *unikornv1.Server, openstackserver *servers.Server) bool {
+	active, err := unikornv1.GetActiveCondition(server)
+	if err != nil || active.Reason != unikornv1.ActiveConditionReasonRebooting {
+		return false
+	}
+
+	return openstackserver.Status == novaStatusActive && openstackserver.TaskState == ""
 }
 
 func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {

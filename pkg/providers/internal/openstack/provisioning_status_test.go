@@ -30,10 +30,12 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -557,4 +559,115 @@ func TestIsBaremetalFlavor(t *testing.T) {
 	require.False(t, isBaremetalFlavor(region, flavorVMID))
 	require.False(t, isBaremetalFlavor(region, "missing"))
 	require.False(t, isBaremetalFlavor(nil, flavorMetalID))
+}
+
+// TestSetServerPhaseReboot proves a reboot in flight is visible on the Active
+// axis whatever PowerState reports: Nova can still read RUNNING (baremetal
+// before Ironic power-cycles the node) or NOSTATE mid-reboot.
+func TestSetServerPhaseReboot(t *testing.T) {
+	t.Parallel()
+
+	taskStates := []string{
+		"rebooting", "reboot_pending", "reboot_started",
+		"rebooting_hard", "reboot_pending_hard", "reboot_started_hard",
+	}
+
+	for _, taskState := range taskStates {
+		for _, power := range []servers.PowerState{servers.RUNNING, servers.NOSTATE, servers.SHUTDOWN} {
+			server := &unikornv1.Server{}
+			server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+
+			setServerActive(t.Context(), server, &servers.Server{Status: novaStatusHardReboot, TaskState: taskState, PowerState: power}, nil)
+
+			require.Equal(t, unikornv1.ActiveConditionReasonRebooting, activeReason(t, server), "task %s power %s", taskState, power)
+		}
+	}
+}
+
+// TestSetServerPhaseRebootFromStopped proves a hard reboot of a stopped server
+// reads Rebooting: Nova keeps the SHUTOFF display status for a STOPPED server
+// mid-reboot, so only the task state reveals it.
+func TestSetServerPhaseRebootFromStopped(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+
+	setServerActive(t.Context(), server, &servers.Server{Status: "SHUTOFF", TaskState: "reboot_started_hard", PowerState: servers.SHUTDOWN}, nil)
+
+	require.Equal(t, unikornv1.ActiveConditionReasonRebooting, activeReason(t, server))
+}
+
+// TestSetServerPhaseRebootFromError proves a hard reboot of an errored server
+// reads Rebooting rather than flapping back to Error: Nova keeps the ERROR
+// display status mid-reboot, so only the task state reveals it.
+func TestSetServerPhaseRebootFromError(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+
+	setServerActive(t.Context(), server, &servers.Server{Status: novaStatusError, TaskState: "reboot_started_hard", PowerState: servers.NOSTATE}, nil)
+
+	require.Equal(t, unikornv1.ActiveConditionReasonRebooting, activeReason(t, server))
+}
+
+// TestSetServerPhaseErrorAfterFailedReboot proves the reboot check yields once
+// Nova clears the task: a reboot that failed leaves the server in Error.
+func TestSetServerPhaseErrorAfterFailedReboot(t *testing.T) {
+	t.Parallel()
+
+	server := &unikornv1.Server{}
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+
+	setServerActive(t.Context(), server, &servers.Server{Status: novaStatusError, PowerState: servers.NOSTATE}, nil)
+
+	require.Equal(t, unikornv1.ActiveConditionReasonError, activeReason(t, server))
+}
+
+// TestSetServerPhaseRebootCompletes proves Rebooting clears once Nova reports
+// the reboot done, including when the node surfaces NOSTATE (which otherwise
+// leaves the lifecycle state untouched).
+func TestSetServerPhaseRebootCompletes(t *testing.T) {
+	t.Parallel()
+
+	for _, power := range []servers.PowerState{servers.RUNNING, servers.NOSTATE} {
+		server := &unikornv1.Server{}
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+
+		setServerActive(t.Context(), server, &servers.Server{Status: novaStatusActive, PowerState: power}, nil)
+
+		require.Equal(t, unikornv1.ActiveConditionReasonRunning, activeReason(t, server), "power %s", power)
+	}
+}
+
+// TestSetServerPhaseNoStateKeepsNonRebootState proves the reboot-settled
+// exception is narrow: NOSTATE still leaves any other state alone, and a
+// Rebooting stamp holds while Nova has a task in flight.
+func TestSetServerPhaseNoStateKeepsNonRebootState(t *testing.T) {
+	t.Parallel()
+
+	stopping := &unikornv1.Server{}
+	stopping.SetActiveCondition(unikornv1.ActiveConditionReasonStopping)
+	setServerActive(t.Context(), stopping, &servers.Server{Status: novaStatusActive, PowerState: servers.NOSTATE}, nil)
+	require.Equal(t, unikornv1.ActiveConditionReasonStopping, activeReason(t, stopping))
+
+	rebooting := &unikornv1.Server{}
+	rebooting.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+	setServerActive(t.Context(), rebooting, &servers.Server{Status: novaStatusActive, TaskState: "reboot_pending_hard", PowerState: servers.NOSTATE}, nil)
+	require.Equal(t, unikornv1.ActiveConditionReasonRebooting, activeReason(t, rebooting))
+}
+
+// TestConvertServerHealthStatusReboot proves a user-requested reboot reads as
+// indeterminate health, not Degraded.
+func TestConvertServerHealthStatusReboot(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []string{novaStatusHardReboot, novaStatusReboot} {
+		got, reason, message := convertServerHealthStatus(&servers.Server{Status: status})
+
+		require.Equal(t, corev1.ConditionUnknown, got)
+		require.Equal(t, unikornv1core.ConditionReasonUnknown, reason)
+		require.Equal(t, healthMessageIndeterminate, message)
+	}
 }
