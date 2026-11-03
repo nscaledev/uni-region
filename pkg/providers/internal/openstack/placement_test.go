@@ -272,7 +272,7 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 		require.NoError(t, preflight(t.Context(), server))
 	})
 
-	t.Run("UnavailableProviderYields", func(t *testing.T) {
+	t.Run("UnavailableProviderRechecks", func(t *testing.T) {
 		t.Parallel()
 
 		c := gomock.NewController(t)
@@ -301,7 +301,8 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 		)
 
 		err := preflight(t.Context(), server)
-		require.ErrorIs(t, err, provisioners.ErrYield)
+		// A full host is not moving: wait for the next poll, not ten seconds.
+		require.ErrorIs(t, err, provisioners.ErrRecheck)
 
 		// The disposition alone is not the contract: the manager reads a reason
 		// and message off the condition only from a *provisioners.Error, so an

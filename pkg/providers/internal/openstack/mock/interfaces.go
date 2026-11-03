@@ -2289,21 +2289,6 @@ func (mr *MockServerObservationInterfaceMockRecorder) GetServerFault(ctx, id any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServerFault", reflect.TypeOf((*MockServerObservationInterface)(nil).GetServerFault), ctx, id)
 }
 
-// ListServers mocks base method.
-func (m *MockServerObservationInterface) ListServers(ctx context.Context) ([]servers.Server, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListServers", ctx)
-	ret0, _ := ret[0].([]servers.Server)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListServers indicates an expected call of ListServers.
-func (mr *MockServerObservationInterfaceMockRecorder) ListServers(ctx any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListServers", reflect.TypeOf((*MockServerObservationInterface)(nil).ListServers), ctx)
-}
-
 // RebootServer mocks base method.
 func (m *MockServerObservationInterface) RebootServer(ctx context.Context, id string, hard bool) error {
 	m.ctrl.T.Helper()
@@ -2671,21 +2656,6 @@ func (mr *MockComputeInterfaceMockRecorder) GetVolumeAttachment(ctx, serverID, v
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetVolumeAttachment", reflect.TypeOf((*MockComputeInterface)(nil).GetVolumeAttachment), ctx, serverID, volumeID)
 }
 
-// ListServers mocks base method.
-func (m *MockComputeInterface) ListServers(ctx context.Context) ([]servers.Server, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListServers", ctx)
-	ret0, _ := ret[0].([]servers.Server)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListServers indicates an expected call of ListServers.
-func (mr *MockComputeInterfaceMockRecorder) ListServers(ctx any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListServers", reflect.TypeOf((*MockComputeInterface)(nil).ListServers), ctx)
-}
-
 // RebootServer mocks base method.
 func (m *MockComputeInterface) RebootServer(ctx context.Context, id string, hard bool) error {
 	m.ctrl.T.Helper()
@@ -2713,6 +2683,18 @@ func (m *MockComputeInterface) RebuildServer(ctx context.Context, id string, opt
 func (mr *MockComputeInterfaceMockRecorder) RebuildServer(ctx, id, options any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RebuildServer", reflect.TypeOf((*MockComputeInterface)(nil).RebuildServer), ctx, id, options)
+}
+
+// RetireServerLists mocks base method.
+func (m *MockComputeInterface) RetireServerLists() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "RetireServerLists")
+}
+
+// RetireServerLists indicates an expected call of RetireServerLists.
+func (mr *MockComputeInterfaceMockRecorder) RetireServerLists() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RetireServerLists", reflect.TypeOf((*MockComputeInterface)(nil).RetireServerLists))
 }
 
 // ShowConsoleOutput mocks base method.

@@ -187,9 +187,7 @@ func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Con
 // SetProvisioningCondition sets the Available condition with a reason drawn from
 // the provisioning vocabulary. The condition records the spec generation it was
 // evaluated against on every outcome, so a reader can tell a result for the
-// current spec from one left over from a previous spec. This is distinct from
-// Status.Observed.Generation, which stamps a provider observation, not a
-// provisioning result.
+// current spec from one left over from a previous spec.
 func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
 	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
 		Type:               string(unikornv1core.ConditionAvailable),
