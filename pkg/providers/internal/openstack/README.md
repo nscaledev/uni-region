@@ -506,6 +506,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   ([../../../provisioners/managers/volume](../../../provisioners/managers/volume/README.md)),
   which populates `Volume.Status.AttachedAt` and owns claim release.
 - Image handling is a first-class contract surface here:
+  - only Glance images with `public` visibility are listed unless
+    `openstack.image.includeCommunity` is set. That option is for development
+    environments only and must never be enabled in production. With it set,
+    `community` images are listed too, except any carrying an organization ID:
+    uni-region only publishes organization images as public, so such an image
+    is forged or was demoted by its owner
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
   - image properties are translated into provider-neutral OS, package, GPU,
