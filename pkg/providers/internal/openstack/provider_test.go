@@ -2188,12 +2188,6 @@ func TestReconcileServer(t *testing.T) {
 	}
 
 	metadata := map[string]string{
-		// Legacy camelCase keys.
-		"serverID":       server.Name,
-		"organizationID": organizationID,
-		"projectID":      projectID,
-		"regionID":       regionID,
-		// Namespaced duplicates.
 		"region:server_id":         server.Name,
 		"identity:organization_id": organizationID,
 		"identity:project_id":      projectID,
@@ -2265,12 +2259,6 @@ func TestReconcileServerPreflight(t *testing.T) {
 	}
 
 	metadata := map[string]string{
-		// Legacy camelCase keys.
-		"serverID":       server.Name,
-		"organizationID": organizationID,
-		"projectID":      projectID,
-		"regionID":       regionID,
-		// Namespaced duplicates.
 		"region:server_id":         server.Name,
 		"identity:organization_id": organizationID,
 		"identity:project_id":      projectID,
@@ -2592,14 +2580,8 @@ func TestReconcileServerTags(t *testing.T) {
 
 		expectedMetadata := map[string]string{
 			// User tags.
-			"compute:instance_type": "large",
-			"app:env":               "prod",
-			// Legacy system keys.
-			"serverID":       server.Name,
-			"organizationID": organizationID,
-			"projectID":      projectID,
-			"regionID":       regionID,
-			// Namespaced system keys.
+			"compute:instance_type":    "large",
+			"app:env":                  "prod",
 			"region:server_id":         server.Name,
 			"identity:organization_id": organizationID,
 			"identity:project_id":      projectID,
@@ -2637,10 +2619,6 @@ func TestReconcileServerTags(t *testing.T) {
 
 		// The system key must win — value must be the real organizationID.
 		expectedMetadata := map[string]string{
-			"serverID":                 server.Name,
-			"organizationID":           organizationID,
-			"projectID":                projectID,
-			"regionID":                 regionID,
 			"region:server_id":         server.Name,
 			"identity:organization_id": organizationID,
 			"identity:project_id":      projectID,
