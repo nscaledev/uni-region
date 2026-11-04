@@ -129,9 +129,10 @@ related dependencies rather than from nested path scope.
   layer and is rejected with HTTP 409 without a read-before-write
 - server names are immutable after creation; update requests that supply a
   different name are rejected with HTTP 422
-- a v2 update replaces the persisted `userData` wholesale — an omitted field
-  clears the stored value. The value is never applied to the running guest; it
-  is consumed by the next recreate. A rebuild (image change) re-runs the
+- a v2 update keeps persisted `userData` when omitted or null, clears it when
+  an empty string is supplied, and otherwise replaces it. The value is never
+  applied to the running guest; it is consumed by the next recreate. A
+  rebuild (image change) re-runs the
   create-time user data, not the updated value — applying updated user data on
   rebuild is deferred until Nova's microversion 2.57 `user_data` field is wired
   through the client library

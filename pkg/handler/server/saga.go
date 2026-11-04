@@ -177,6 +177,13 @@ func (s *updateV2Saga) getCurrent(ctx context.Context) error {
 	}
 
 	s.current = current
+	if s.request.Spec.UserData == nil {
+		// Resolve omission once so validation and persistence use the same bytes.
+		request := *s.request
+		request.Spec.UserData = &current.Spec.UserData
+		s.request = &request
+	}
+
 	s.organizationID = organizationID
 	s.projectID = projectID
 

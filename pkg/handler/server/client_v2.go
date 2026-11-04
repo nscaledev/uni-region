@@ -135,8 +135,8 @@ func (c *ClientV2) validateCreateImage(ctx context.Context, network *regionv1.Ne
 }
 
 // userDataChanged reports whether an update request would change the persisted
-// user-data. An omitted field (nil) matches only an absent stored value;
-// byte-identical payloads are unchanged.
+// user-data after resolving omission. An empty value matches an empty stored
+// value; byte-identical payloads are unchanged.
 func userDataChanged(current []byte, request *[]byte) bool {
 	if request == nil {
 		return len(current) != 0

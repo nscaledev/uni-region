@@ -22,12 +22,16 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	goerrors "errors"
+	"fmt"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +50,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
@@ -1234,6 +1239,49 @@ func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
 	updated := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
 	require.Equal(t, *result.Spec.UserData, updated.Spec.UserData)
+}
+
+func TestServerPutV2UserDataPersistence(t *testing.T) {
+	t.Parallel()
+
+	legacy := []byte("echo legacy")
+	replacement := []byte("#cloud-config\nusers: []\n")
+
+	for _, test := range []struct {
+		name   string
+		field  string
+		want   []byte
+		status int
+	}{
+		{name: "omitted preserves legacy bytes", want: legacy, status: http.StatusAccepted},
+		{name: "null preserves legacy bytes", field: `,"userData":null`, want: legacy, status: http.StatusAccepted},
+		{name: "empty value clears", field: `,"userData":""`, status: http.StatusAccepted},
+		{name: "value replaces", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: replacement, status: http.StatusAccepted},
+		{name: "unchanged legacy skips validation", field: `,"userData":"` + base64.StdEncoding.EncodeToString(legacy) + `"`, want: legacy, status: http.StatusAccepted},
+		{name: "changed invalid data is rejected", field: `,"userData":"` + base64.StdEncoding.EncodeToString([]byte("echo changed")) + `"`, want: legacy, status: http.StatusUnprocessableEntity},
+		{name: "invalid base64 is rejected", field: `,"userData":"!"`, want: legacy, status: http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			resource := testServerV2(srvServerID)
+			resource.Spec.UserData = legacy
+			k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), resource).Build()
+			h := handler.NewServerV2Handler(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+			body := fmt.Sprintf(`{"metadata":{"name":%q},"spec":{"flavorId":%q,"imageId":%q%s}}`, resource.Name, srvFlavorID, srvImageID, test.field)
+			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+			request := httptest.NewRequestWithContext(ctx, http.MethodPut, "/", strings.NewReader(body))
+			response := httptest.NewRecorder()
+
+			h.PutApiV2ServersServerID(response, request, idstest.MustParseServerID(resource.Name))
+
+			require.Equal(t, test.status, response.Code, response.Body.String())
+
+			stored := &regionv1.Server{}
+			require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(resource), stored))
+			require.Equal(t, test.want, stored.Spec.UserData)
+		})
+	}
 }
 
 func TestServerUpdateV2VolumeSetSemantics(t *testing.T) {
