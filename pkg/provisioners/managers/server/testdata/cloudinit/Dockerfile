@@ -12,31 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Real cloud-init for the cloud-init tests. Base image and packages are pinned
-# exactly. Packages come from a dated Ubuntu archive snapshot, so the pins stay
-# installable after the live archive moves on; bumping them means moving the
-# snapshot. The snapshot service has no arm64 archive, so the image is amd64
-# only. The base image has no CA bundle, so TLS peer checks are off for the
-# snapshot host; apt still verifies the signed Release files. See the server
-# package README's "Cloud-init tests".
+# Real cloud-init for the cloud-init tests. The base image is pinned; packages
+# are whatever Ubuntu 24.04 currently ships, as on a new customer VM. See the
+# server package README's "Cloud-init tests".
 FROM ubuntu@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
 
-ARG SNAPSHOT=20261015T120000Z
-
-RUN printf '%s\n' \
-      'Types: deb' \
-      "URIs: http://snapshot.ubuntu.com/ubuntu/${SNAPSHOT}" \
-      'Suites: noble noble-updates noble-security' \
-      'Components: main' \
-      'Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg' \
-      > /etc/apt/sources.list.d/ubuntu.sources && \
-    echo 'Acquire::https::snapshot.ubuntu.com::Verify-Peer "false";' \
-      > /etc/apt/apt.conf.d/99snapshot && \
-    apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      cloud-init=26.1-0ubuntu1~24.04.1 \
-      openssh-server=1:9.6p1-3ubuntu13.20 \
-      lsb-release=12.0-2 && \
+      cloud-init \
+      openssh-server \
+      lsb-release && \
     rm -rf /var/lib/apt/lists/*
 
 COPY 99-test.cfg /etc/cloud/cloud.cfg.d/99-test.cfg
