@@ -76,12 +76,10 @@ func testServerV1(serverID string) *regionv1.Server {
 	return resource
 }
 
-// TestServerV1UpdateIgnoresImageChange pins the v1 contract that the image is
-// immutable after create: an update carrying a different imageId succeeds, the
-// stored image is preserved (so the provider never observes image drift and
-// never arms a rebuild), and the response reports the retained image. Other
-// spec changes in the same request still apply.
-func TestServerV1UpdateIgnoresImageChange(t *testing.T) {
+// TestServerV1UpdateIgnoresDestructiveInputs pins the v1 compatibility
+// contract: image and user data updates are accepted but retained, so a legacy
+// PUT cannot arm a destructive rebuild.
+func TestServerV1UpdateIgnoresDestructiveInputs(t *testing.T) {
 	t.Parallel()
 
 	k8sClient := newSrvFakeClient(t, testSrvIdentity(), testSrvNetworkWithProject(srvProjectID), testServerV1(srvServerID)).Build()
@@ -117,7 +115,7 @@ func TestServerV1UpdateIgnoresImageChange(t *testing.T) {
 	updated := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: srvServerID}, updated))
 	require.Equal(t, idstest.MustParseImageID(srvImageID), updated.Spec.Image.ID)
-	require.Equal(t, userData, updated.Spec.UserData)
+	require.Nil(t, updated.Spec.UserData)
 }
 
 // TestServerV1UpdateIgnoresNonexistentImage pins that the v1 update does not

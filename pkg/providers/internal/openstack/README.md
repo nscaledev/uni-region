@@ -108,12 +108,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     the user's own server.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
-  `none` omit Nova `key_name`. Image rebuild omits both `key_name` and
-  `user_data`, so Nova preserves the stored keypair and create-time user data
-  (including the managed SSH-CA cloud-init baked in at create) and rebuilt guests
-  stay create-equivalent. Updated user data therefore takes effect on server
-  replacement, not rebuild — Nova accepts `user_data` on rebuild from
-  microversion 2.57, deferred until gophercloud's `RebuildOpts` carries the field.
+  `none` omit Nova `key_name`. Rebuild sends the effective `user_data` payload
+  supported by Nova microversion 2.57, including managed SSH-CA cloud-init
+  augmentation, while preserving the original keypair.
 - A desired server image change is reconciled with Nova rebuild only once the
   server has booted at least once, decided from Nova's `launched_at`
   (`OS-SRV-USG:launched_at`) read fresh on the same `GetServer` — never from the
@@ -143,6 +140,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   known name-collision race.
 - `reconcileServerImage` decides entirely from the fresh `GetServer` on the same
   pass.
+
+  It compares the customer user-data digest captured when Nova accepted the
+  last create or rebuild. A mismatch follows the same launched and quiescent
+  gates as an image mismatch, then submits Nova rebuild with the current image
+  and `user_data`. This keeps changes to managed cloud-init augmentation from
+  rebuilding the fleet. A separate submitted-payload digest records the
+  effective bytes accepted by Nova for audit only. Servers predating the
+  customer digest establish a baseline without a destructive migration rebuild;
+  the API saves that baseline before the first legacy user-data update.
 
   Nova commits the image ref and `task_state` together. `nova/compute/api.py` sets
   `task_state = REBUILDING` and `image_ref = image_href` on one object and saves them
