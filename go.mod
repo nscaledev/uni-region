@@ -16,7 +16,7 @@ require (
 	github.com/spjmurray/go-util v0.1.3
 	github.com/stretchr/testify v1.12.1
 	github.com/unikorn-cloud/core v1.21.0
-	github.com/unikorn-cloud/identity v1.26.0
+	github.com/unikorn-cloud/identity v1.27.0
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/sdk/metric v1.45.0
 	go.opentelemetry.io/otel/trace v1.45.0
