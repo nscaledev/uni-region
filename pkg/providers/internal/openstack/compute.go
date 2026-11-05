@@ -479,12 +479,16 @@ func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options Se
 	defer span.End()
 
 	if !options.UseUserData {
-		return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{ImageRef: options.ImageID.String()}).Extract()
+		return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{
+			ImageRef: options.ImageID.String(),
+			Metadata: options.Metadata,
+		}).Extract()
 	}
 
 	return servers.Rebuild(ctx, c.client, id, rebuildOpts{
 		ImageRef: options.ImageID.String(),
 		UserData: options.UserData,
+		Metadata: options.Metadata,
 	}).Extract()
 }
 
@@ -492,10 +496,11 @@ func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options Se
 type rebuildOpts struct {
 	ImageRef string
 	UserData []byte
+	Metadata map[string]string
 }
 
 func (opts rebuildOpts) ToServerRebuildMap() (map[string]any, error) {
-	body, err := (servers.RebuildOpts{ImageRef: opts.ImageRef}).ToServerRebuildMap()
+	body, err := (servers.RebuildOpts{ImageRef: opts.ImageRef, Metadata: opts.Metadata}).ToServerRebuildMap()
 	if err != nil {
 		return nil, err
 	}

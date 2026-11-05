@@ -145,10 +145,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   last create or rebuild. A mismatch follows the same launched and quiescent
   gates as an image mismatch, then submits Nova rebuild with the current image
   and `user_data`. This keeps changes to managed cloud-init augmentation from
-  rebuilding the fleet. A separate submitted-payload digest records the
-  effective bytes accepted by Nova for audit only. Servers predating the
-  customer digest establish a baseline without a destructive migration rebuild;
-  the API saves that baseline before the first legacy user-data update.
+  rebuilding the fleet. Nova stores the accepted customer digest in one
+  controller-owned metadata item when it accepts create or rebuild. That is the
+  recovery fence for a lost status write: matching customer bytes restore the
+  accepted digest, while different customer bytes rebuild once. A changed
+  augmentation does not rebuild. Servers predating the metadata item establish a
+  baseline without a destructive migration rebuild; the API saves that baseline
+  before the first legacy user-data update.
 
   Nova commits the image ref and `task_state` together. `nova/compute/api.py` sets
   `task_state = REBUILDING` and `image_ref = image_href` on one object and saves them
@@ -169,8 +172,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   | R1 | `Spec.Image == nil` | **park** |
   | R2 | image ref unreadable | **park** |
   | R3 | ref == desired, rebuild task active | yield |
-  | R3′ | ref == desired, `ERROR`, launched | **park** |
-  | R3″ | ref == desired, otherwise | done |
+  | R3′ | ref == desired, `ERROR`, launched, current rebuild recorded, attempts remain | **submit** |
+  | R3″ | ref == desired, `ERROR`, launched, current rebuild recorded, attempts exhausted | **park** |
+  | R3‴ | ref == desired, `ERROR`, launched, hashes metadata-recovered or legacy-baselined | **park** |
+  | R3⁗ | ref == desired, otherwise | done |
   | R4 | ref != desired, `launched_at` zero | yield |
   | R4′ | ref != desired, any task active | yield |
   | R4″ | ref != desired, quiescent | **submit** |
@@ -210,7 +215,19 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   submitting the question is only whether Nova would accept, and it refuses while any
   task holds the server.
 
-  R3′ parks a quiesced `ERROR` on the desired ref as user-action-required
+  A quiesced `ERROR` on the desired ref retries Nova rebuild only when an
+  unresolved provider-accepted attempt is recorded for the current target hash
+  and Server generation. The record clears when the desired ref converges
+  outside `ERROR`, so a later unrelated `ERROR` cannot consume its budget or
+  authorize another rebuild. An unresolved rebuild retries until three
+  provider-accepted attempts have failed, then parks as user-action-required.
+  A metadata-recovered or legacy-baselined unrecorded `ERROR` parks because the
+  image ref alone cannot certify the failed write. An unrecorded `ERROR` with an
+  intact status record remains monitor-owned because Nova cannot attribute it to
+  a provider rebuild.
+
+  R3″ parks a quiesced `ERROR` on the desired ref with a current recorded
+  rebuild as user-action-required
   (`provisioners.UserActionRequired`, so `provisioningStatus=error` with an
   actionable, cause-neutral message that advertises the spec-edit remedy),
   mirroring create-retry's exhausted-attempts park. The
@@ -233,7 +250,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   wake resumes reconciliation, monitor-independent. Or the provider recovers
   without a spec change, in which case the un-park rides the monitor's
   `status.observed` write firing the observed wake: the park is re-derived per
-  pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
+  pass, so the woken pass walks to R3⁗ and reads `provisioned` again (the same
   measured path as a foreign recovery, below — within one monitor period). Or
   the provider server disappears entirely — deleted out-of-band — in which case
   the monitor's `Observe` finds no row for it and `projectServerState`'s absent
@@ -245,44 +262,20 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   own fresh read then routes not-found to the create path and recreates the
   server.
 
-  The provisioning axis reports *spec-realization*, not attribution. A
-  rebuild-class operation this provider did not submit — `nova evacuate` is
-  implemented as a rebuild, presenting `task_state=rebuilding` with the ref
-  already on the spec image — therefore reads exactly as ours when a pass runs.
-  Measured behaviour: an in-flight foreign rebuild does not move the
-  provisioning axis at all (a foreign operation generates no reconciler wake —
-  no spec change, no observed change — so R3 never runs; only the monitor's
-  phase and health axes read `Rebuilding`/`Unknown` for one poll cycle), a
-  *failed* foreign rebuild parks via the observed-errored wake within one
-  monitor period, and a foreign recovery un-parks the same way. A foreign
-  rebuild onto a *different* image — succeeded or failed — is auto-reverted:
-  the ref flip changes `observed.image`, the wake fires, and R4″ resubmits
-  toward the spec image (measured: ~20s from the foreign act to the corrective
-  rebuild). The park is therefore scoped precisely to failures on the
-  *converged* ref, where the spec image itself is implicated; divergent-ref
-  failures are reconverged instead. Operational consequence: operators must
-  change the spec, never act through Nova — a Nova-side image change is undone
-  within seconds. This is deliberate. During any rebuild-shaped operation the
-  server is not serving its spec — a rebuild is rewriting the root disk, while an
-  evacuation on shared storage rebuilds the instance on another host without
-  touching it — so `provisioning` is honest; after a failed one the spec image is
-  not running. Both reports are true regardless of who initiated the operation, and
-  no destructive row can fire on a foreign operation (R4″ requires a diverged
-  ref, which a foreign rebuild does not present). The park is re-derived per
-  pass, not latched: when a foreign recovery returns the server to `ACTIVE` on
-  the converged ref, the next pass walks to R3″ and the server reads
-  `provisioned` again. What this costs is attribution in the *messages* — a
-  failed evacuation reports the same cause-neutral park message as a failed
-  rebuild — which is the price of having no persisted intent to consult, and
-  why the message names neither.
+  The provisioning axis reports spec realization rather than cause. A foreign
+  rebuild or other operation cannot consume the retry budget without a current
+  provider-recorded rebuild attempt, because the provider API cannot attribute a
+  quiesced `ERROR`. A rebuild on a different image is still reconciled toward
+  the desired image through R4″.
 
   R4 defers to the create-retry path rather than duplicating it, and Nova enforces the
   same precondition itself (`must_have_launched`).
 
   R4″ is the single destructive step. The submission (`submitServerRebuild`) writes a
   fixed accepted stamp on a 2xx (`Active` `Rebuilding`, `Healthy` `Unknown`, matching
-  the monitor's `REBUILD` mapping so the two writers agree rather than churn) and never
-  derives it from the rebuild response body, whose 202 can still describe the
+  the monitor's `REBUILD` mapping so the two writers agree rather than churn) and
+  sends the paired user-data hashes in the same Nova action. It never derives the
+  stamp from the rebuild response body, whose 202 can still describe the
   pre-destruction server as `ACTIVE` and would stamp a just-accepted destructive
   rebuild as running. Acceptance *yields* rather than completing: Nova now has a
   destructive operation in flight, and completing would map to

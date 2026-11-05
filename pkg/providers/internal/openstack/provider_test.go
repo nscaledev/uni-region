@@ -2199,6 +2199,7 @@ func TestReconcileServer(t *testing.T) {
 		"identity:project_id":      projectID,
 		"region:region_id":         regionID,
 	}
+	metadata["region:userdata_hashes"] = userDataHashesMetadata(server.Spec.UserData)
 
 	t.Run("ItDoesntExist", func(t *testing.T) {
 		t.Parallel()
@@ -2276,6 +2277,7 @@ func TestReconcileServerPreflight(t *testing.T) {
 		"identity:project_id":      projectID,
 		"region:region_id":         regionID,
 	}
+	metadata["region:userdata_hashes"] = userDataHashesMetadata(server.Spec.UserData)
 
 	t.Run("ItYieldsBeforeCreate", func(t *testing.T) {
 		t.Parallel()
@@ -2382,11 +2384,7 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 
 	compute := mock.NewMockServerInterface(c)
 	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
-	compute.EXPECT().RebuildServer(t.Context(), "server-1", openstack.ServerRebuildOptions{
-		ImageID:     idstest.MustParseImageID(rebuildNewImageID),
-		UserData:    options.UserData,
-		UseUserData: true,
-	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	compute.EXPECT().RebuildServer(t.Context(), "server-1", rebuildOptionsFor(idstest.MustParseImageID(rebuildNewImageID), server.Spec.UserData, options.UserData, nil)).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	p := openstack.NewTestProvider(client, regionFixture())
 
@@ -2607,6 +2605,7 @@ func TestReconcileServerTags(t *testing.T) {
 			"identity:project_id":      projectID,
 			"region:region_id":         regionID,
 		}
+		expectedMetadata["region:userdata_hashes"] = userDataHashesMetadata(server.Spec.UserData)
 
 		compute := mock.NewMockServerInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
@@ -2648,6 +2647,7 @@ func TestReconcileServerTags(t *testing.T) {
 			"identity:project_id":      projectID,
 			"region:region_id":         regionID,
 		}
+		expectedMetadata["region:userdata_hashes"] = userDataHashesMetadata(server.Spec.UserData)
 
 		compute := mock.NewMockServerInterface(c)
 		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
