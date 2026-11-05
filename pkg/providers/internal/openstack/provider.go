@@ -3261,6 +3261,18 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	})
 }
 
+// writeProviderCreateGateOutputs adds satisfied provider-create gates' outputs
+// to metadata, logging any that map to no metadata key rather than dropping
+// them silently.
+func writeProviderCreateGateOutputs(ctx context.Context, metadata map[string]string, server *unikornv1.Server) {
+	outputs, unmapped := server.ProviderCreateGateOutputMetadata()
+	if len(unmapped) > 0 {
+		log.FromContext(ctx).Info("provider-create gate outputs map to no metadata key, not published", "outputs", unmapped)
+	}
+
+	maps.Copy(metadata, outputs)
+}
+
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
 	log := log.FromContext(ctx)
 
@@ -3309,7 +3321,13 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		}
 	}
 
-	// System keys written last — unconditionally overwrite any colliding user tag.
+	// Satisfied provider-create gates' outputs, after user tags so a tenant
+	// cannot override what the gate's owner published, and before system keys
+	// so they cannot override those.
+	writeProviderCreateGateOutputs(ctx, metadata, server)
+
+	// System keys written last — unconditionally overwrite any colliding user
+	// tag or gate output.
 	for k, v := range namespacedSystemMetadata {
 		metadata[k] = v
 	}

@@ -17,8 +17,12 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 // tagKeyRegex matches a namespaced tag name "<service>.<domain>/<local-name>",
@@ -54,4 +58,36 @@ func ProviderCreateGateOutputKey(conditionType, key string) (string, bool) {
 	}
 
 	return MetadataKey(domain + "/" + key)
+}
+
+// ProviderCreateGateOutputMetadata returns the outputs of every satisfied
+// gate as instance metadata. Gates are taken in spec order, and a later
+// gate's key replaces an earlier one's, as a later tag's does. Outputs that
+// map to no metadata key are returned as "<conditionType>: <key>" for the
+// caller to report: the API refuses them, so they can only come from a status
+// written another way.
+func (c *Server) ProviderCreateGateOutputMetadata() (map[string]string, []string) {
+	metadata := map[string]string{}
+
+	var unmapped []string
+
+	for _, gate := range c.Spec.ProviderCreateGates {
+		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
+		if !ok || status.Status != corev1.ConditionTrue {
+			continue
+		}
+
+		for _, key := range slices.Sorted(maps.Keys(status.Outputs)) {
+			name, ok := ProviderCreateGateOutputKey(gate.ConditionType, key)
+			if !ok {
+				unmapped = append(unmapped, gate.ConditionType+": "+key)
+
+				continue
+			}
+
+			metadata[name] = status.Outputs[key]
+		}
+	}
+
+	return metadata, unmapped
 }
