@@ -33,19 +33,21 @@ import (
 
 var _ = Describe("Stale test resource sweep", func() {
 	Context("When dependent resources block deletion of their network", func() {
-		Describe("Given the server, file storage, and network are stale test fixtures", func() {
+		Describe("Given the server, file storage, load balancer, and network are stale test fixtures", func() {
 			It("deletes the dependents before deleting the network", func() {
 				const (
-					serverID      = "server-1"
-					fileStorageID = "filestorage-1"
-					networkID     = "network-1"
-					orgID         = "org-1"
-					projectID     = "project-1"
-					regionID      = "region-1"
+					serverID       = "server-1"
+					fileStorageID  = "filestorage-1"
+					loadBalancerID = "loadbalancer-1"
+					networkID      = "network-1"
+					orgID          = "org-1"
+					projectID      = "project-1"
+					regionID       = "region-1"
 				)
 
 				var serverDeleted atomic.Bool
 				var fileStorageDeleted atomic.Bool
+				var loadBalancerDeleted atomic.Bool
 				var networkDeleteCalls atomic.Int32
 
 				created := time.Now().Add(-StaleTestResourceTTL - time.Hour).UTC()
@@ -85,6 +87,21 @@ var _ = Describe("Stale test resource sweep", func() {
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetFileStorage(fileStorageID):
 						Expect(fileStorageDeleted.Load()).To(BeTrue())
 						w.WriteHeader(http.StatusNotFound)
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListLoadBalancers(orgID, projectID, regionID):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{{
+							"metadata": map[string]any{
+								"id":           loadBalancerID,
+								"name":         "ginkgo-test-loadbalancer-12345678",
+								"creationTime": created,
+							},
+						}})).To(Succeed())
+					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteLoadBalancer(loadBalancerID):
+						Expect(fileStorageDeleted.Load()).To(BeTrue())
+						loadBalancerDeleted.Store(true)
+						w.WriteHeader(http.StatusAccepted)
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.GetLoadBalancer(loadBalancerID):
+						Expect(loadBalancerDeleted.Load()).To(BeTrue())
+						w.WriteHeader(http.StatusNotFound)
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{{
 							"metadata": map[string]any{
@@ -95,7 +112,7 @@ var _ = Describe("Stale test resource sweep", func() {
 						}})).To(Succeed())
 					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteNetwork(networkID):
 						networkDeleteCalls.Add(1)
-						if !fileStorageDeleted.Load() {
+						if !fileStorageDeleted.Load() || !loadBalancerDeleted.Load() {
 							w.WriteHeader(http.StatusForbidden)
 							return
 						}
@@ -126,6 +143,7 @@ var _ = Describe("Stale test resource sweep", func() {
 
 				Expect(serverDeleted.Load()).To(BeTrue())
 				Expect(fileStorageDeleted.Load()).To(BeTrue())
+				Expect(loadBalancerDeleted.Load()).To(BeTrue())
 				Expect(networkDeleteCalls.Load()).To(Equal(int32(1)))
 			})
 		})
@@ -160,6 +178,8 @@ var _ = Describe("Stale test resource sweep", func() {
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListNetworks(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
 					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListVolumes(orgID, projectID, regionID, ""):
+						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
+					case r.Method == http.MethodGet && r.URL.RequestURI() == endpoints.ListLoadBalancers(orgID, projectID, regionID):
 						Expect(json.NewEncoder(w).Encode([]map[string]any{})).To(Succeed())
 					case r.Method == http.MethodDelete && r.URL.RequestURI() == endpoints.DeleteFileStorage(fileStorageID):
 						deleteCalls.Add(1)
