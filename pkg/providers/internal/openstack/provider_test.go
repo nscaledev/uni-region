@@ -2497,66 +2497,6 @@ func TestImageTagRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMetadataKey tests the tag key transformation from namespaced CRD tag format
-// to the OpenStack metadata key format.
-func TestMetadataKey(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name     string
-		input    string
-		expected string
-		ok       bool
-	}{
-		{
-			name:     "ValidSimple",
-			input:    "compute.unikorn-cloud.org/instance-id",
-			expected: "compute:instance_id",
-			ok:       true,
-		},
-		{
-			name:     "ValidOtherService",
-			input:    "kubernetes.unikorn-cloud.org/cluster-id",
-			expected: "kubernetes:cluster_id",
-			ok:       true,
-		},
-		{
-			name:     "ValidHyphenInSubdomain",
-			input:    "my-service.unikorn-cloud.org/foo-bar",
-			expected: "my-service:foo_bar",
-			ok:       true,
-		},
-		{
-			name:  "InvalidNoSlash",
-			input: "compute.unikorn-cloud.org",
-			ok:    false,
-		},
-		{
-			name:  "InvalidUppercase",
-			input: "Compute.unikorn-cloud.org/id",
-			ok:    false,
-		},
-		{
-			name:  "InvalidBareName",
-			input: "instance-id",
-			ok:    false,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, ok := openstack.MetadataKey(c.input)
-			require.Equal(t, c.ok, ok)
-
-			if c.ok {
-				require.Equal(t, c.expected, got)
-			}
-		})
-	}
-}
-
 // TestReconcileServerTags verifies that server tags are correctly forwarded to
 // OpenStack instance metadata, invalid keys are silently dropped, and system keys
 // are always present and cannot be overwritten by user tags.

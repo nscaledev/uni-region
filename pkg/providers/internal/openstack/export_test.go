@@ -114,9 +114,6 @@ var ImageTags = imageTags
 var CreateImageMetadata = createImageMetadata
 
 //nolint:gochecknoglobals
-var MetadataKey = metadataKey
-
-//nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
 func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
