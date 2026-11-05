@@ -85,7 +85,7 @@ func withProviderCreateGate(status corev1.ConditionStatus) func(*regionv1.Server
 		}
 
 		if status != "" {
-			server.ProviderCreateGateStatusWrite(testProviderGate, status, testProviderActor, testProviderReason, testProviderMessage)
+			server.ProviderCreateGateStatusWrite(testProviderGate, status, testProviderActor, testProviderReason, testProviderMessage, nil)
 		}
 	}
 }

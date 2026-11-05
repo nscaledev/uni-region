@@ -208,3 +208,33 @@ func crdSchema(t *testing.T, crdFile string) *apixv1.JSONSchemaProps {
 
 	return nil
 }
+
+// The CRD checks a gate's outputs as the gate report API does: at most 8,
+// keys as a tag's local name, values at most 255 characters. The rule is only
+// within the apiserver's CEL cost budget because the gate lists are bounded
+// (16): an unbounded list multiplies its estimated cost past the budget.
+func TestServerProviderCreateGateOutputsSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := crdSchema(t, serverCRDFile)
+
+	for _, path := range [][]string{{"spec", "providerCreateGates"}, {"status", "providerCreateGates"}} {
+		gates := requireSchemaProperty(t, schema, path...)
+		require.NotNil(t, gates.MaxItems, path)
+		require.EqualValues(t, 16, *gates.MaxItems, path)
+	}
+
+	gates := requireSchemaProperty(t, schema, "status", "providerCreateGates")
+	require.NotNil(t, gates.Items)
+	require.NotNil(t, gates.Items.Schema)
+
+	outputs, ok := gates.Items.Schema.Properties["outputs"]
+	require.True(t, ok, "status.providerCreateGates[].outputs is missing")
+	require.Equal(t, "object", outputs.Type)
+	require.NotNil(t, outputs.MaxProperties)
+	require.EqualValues(t, 8, *outputs.MaxProperties)
+	require.NotNil(t, outputs.AdditionalProperties)
+	require.Equal(t, "string", outputs.AdditionalProperties.Schema.Type)
+	require.Len(t, outputs.XValidations, 1)
+	require.Equal(t, "self.all(k, k.matches('^[a-z0-9][a-z0-9-]*$') && size(self[k]) <= 255)", outputs.XValidations[0].Rule)
+}

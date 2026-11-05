@@ -145,7 +145,7 @@ func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
 
 		if write {
 			server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/partition-ready",
-				gateStatus, "actor", "Reason", "message")
+				gateStatus, "actor", "Reason", "message", nil)
 		}
 
 		return server
