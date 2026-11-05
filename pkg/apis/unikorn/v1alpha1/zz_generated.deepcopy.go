@@ -2864,6 +2864,13 @@ func (in *ServerProviderCreateGate) DeepCopy() *ServerProviderCreateGate {
 func (in *ServerProviderCreateGateStatus) DeepCopyInto(out *ServerProviderCreateGateStatus) {
 	*out = *in
 	in.LastTransitionTime.DeepCopyInto(&out.LastTransitionTime)
+	if in.Outputs != nil {
+		in, out := &in.Outputs, &out.Outputs
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	return
 }
 

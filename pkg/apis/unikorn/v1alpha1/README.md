@@ -89,7 +89,14 @@ stored objects rely on for linkage, migration, and operational coordination.
 - `Server.Spec.ProviderCreateGates` is immutable create-time desired state used
   by the server controller to pause before provider create. Matching
   `Server.Status.ProviderCreateGates` entries record the condition status,
-  actor, reason, message, and transition time for operator diagnostics. The
+  actor, reason, message, and transition time for operator diagnostics, and
+  any `outputs` the satisfier published for instance metadata.
+  `ProviderCreateGateStatusWrite` replaces the whole entry, so outputs are an
+  explicit argument; `ProviderCreateGatesReset` clears them. Both gate lists
+  hold at most 16 entries. That bound is load-bearing: the CEL rule on
+  `outputs` runs once per list entry, and the apiserver estimates a rule's
+  cost from the most entries a list may hold, so on an unbounded list it
+  refuses the CRD as over its cost budget. The
   generic `Server.Status.Conditions` list remains reserved for Region-owned
   lifecycle conditions.
 - `FileStorage` carries a more explicit observed-state model than the older

@@ -931,7 +931,7 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 
 	if changed {
 		updated := current.DeepCopy()
-		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message)
+		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message, nil)
 
 		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 			return fmt.Errorf("%w: unable to satisfy provider-create gate", err)

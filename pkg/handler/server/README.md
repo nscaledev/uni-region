@@ -91,9 +91,9 @@ related dependencies rather than from nested path scope.
 - create can carry an `infrastructureRef` that pins initial placement to a
   provider-specific physical host; reads expose the value in status so callers
   can verify the placement request that was persisted
-- create can carry immutable `providerCreateGates`; reads expose only
-  `status.remainingProviderCreateGates`, while the stored Kubernetes object
-  retains per-gate status details for operators
+- create can carry immutable `providerCreateGates` (at most 16); reads
+  expose only `status.remainingProviderCreateGates`, while the stored
+  Kubernetes object retains per-gate status details for operators
 - internal service callers can satisfy an existing provider-create gate through
   `POST /api/v2/servers/{serverID}/provider-create-gates`, which records the
   authenticated service actor, reason, and message on the status subresource

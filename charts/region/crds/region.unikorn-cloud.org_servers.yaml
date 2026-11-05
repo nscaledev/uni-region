@@ -129,6 +129,7 @@ spec:
                   required:
                   - conditionType
                   type: object
+                maxItems: 16
                 type: array
                 x-kubernetes-list-map-keys:
                 - conditionType
@@ -362,6 +363,21 @@ spec:
                     message:
                       description: Message is human-readable detail.
                       type: string
+                    outputs:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        Outputs are values the gate's satisfier publishes to the server as
+                        instance metadata at provider create. Fixed once the gate is True;
+                        cleared when a provider-create retry resets the gate. The rule's cost
+                        depends on the gate lists' MaxItems: see this package's README.
+                      maxProperties: 8
+                      type: object
+                      x-kubernetes-validations:
+                      - message: output keys are a tag's local name and values at
+                          most 255 characters
+                        rule: self.all(k, k.matches('^[a-z0-9][a-z0-9-]*$') && size(self[k])
+                          <= 255)
                     reason:
                       description: Reason is a machine-readable reason for the status.
                       type: string
@@ -377,6 +393,7 @@ spec:
                   - lastTransitionTime
                   - status
                   type: object
+                maxItems: 16
                 type: array
                 x-kubernetes-list-map-keys:
                 - conditionType

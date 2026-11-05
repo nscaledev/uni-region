@@ -2223,7 +2223,7 @@ func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
 		{ConditionType: srvProviderGate},
 		{ConditionType: "example.unikorn-cloud.org/second-ready"},
 	}
-	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, "service", "Prepared", "done")
+	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, "service", "Prepared", "done", nil)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)

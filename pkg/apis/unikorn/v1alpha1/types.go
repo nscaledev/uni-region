@@ -1134,6 +1134,7 @@ type ServerSpec struct {
 	// the server controller calls the provider create path.
 	// +listType=map
 	// +listMapKey=conditionType
+	// +kubebuilder:validation:MaxItems=16
 	ProviderCreateGates []ServerProviderCreateGate `json:"providerCreateGates,omitempty"`
 }
 
@@ -1250,6 +1251,7 @@ type ServerStatus struct {
 	// ProviderCreateGates reports externally satisfied provider-create gates.
 	// +listType=map
 	// +listMapKey=conditionType
+	// +kubebuilder:validation:MaxItems=16
 	ProviderCreateGates []ServerProviderCreateGateStatus `json:"providerCreateGates,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
@@ -1356,6 +1358,14 @@ type ServerProviderCreateGateStatus struct {
 	Reason string `json:"reason,omitempty"`
 	// Message is human-readable detail.
 	Message string `json:"message,omitempty"`
+	// Outputs are values the gate's satisfier publishes to the server as
+	// instance metadata at provider create. Fixed once the gate is True;
+	// cleared when a provider-create retry resets the gate. The rule's cost
+	// depends on the gate lists' MaxItems: see this package's README.
+	// +kubebuilder:validation:MaxProperties=8
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.matches('^[a-z0-9][a-z0-9-]*$') && size(self[k]) <= 255)",message="output keys are a tag's local name and values at most 255 characters"
+	// +optional
+	Outputs map[string]string `json:"outputs,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.

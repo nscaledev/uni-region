@@ -19,6 +19,7 @@ package v1alpha1
 
 import (
 	"fmt"
+	"maps"
 	"net"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
@@ -306,7 +307,10 @@ func (c *Server) ProviderCreateGateStatusRead(conditionType string) (*ServerProv
 	return nil, false
 }
 
-func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status corev1.ConditionStatus, actor, reason, message string) {
+// ProviderCreateGateStatusWrite records a gate's status. It replaces the whole
+// entry, so outputs are an explicit argument: pass the outputs to keep, or nil
+// to clear them. The map is copied.
+func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status corev1.ConditionStatus, actor, reason, message string, outputs map[string]string) {
 	now := metav1.Now()
 	gate := ServerProviderCreateGateStatus{
 		ConditionType:      conditionType,
@@ -315,6 +319,7 @@ func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status core
 		Actor:              actor,
 		Reason:             reason,
 		Message:            message,
+		Outputs:            maps.Clone(outputs),
 	}
 
 	existing, ok := c.ProviderCreateGateStatusRead(conditionType)
@@ -348,9 +353,12 @@ func (c *Server) ProviderCreateGatesReady() bool {
 	return len(c.RemainingProviderCreateGates()) == 0
 }
 
+// ProviderCreateGatesReset returns every configured gate to Unknown for a
+// provider-create retry, clearing its outputs: the next satisfying report
+// sets them again, before the next create.
 func (c *Server) ProviderCreateGatesReset(actor, reason, message string) {
 	for _, gate := range c.Spec.ProviderCreateGates {
-		c.ProviderCreateGateStatusWrite(gate.ConditionType, corev1.ConditionUnknown, actor, reason, message)
+		c.ProviderCreateGateStatusWrite(gate.ConditionType, corev1.ConditionUnknown, actor, reason, message, nil)
 	}
 }
 
