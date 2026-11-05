@@ -27,7 +27,6 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -102,22 +101,6 @@ const (
 	// These ones are well defined openstack image properties.
 	imageArchitectureProperty = "architecture"
 )
-
-var tagKeyRegex = regexp.MustCompile(
-	`^([a-z0-9][a-z0-9-]*)\.[^/]+/([a-z0-9][a-z0-9-]*)$`,
-)
-
-// metadataKey converts a namespaced tag key of the form
-// "<service>.unikorn-cloud.org/<local-name>" into the OpenStack metadata key
-// "<service>:<local_name>", returning false if the key does not match the schema.
-func metadataKey(key string) (string, bool) {
-	m := tagKeyRegex.FindStringSubmatch(key)
-	if m == nil {
-		return "", false
-	}
-
-	return m[1] + ":" + strings.ReplaceAll(m[2], "-", "_"), true
-}
 
 type providerCredentials struct {
 	endpoint  string
@@ -2006,7 +1989,7 @@ func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[
 	metadata := make(map[string]string, len(volume.Spec.Tags)+len(namespacedSystemMetadata))
 
 	for _, tag := range volume.Spec.Tags {
-		if key, ok := metadataKey(tag.Name); ok {
+		if key, ok := unikornv1.MetadataKey(tag.Name); ok {
 			metadata[key] = tag.Value
 		}
 	}
@@ -3321,7 +3304,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	metadata := make(map[string]string, len(server.Spec.Tags)+len(systemMetadata)+len(namespacedSystemMetadata))
 
 	for _, tag := range server.Spec.Tags {
-		if k, ok := metadataKey(tag.Name); ok {
+		if k, ok := unikornv1.MetadataKey(tag.Name); ok {
 			metadata[k] = tag.Value
 		}
 	}
