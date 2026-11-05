@@ -22,6 +22,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestMetadataKey(t *testing.T) {
@@ -108,4 +110,33 @@ func TestProviderCreateGateOutputKey(t *testing.T) {
 		_, ok := regionv1.ProviderCreateGateOutputKey(c.conditionType, c.key)
 		require.False(t, ok, c)
 	}
+}
+
+// Only satisfied gates publish. Gates are taken in spec order, and a later
+// gate's key replaces an earlier one's, as a later tag's does. An output that
+// maps to no metadata key (the API refuses one, so it can only come from a
+// status written another way) is returned rather than dropped silently.
+func TestServerProviderCreateGateOutputMetadata(t *testing.T) {
+	t.Parallel()
+
+	server := &regionv1.Server{
+		Spec: regionv1.ServerSpec{
+			ProviderCreateGates: []regionv1.ServerProviderCreateGate{
+				{ConditionType: "fabric.unikorn-cloud.org/a-ready"},
+				{ConditionType: "storage.unikorn-cloud.org/pending"},
+				{ConditionType: "nodomain"},
+				{ConditionType: "fabric.unikorn-cloud.org/b-ready"},
+			},
+		},
+	}
+
+	server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/b-ready", corev1.ConditionTrue, "b", "Ready", "ready", map[string]string{"pkey": "0x0b00"})
+	server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/a-ready", corev1.ConditionTrue, "a", "Ready", "ready", map[string]string{"pkey": "0x0a00", "pkeys": "0x0a00"})
+	server.ProviderCreateGateStatusWrite("storage.unikorn-cloud.org/pending", corev1.ConditionUnknown, "s", "Waiting", "waiting", map[string]string{"volume": "v"})
+	server.ProviderCreateGateStatusWrite("nodomain", corev1.ConditionTrue, "n", "Ready", "ready", map[string]string{"x": "y"})
+
+	metadata, unmapped := server.ProviderCreateGateOutputMetadata()
+
+	require.Equal(t, map[string]string{"fabric:pkey": "0x0b00", "fabric:pkeys": "0x0a00"}, metadata)
+	require.Equal(t, []string{"nodomain: x"}, unmapped)
 }
