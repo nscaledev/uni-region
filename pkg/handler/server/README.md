@@ -96,7 +96,18 @@ related dependencies rather than from nested path scope.
   Kubernetes object retains per-gate status details for operators
 - internal service callers can satisfy an existing provider-create gate through
   `POST /api/v2/servers/{serverID}/provider-create-gates`, which records the
-  authenticated service actor, reason, and message on the status subresource
+  authenticated service actor, reason, and message on the status subresource.
+  The satisfying report may carry `outputs` (at most 8), which the provider
+  writes into the server's metadata at create, named as tags would be under
+  the gate's service prefix (`pkey` on
+  `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`). Outputs
+  are frozen once the gate is True, because metadata is written only at
+  create and the controller may already be creating the server: a later
+  report with the same outputs or none keeps them, and one with any other
+  outputs, including outputs brought to a gate satisfied without them, is
+  refused with 409 and writes nothing. An output that maps to no metadata key
+  is a 400, not a 422, which satisfiers read as "gate not configured here".
+  A lost optimistic-lock race on the status patch is a 500, to be retried
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
   be allowed to update the server and to create images in the owning
@@ -187,6 +198,9 @@ related dependencies rather than from nested path scope.
   `region:servers:v2/provider-create-gates` permission, and needs nothing else
   on the server. It is for internal services; of the built-in roles only the
   platform administrator also holds it.
+  Its outputs carry no extra permission: whoever may satisfy a gate may
+  publish its outputs. They land in instance metadata, readable from inside
+  the server, so they must not be secret.
 - `v1` update needs update on the server.
 - The Kubernetes resource name for a `v2` server is a deterministic UUID v5
   derived from `(networkID, serverName)` at creation time, making the name

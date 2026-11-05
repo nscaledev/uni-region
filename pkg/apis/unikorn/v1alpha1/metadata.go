@@ -40,3 +40,18 @@ func MetadataKey(name string) (string, bool) {
 
 	return m[1] + ":" + strings.ReplaceAll(m[2], "-", "_"), true
 }
+
+// ProviderCreateGateOutputKey returns the instance metadata key an output is
+// published under: its key named as a tag would be under the gate's own
+// "<service>.<domain>/", so "pkey" on
+// "fabric.unikorn-cloud.org/partition-ready" is "fabric:pkey". It is false
+// when the condition type has no such prefix, or the key is not a tag's local
+// name.
+func ProviderCreateGateOutputKey(conditionType, key string) (string, bool) {
+	domain, _, ok := strings.Cut(conditionType, "/")
+	if !ok {
+		return "", false
+	}
+
+	return MetadataKey(domain + "/" + key)
+}
