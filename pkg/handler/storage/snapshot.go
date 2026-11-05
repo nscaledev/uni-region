@@ -199,6 +199,11 @@ func (c *Client) DeleteSnapshot(ctx context.Context, storageID regionids.FileSto
 		return nil
 	}
 
+	// A restore in progress holds a reference until it has copied the data.
+	if snapshotInUse(resource) {
+		return errors.HTTPConflict()
+	}
+
 	if err := c.Client.Delete(ctx, resource); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)

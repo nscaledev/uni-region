@@ -110,6 +110,12 @@ func (e *Endpoints) DeleteFileStorageSnapshot(filestorageID, snapshotID string) 
 		url.PathEscape(filestorageID), url.PathEscape(snapshotID))
 }
 
+// RestoreFileStorageSnapshot returns the endpoint that creates a file storage from a Manual Snapshot.
+func (e *Endpoints) RestoreFileStorageSnapshot(filestorageID, snapshotID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s/snapshots/%s/restore",
+		url.PathEscape(filestorageID), url.PathEscape(snapshotID))
+}
+
 // UpdateFileStorage returns the endpoint for updating a specific file storage resource.
 func (e *Endpoints) UpdateFileStorage(filestorageID string) string {
 	return fmt.Sprintf("/api/v2/filestorage/%s",

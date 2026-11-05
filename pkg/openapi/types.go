@@ -197,6 +197,52 @@ type FileStorageId = regionids.FileStorageID
 // FileStorageSnapshotId A Manual File Storage Snapshot ID.
 type FileStorageSnapshotId = regionids.FileStorageSnapshotID
 
+// FileStorageSnapshotRestoreV2Create A request to restore a Manual Snapshot into a new target.
+type FileStorageSnapshotRestoreV2Create struct {
+	// Target What the snapshot is restored into. Only the fileStorage type is supported, any other type is unprocessable.
+	Target FileStorageSnapshotRestoreV2Target `json:"target"`
+}
+
+// FileStorageSnapshotRestoreV2FileStorage A new File Storage to restore the snapshot into. Required when the target type is fileStorage.
+type FileStorageSnapshotRestoreV2FileStorage struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+	Spec     struct {
+		// Attachments Describes the network attachment for storage
+		Attachments *StorageAttachmentV2Spec `json:"attachments,omitempty"`
+
+		// DefaultSnapshotProtectionEnabled Whether platform-managed Default Snapshot Protection is enabled. Omission copies the setting of the snapshot's File Storage. Explicit null is invalid.
+		DefaultSnapshotProtectionEnabled *bool `json:"defaultSnapshotProtectionEnabled,omitempty"`
+
+		// SizeGiB Size in GiB of the new storage. Defaults to, and must be at least, the size of the snapshot's File Storage.
+		SizeGiB *int64 `json:"sizeGiB,omitempty"`
+	} `json:"spec"`
+}
+
+// FileStorageSnapshotRestoreV2Read The result of restoring a Manual Snapshot.
+type FileStorageSnapshotRestoreV2Read struct {
+	// Target What the snapshot was restored into. Exactly the member named by type is set.
+	Target FileStorageSnapshotRestoreV2ReadTarget `json:"target"`
+}
+
+// FileStorageSnapshotRestoreV2ReadTarget What the snapshot was restored into. Exactly the member named by type is set.
+type FileStorageSnapshotRestoreV2ReadTarget struct {
+	// FileStorage A storage read only group.
+	FileStorage *StorageV2Read `json:"fileStorage,omitempty"`
+
+	// Type The kind of target. Always fileStorage.
+	Type string `json:"type"`
+}
+
+// FileStorageSnapshotRestoreV2Target What the snapshot is restored into. Only the fileStorage type is supported, any other type is unprocessable.
+type FileStorageSnapshotRestoreV2Target struct {
+	// FileStorage A new File Storage to restore the snapshot into. Required when the target type is fileStorage.
+	FileStorage *FileStorageSnapshotRestoreV2FileStorage `json:"fileStorage,omitempty"`
+
+	// Type The kind of target. Must be fileStorage.
+	Type string `json:"type"`
+}
+
 // FileStorageSnapshotV2Create Manual Snapshot resource.
 type FileStorageSnapshotV2Create struct {
 	// Metadata Metadata required for all API resource reads and writes.
@@ -1891,6 +1937,9 @@ type ConsoleSessionResponse = ConsoleSession
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
 
+// FileStorageSnapshotRestoreV2Response The result of restoring a Manual Snapshot.
+type FileStorageSnapshotRestoreV2Response = FileStorageSnapshotRestoreV2Read
+
 // FileStorageSnapshotV2Response A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
 type FileStorageSnapshotV2Response = FileStorageSnapshotV2Read
 
@@ -2257,6 +2306,9 @@ type PutApiV2FilestorageFilestorageIDJSONRequestBody = StorageV2Update
 
 // PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDSnapshots for application/json ContentType.
 type PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody = FileStorageSnapshotV2Create
+
+// PostApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotIDRestoreJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotIDRestore for application/json ContentType.
+type PostApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotIDRestoreJSONRequestBody = FileStorageSnapshotRestoreV2Create
 
 // PostApiV2LoadbalancersJSONRequestBody defines body for PostApiV2Loadbalancers for application/json ContentType.
 type PostApiV2LoadbalancersJSONRequestBody = LoadBalancerV2Create

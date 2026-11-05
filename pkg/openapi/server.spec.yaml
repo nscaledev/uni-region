@@ -1872,7 +1872,7 @@ paths:
     - $ref: '#/components/parameters/filestorageIDParameter'
     - $ref: '#/components/parameters/filestorageSnapshotIDParameter'
     delete:
-      description: Record deletion intent for a Manual Snapshot without provider calls.
+      description: Record deletion intent for a Manual Snapshot without provider calls. A snapshot that a restore is still copying from conflicts.
       summary: Delete a manual file storage snapshot
       tags:
       - File storage snapshots
@@ -1889,6 +1889,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     get:
@@ -1909,6 +1911,48 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}/restore:
+    description: Restore a manual snapshot of a file storage resource.
+    parameters:
+    - $ref: '#/components/parameters/filestorageIDParameter'
+    - $ref: '#/components/parameters/filestorageSnapshotIDParameter'
+    post:
+      description: |-
+        Create a new File Storage from a Manual Snapshot. The new File Storage is created in
+        the organization, project, region and storage class of the snapshot's File Storage, and
+        inherits its NFS settings. spec.sizeGiB defaults to, and must be at least, the size of
+        the snapshot's File Storage. The snapshot must be provisioned and not deleting, and
+        stays referenced until the restore has finished. The response mirrors the request: target.type
+        names what was created and the member of that name holds it. For fileStorage this is the
+        pending File Storage, as returned by File Storage creation.
+      summary: Restore a manual file storage snapshot
+      tags:
+      - File storage snapshots
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/fileStorageSnapshotRestoreV2Create'
+      responses:
+        '201':
+          $ref: '#/components/responses/fileStorageSnapshotRestoreV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorageclasses:
@@ -4273,6 +4317,67 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/storageV2Read'
+    fileStorageSnapshotRestoreV2Create:
+      description: A request to restore a Manual Snapshot into a new target.
+      type: object
+      required:
+      - target
+      properties:
+        target:
+          $ref: '#/components/schemas/fileStorageSnapshotRestoreV2Target'
+    fileStorageSnapshotRestoreV2Target:
+      description: What the snapshot is restored into. Only the fileStorage type is supported, any other type is unprocessable.
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          description: The kind of target. Must be fileStorage.
+          type: string
+          example: fileStorage
+        fileStorage:
+          $ref: '#/components/schemas/fileStorageSnapshotRestoreV2FileStorage'
+    fileStorageSnapshotRestoreV2Read:
+      description: The result of restoring a Manual Snapshot.
+      type: object
+      required:
+      - target
+      properties:
+        target:
+          $ref: '#/components/schemas/fileStorageSnapshotRestoreV2ReadTarget'
+    fileStorageSnapshotRestoreV2ReadTarget:
+      description: What the snapshot was restored into. Exactly the member named by type is set.
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          description: The kind of target. Always fileStorage.
+          type: string
+          example: fileStorage
+        fileStorage:
+          $ref: '#/components/schemas/storageV2Read'
+    fileStorageSnapshotRestoreV2FileStorage:
+      description: A new File Storage to restore the snapshot into. Required when the target type is fileStorage.
+      type: object
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          type: object
+          properties:
+            sizeGiB:
+              description: Size in GiB of the new storage. Defaults to, and must be at least, the size of the snapshot's File Storage.
+              type: integer
+              format: int64
+            attachments:
+              $ref: '#/components/schemas/storageAttachmentV2Spec'
+            defaultSnapshotProtectionEnabled:
+              description: Whether platform-managed Default Snapshot Protection is enabled. Omission copies the setting of the snapshot's File Storage. Explicit null is invalid.
+              type: boolean
     fileStorageSnapshotV2Create:
       description: Manual Snapshot resource.
       type: object
@@ -5627,6 +5732,38 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/fileStorageSnapshotsV2Read'
+    fileStorageSnapshotRestoreV2Response:
+      description: The result of restoring a Manual Snapshot.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/fileStorageSnapshotRestoreV2Read'
+          example:
+            target:
+              type: fileStorage
+              fileStorage:
+                metadata:
+                  id: b1c2d3e4-36e0-4312-b8d1-52d93d569b7b
+                  name: storage-restored
+                  organizationId: 9a8c6370-4065-4d4a-9da0-7678df40cd9d
+                  projectId: e36c058a-8eba-4f5b-91f4-f6ffb983795c
+                  creationTime: 2024-05-31T14:11:00Z
+                  createdBy: john.doe@acme.com
+                  provisioningStatus: provisioning
+                  healthStatus: unknown
+                spec:
+                  sizeGiB: 200
+                  storageType:
+                    NFS:
+                      rootSquash: true
+                      posixAcl: false
+                      atimeUpdateIntervalSeconds: 0
+                  defaultSnapshotProtectionEnabled: true
+                  snapshotPolicies: []
+                status:
+                  regionId: ba39bff5-b0d8-4c60-89e5-ed1104356b4a
+                  storageClassId: 99659b44-1700-400f-9c6c-cfdb4bb0445c
+                  snapshotPolicies: []
     storageV2Response:
       description: A storage.
       content:

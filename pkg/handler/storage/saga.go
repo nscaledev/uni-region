@@ -71,16 +71,26 @@ type createSaga struct {
 	organizationID identityids.OrganizationID
 	projectID      identityids.ProjectID
 
+	// sourceSnapshot is the snapshot a restore copies the new File Storage's data from.
+	// It is nil for a plain create. The new File Storage holds a reference on it so it
+	// cannot be deleted mid restore.
+	sourceSnapshot *regionv1.FileStorageSnapshot
+
 	filestorage  *regionv1.FileStorage
 	storageClass *openapi.StorageClassV2Read
 }
 
 func (s *createSaga) Actions() []saga.Action {
-	return []saga.Action{
+	actions := []saga.Action{
 		saga.NewAction("validate request", s.validateRequest, nil),
 		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
-		saga.NewAction("create filestorage", s.createFileStorage, nil),
 	}
+
+	if s.sourceSnapshot != nil {
+		actions = append(actions, saga.NewAction("reference snapshot", s.referenceSnapshot, s.unreferenceSnapshot))
+	}
+
+	return append(actions, saga.NewAction("create filestorage", s.createFileStorage, nil))
 }
 
 func newCreateSaga(client *Client, request *openapi.StorageV2Create) (*createSaga, error) {
@@ -140,6 +150,12 @@ func (s *createSaga) createFileStorage(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRequest(ctx context.Context) error {
+	if s.sourceSnapshot != nil {
+		if err := validateSourceSnapshot(s.sourceSnapshot); err != nil {
+			return err
+		}
+	}
+
 	if s.request.Spec.SizeGiB <= 0 {
 		return errors.HTTPUnprocessableContent("size must be greater or equal to 1GiB")
 	}
@@ -166,6 +182,12 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 	filestorage, err := s.client.generateV2(ctx, s.organizationID, s.projectID, s.request.Spec.RegionId.String(), generateRequest, s.storageClass)
 	if err != nil {
 		return err
+	}
+
+	if s.sourceSnapshot != nil {
+		filestorage.Spec.Source = &regionv1.FileStorageSource{
+			Snapshot: &regionv1.FileStorageSnapshotSource{ID: s.sourceSnapshot.Name},
+		}
 	}
 
 	s.filestorage = filestorage

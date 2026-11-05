@@ -126,6 +126,39 @@ snapshot children must finish cleanup first. Core's existing `foregroundDeletion
 gate delays parent Deprovision until Kubernetes clears the cascade finalizer.
 A child that cannot safely complete deletion blocks normal parent teardown.
 
+### Restore From A Manual Snapshot
+
+`POST /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}/restore`
+creates a new File Storage from a Manual Snapshot and returns `201`. The body carries a
+`target` with `type: fileStorage`; any other type, or a missing `fileStorage`, is 422. The
+response mirrors the request: `target.type` names what was created and the member of that
+name holds it, here the pending File Storage exactly as `POST /api/v2/filestorage` returns
+it. New target types are added as further members of `target`, not new routes.
+
+The caller needs `region:filestoragesnapshots:v2` Read on the snapshot (a refusal is
+404, as for reads) and `region:filestorage:v2` Create on the project. Organization,
+project, region, storage class and NFS settings are taken from the snapshot's parent
+File Storage, never the request, so a restore cannot cross scopes. `sizeGiB` defaults
+to the parent's current size and may not be smaller (422). `defaultSnapshotProtectionEnabled`
+defaults to the parent's setting. User snapshot policies are not copied.
+
+A missing, expired or foreign snapshot is 404. The create saga's validation step then
+checks the snapshot only: a deleting snapshot, or one whose `Available` condition is not
+`Provisioned`, is 409. Snapshots of a protected path are restorable like any other, the API
+does not distinguish them. The parent File Storage's own deletion state is not checked.
+Region does not read `Restored` or any other
+restore progress. The File Storage controller owns that, and clients watch the new File
+Storage's provisioning status.
+
+`RestoreV2` reuses the create saga. It sets the immutable `spec.source.snapshot.id` and
+adds one saga step before the CR is created: a finalizer
+`filestorages.region.unikorn-cloud.org/<new File Storage ID>` on the snapshot, compensated
+if creation fails. The File Storage controller removes it once the restore has finished,
+so the snapshot cannot be deleted while data is still being copied. Manual Snapshot Delete
+returns 409 while such a reference exists; the snapshot lifecycle controller's own finalizer
+does not count. Retries are not deduplicated server side: callers find their earlier restore
+by Ownership Tag.
+
 ### Manual Snapshot Reads
 
 `GET /api/v2/filestorage/{filestorageID}/snapshots` and

@@ -625,6 +625,48 @@ func (c *APIClient) CreateFileStorageSnapshotRawJSONExpectError(ctx context.Cont
 	return &apiError, nil
 }
 
+// RestoreFileStorageSnapshot restores a Manual Snapshot into a new target and expects 201.
+func (c *APIClient) RestoreFileStorageSnapshot(ctx context.Context, parentID, snapshotID string, request regionopenapi.FileStorageSnapshotRestoreV2Create) (*regionopenapi.FileStorageSnapshotRestoreV2Read, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling restore request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodPost, c.endpoints.RestoreFileStorageSnapshot(parentID, snapshotID), bytes.NewReader(body), http.StatusCreated)
+	if err != nil {
+		return nil, fmt.Errorf("restoring file storage snapshot: %w", err)
+	}
+
+	var restored regionopenapi.FileStorageSnapshotRestoreV2Read
+	if err := json.Unmarshal(response, &restored); err != nil {
+		return nil, fmt.Errorf("unmarshaling restore result: %w", err)
+	}
+
+	return &restored, nil
+}
+
+// RestoreFileStorageSnapshotExpectError returns the standard error body for an expected rejection.
+func (c *APIClient) RestoreFileStorageSnapshotExpectError(ctx context.Context, parentID, snapshotID string, request regionopenapi.FileStorageSnapshotRestoreV2Create, expectedStatus int) (*coreapi.Error, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling restore request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodPost, c.endpoints.RestoreFileStorageSnapshot(parentID, snapshotID), bytes.NewReader(body), expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("restoring file storage snapshot: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(response, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
 // DeleteFileStorageSnapshotExpectError returns the standard error body for an expected rejection.
 func (c *APIClient) DeleteFileStorageSnapshotExpectError(ctx context.Context, parentID, snapshotID string, expectedStatus int) (*coreapi.Error, error) {
 	//nolint:bodyclose // DoRegionRequest closes the response body internally.

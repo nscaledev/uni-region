@@ -436,6 +436,22 @@ func (h *Handler) PostApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWrit
 	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
+func (h *Handler) PostApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotIDRestore(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, snapshotID openapi.FilestorageSnapshotIDParameter) {
+	request := &openapi.FileStorageSnapshotRestoreV2Create{}
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.storageClient().RestoreV2(r.Context(), filestorageID, snapshotID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusCreated, result)
+}
+
 func (h *Handler) DeleteApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, snapshotID openapi.FilestorageSnapshotIDParameter) {
 	if err := h.storageClient().DeleteSnapshot(r.Context(), filestorageID, snapshotID); err != nil {
 		errors.HandleError(w, r, err)
