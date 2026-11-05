@@ -37,3 +37,21 @@ func TestServerProviderCreateGatesContract(t *testing.T) {
 	require.NotNil(t, gates.Value.MaxItems)
 	require.EqualValues(t, 16, *gates.Value.MaxItems)
 }
+
+// A report whose outputs differ from those stored, or that brings outputs to
+// a gate already True, is refused with 409, so the contract declares it for
+// generated clients to handle.
+func TestServerProviderCreateGateReportContract(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	gates := swagger.Paths.Find("/api/v2/servers/{serverID}/provider-create-gates")
+	require.NotNil(t, gates)
+	require.NotNil(t, gates.Post)
+
+	for _, code := range []string{"204", "400", "409", "422"} {
+		require.NotNil(t, gates.Post.Responses.Value(code), code)
+	}
+}

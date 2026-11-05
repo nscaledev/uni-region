@@ -81,3 +81,31 @@ func TestMetadataKey(t *testing.T) {
 		})
 	}
 }
+
+// A gate output is named as a tag would be under the gate's own
+// "<service>.<domain>/": "pkey" on "fabric.unikorn-cloud.org/partition-ready"
+// is "fabric:pkey". A gate without that prefix, or a key that is not a tag's
+// local name, has no metadata key.
+func TestProviderCreateGateOutputKey(t *testing.T) {
+	t.Parallel()
+
+	key, ok := regionv1.ProviderCreateGateOutputKey("fabric.unikorn-cloud.org/partition-ready", "pkey")
+	require.True(t, ok)
+	require.Equal(t, "fabric:pkey", key)
+
+	key, ok = regionv1.ProviderCreateGateOutputKey("fabric.unikorn-cloud.org/partition-ready", "a-b")
+	require.True(t, ok)
+	require.Equal(t, "fabric:a_b", key)
+
+	for _, c := range []struct{ conditionType, key string }{
+		{"partition-ready", "pkey"},
+		{"test/gate", "pkey"},
+		{"Fabric.unikorn-cloud.org/partition-ready", "pkey"},
+		{"fabric.unikorn-cloud.org/partition-ready", "P_Key"},
+		{"fabric.unikorn-cloud.org/partition-ready", ""},
+		{"fabric.unikorn-cloud.org/partition-ready", "fabric:pkey"},
+	} {
+		_, ok := regionv1.ProviderCreateGateOutputKey(c.conditionType, c.key)
+		require.False(t, ok, c)
+	}
+}

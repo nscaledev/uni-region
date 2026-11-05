@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	goerrors "errors"
 	"fmt"
+	"maps"
 	"net"
 	"reflect"
 	"slices"
@@ -877,6 +878,9 @@ func providerCreateGateActor(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("%w: provider-create gate actor is not defined", coreerrors.ErrInvalidContext)
 }
 
+// providerCreateGateActionChanged reports whether a report changes the gate.
+// Its outputs need no comparison: on a gate already True they are frozen, so a
+// report either matches the stored ones or is refused before this.
 func providerCreateGateActionChanged(current *regionv1.Server, conditionType, actor, reason, message string) bool {
 	status, ok := current.ProviderCreateGateStatusRead(conditionType)
 	if !ok {
@@ -887,6 +891,55 @@ func providerCreateGateActionChanged(current *regionv1.Server, conditionType, ac
 		status.Actor != actor ||
 		status.Reason != reason ||
 		status.Message != message
+}
+
+// validateProviderCreateGateAction checks a gate report's fields and returns
+// its outputs. Every output must map to an instance metadata key, by the same
+// rule the provider publishes it with; one that would not is a bad request,
+// not a 422, which satisfiers read as "gate not configured here".
+func validateProviderCreateGateAction(request *openapi.ServerProviderCreateGateAction) (map[string]string, error) {
+	if request.ConditionType == "" {
+		return nil, errors.OAuth2InvalidRequest("conditionType must be specified")
+	}
+
+	if request.Reason == "" {
+		return nil, errors.OAuth2InvalidRequest("reason must be specified")
+	}
+
+	if request.Message == "" {
+		return nil, errors.OAuth2InvalidRequest("message must be specified")
+	}
+
+	if request.Outputs == nil || len(*request.Outputs) == 0 {
+		//nolint:nilnil // no outputs is not an error
+		return nil, nil
+	}
+
+	for key := range *request.Outputs {
+		if _, ok := regionv1.ProviderCreateGateOutputKey(request.ConditionType, key); !ok {
+			return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("output %q on %q maps to no metadata key: the condition type needs a <service>.<domain>/ prefix, and the key must be a tag's local name", key, request.ConditionType))
+		}
+	}
+
+	return *request.Outputs, nil
+}
+
+// providerCreateGateResolveOutputs returns the outputs a report leaves on the
+// gate. They come with the report that satisfies it and are frozen once it is
+// True: the controller may already be in provider create with the metadata
+// they made, which is written only then, so a value added or changed later
+// would never reach the host. A report without outputs keeps the stored ones.
+func providerCreateGateResolveOutputs(current *regionv1.Server, conditionType string, requested map[string]string) (map[string]string, error) {
+	status, ok := current.ProviderCreateGateStatusRead(conditionType)
+	if !ok || status.Status != kcorev1.ConditionTrue {
+		return requested, nil
+	}
+
+	if requested != nil && !maps.Equal(status.Outputs, requested) {
+		return nil, errors.HTTPConflict().WithValues("conditionType", conditionType, "stored", status.Outputs, "requested", requested)
+	}
+
+	return status.Outputs, nil
 }
 
 func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
@@ -900,16 +953,9 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 	// Declared before the request is validated, so a refused one is recorded.
 	authz.Declare(ctx, target)
 
-	if request.ConditionType == "" {
-		return errors.OAuth2InvalidRequest("conditionType must be specified")
-	}
-
-	if request.Reason == "" {
-		return errors.OAuth2InvalidRequest("reason must be specified")
-	}
-
-	if request.Message == "" {
-		return errors.OAuth2InvalidRequest("message must be specified")
+	requested, err := validateProviderCreateGateAction(request)
+	if err != nil {
+		return err
 	}
 
 	current, err := c.getV2(ctx, serverID.String(), target)
@@ -927,11 +973,16 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
 	}
 
+	outputs, err := providerCreateGateResolveOutputs(current, conditionType, requested)
+	if err != nil {
+		return err
+	}
+
 	changed := providerCreateGateActionChanged(current, conditionType, actor, request.Reason, request.Message)
 
 	if changed {
 		updated := current.DeepCopy()
-		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message, nil)
+		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message, outputs)
 
 		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 			return fmt.Errorf("%w: unable to satisfy provider-create gate", err)
@@ -943,6 +994,7 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		"conditionType", conditionType,
 		"actor", actor,
 		"reason", request.Reason,
+		"outputs", outputs,
 		"changed", changed)
 
 	return nil
