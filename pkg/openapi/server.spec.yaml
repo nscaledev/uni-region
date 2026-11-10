@@ -2874,7 +2874,9 @@ components:
           description: An IPv4 address for the route's next hop.
           type: string
     routes:
-      description: A list of network routes.
+      description: |-
+        A list of network routes. On update, omitting the list keeps the stored
+        routes, and an empty list removes them.
       type: array
       items:
         $ref: '#/components/schemas/route'
