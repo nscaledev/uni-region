@@ -167,7 +167,7 @@ CLOUDINIT_TEST_IMAGE ?= unikorn-region-cloudinit-test
 # Runs managed cloud-init augmentation against real cloud-init (needs docker).
 .PHONY: test-cloud-init
 test-cloud-init:
-	docker build --platform linux/amd64 -t $(CLOUDINIT_TEST_IMAGE) pkg/provisioners/managers/server/testdata/cloudinit
+	docker build -t $(CLOUDINIT_TEST_IMAGE) pkg/provisioners/managers/server/testdata/cloudinit
 	CLOUDINIT_TEST_IMAGE=$(CLOUDINIT_TEST_IMAGE) go test -count=1 -tags cloudinit -parallel 6 ./pkg/provisioners/managers/server/
 
 # Build a binary and install it.
@@ -305,6 +305,12 @@ test-api-focus: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
 	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --focus="$(FOCUS)" $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+
+.PHONY: test-api-smoke
+test-api-smoke: test-api-setup
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --fail-on-empty --label-filter='smoke' $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
 .PHONY: test-api-suite
 test-api-suite: test-api-setup

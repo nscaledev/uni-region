@@ -114,9 +114,6 @@ var ImageTags = imageTags
 var CreateImageMetadata = createImageMetadata
 
 //nolint:gochecknoglobals
-var MetadataKey = metadataKey
-
-//nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
 func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
@@ -178,6 +175,16 @@ func NewTestBlockStorageClient(endpoint string, options *unikornv1.RegionOpensta
 		},
 		options:         options,
 		volumeTypeCache: cache.New[[]volumetypes.VolumeType](time.Hour),
+	}
+}
+
+func NewTestImageClient(endpoint string, options *unikornv1.RegionOpenstackImageSpec) *ImageClient {
+	return &ImageClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		options: options,
 	}
 }
 

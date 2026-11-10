@@ -144,10 +144,11 @@ Known gaps:
 ## Cloud-init tests
 
 `make test-cloud-init` runs the tests tagged `cloudinit` against real
-cloud-init in an image built from `testdata/cloudinit` (Ubuntu 24.04 amd64, exact
-package versions installed from a dated archive snapshot, so the build does not
-break when the live archive moves on; bumping means moving the snapshot and the
-versions together). They check what cloud-init does with our output, never its
+cloud-init in an image built from `testdata/cloudinit` (a pinned Ubuntu 24.04
+base, with whatever cloud-init Ubuntu currently ships for it, as a new customer
+VM would get). The tests can therefore go red when Ubuntu ships a new
+cloud-init, with no change on our side; that is the point, as it is the version
+customers boot. They check what cloud-init does with our output, never its
 shape:
 
 - Boot tests run cloud-init's four stages in a container, once with the

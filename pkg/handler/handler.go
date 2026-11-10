@@ -22,9 +22,12 @@ package handler
 import (
 	"net/http"
 
+	"github.com/google/uuid"
+
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -35,6 +38,18 @@ import (
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 )
+
+// v1Target is a v1 request's own operation.  v1 handlers check before anything
+// is fetched, so the object is named by its path ID; a create names none, and
+// its name comes from the response.  See the README's Authorization section.
+func v1Target(endpoint string, operation authz.Operation, objectID uuid.UUID) authz.Target {
+	return authz.Target{
+		Endpoint:  endpoint,
+		Operation: operation,
+		Kind:      authz.Primary,
+		ObjectID:  objectID,
+	}
+}
 
 type Handler struct {
 	// There are embedded so they can be their own
@@ -172,7 +187,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDIdentities(w http.ResponseW
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:identities", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:identities", authz.Create, uuid.Nil), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -209,7 +224,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:identities", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:identities", authz.Delete, uuid.UUID(identityID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -242,7 +257,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDNetworks(w http.ResponseWri
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworks(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:networks", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:networks", authz.Create, uuid.Nil), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -279,7 +294,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDNetworksNetworkID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, networkID openapi.NetworkIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:networks", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:networks", authz.Delete, uuid.UUID(networkID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -312,7 +327,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDSecuritygroups(w http.Respo
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroups(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:securitygroups", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:securitygroups", authz.Create, uuid.Nil), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -334,7 +349,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:securitygroups", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:securitygroups", authz.Delete, uuid.UUID(securityGroupID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -362,8 +377,9 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+//nolint:dupl // distinct resources behind the same generated handler shape.
 func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDSecuritygroupsSecurityGroupID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, securityGroupID openapi.SecurityGroupIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:securitygroups", identityapi.Update, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:securitygroups", authz.Update, uuid.UUID(securityGroupID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -404,7 +420,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDServers(w http.ResponseWrit
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServers(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:servers", authz.Create, uuid.Nil), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -426,7 +442,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 }
 
 func (h *Handler) DeleteApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:servers", identityapi.Delete, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:servers", authz.Delete, uuid.UUID(serverID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -455,8 +471,9 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+//nolint:dupl // distinct resources behind the same generated handler shape.
 func (h *Handler) PutApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:servers", identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:servers", authz.Update, uuid.UUID(serverID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -508,7 +525,7 @@ func (h *Handler) GetApiV1OrganizationsOrganizationIDProjectsProjectIDIdentities
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDHardreboot(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:servers", identityapi.Update, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:servers", authz.Action(identityapi.Update, "hardreboot"), uuid.UUID(serverID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -522,7 +539,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDSoftreboot(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:servers", identityapi.Update, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:servers", authz.Action(identityapi.Update, "softreboot"), uuid.UUID(serverID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -536,7 +553,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStart(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:servers", identityapi.Update, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:servers", authz.Action(identityapi.Update, "start"), uuid.UUID(serverID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -550,7 +567,7 @@ func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitie
 }
 
 func (h *Handler) PostApiV1OrganizationsOrganizationIDProjectsProjectIDIdentitiesIdentityIDServersServerIDStop(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, projectID openapi.ProjectIDParameter, identityID openapi.IdentityIDParameter, serverID openapi.ServerIDParameter) {
-	if err := rbac.AllowProjectScopeID(r.Context(), "region:servers", identityapi.Update, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeOn(r.Context(), v1Target("region:servers", authz.Action(identityapi.Update, "stop"), uuid.UUID(serverID)), organizationID, projectID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}

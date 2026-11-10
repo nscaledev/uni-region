@@ -357,6 +357,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     and an in-guest linkage surface exposed through the metadata service
   - legacy camelCase server metadata keys remain frozen for backwards
     compatibility while newer namespaced keys provide the upgrade path
+  - satisfied provider-create gates' `outputs` are written as metadata named
+    as tags would be under the gate's `<service>.<domain>/` (`pkey` on
+    `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`), after
+    user tags and before system keys; gates are taken in spec order and a
+    later gate's key replaces an earlier one's, as a later tag's does, and an
+    output that maps to no key is logged rather than dropped silently
 - Cinder Volume create/delete and observation are project-scoped lifecycle
   operations:
   - the Region Volume controller resolves the full cloud provider and drives
@@ -506,6 +512,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   ([../../../provisioners/managers/volume](../../../provisioners/managers/volume/README.md)),
   which populates `Volume.Status.AttachedAt` and owns claim release.
 - Image handling is a first-class contract surface here:
+  - only Glance images with `public` visibility are listed unless
+    `openstack.image.includeCommunity` is set. That option is for development
+    environments only and must never be enabled in production. With it set,
+    `community` images are listed too, except any carrying an organization ID:
+    uni-region only publishes organization images as public, so such an image
+    is forged or was demoted by its owner
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
   - image properties are translated into provider-neutral OS, package, GPU,

@@ -22,12 +22,16 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	goerrors "errors"
+	"fmt"
 	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +50,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	"github.com/unikorn-cloud/region/pkg/handler"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/server"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
@@ -1236,6 +1241,49 @@ func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
 	require.Equal(t, *result.Spec.UserData, updated.Spec.UserData)
 }
 
+func TestServerPutV2UserDataPersistence(t *testing.T) {
+	t.Parallel()
+
+	legacy := []byte("echo legacy")
+	replacement := []byte("#cloud-config\nusers: []\n")
+
+	for _, test := range []struct {
+		name   string
+		field  string
+		want   []byte
+		status int
+	}{
+		{name: "omitted preserves legacy bytes", want: legacy, status: http.StatusAccepted},
+		{name: "null preserves legacy bytes", field: `,"userData":null`, want: legacy, status: http.StatusAccepted},
+		{name: "empty value clears", field: `,"userData":""`, status: http.StatusAccepted},
+		{name: "value replaces", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: replacement, status: http.StatusAccepted},
+		{name: "unchanged legacy skips validation", field: `,"userData":"` + base64.StdEncoding.EncodeToString(legacy) + `"`, want: legacy, status: http.StatusAccepted},
+		{name: "changed invalid data is rejected", field: `,"userData":"` + base64.StdEncoding.EncodeToString([]byte("echo changed")) + `"`, want: legacy, status: http.StatusUnprocessableEntity},
+		{name: "invalid base64 is rejected", field: `,"userData":"!"`, want: legacy, status: http.StatusBadRequest},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			resource := testServerV2(srvServerID)
+			resource.Spec.UserData = legacy
+			k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), resource).Build()
+			h := handler.NewServerV2Handler(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+			body := fmt.Sprintf(`{"metadata":{"name":%q},"spec":{"flavorId":%q,"imageId":%q%s}}`, resource.Name, srvFlavorID, srvImageID, test.field)
+			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
+			request := httptest.NewRequestWithContext(ctx, http.MethodPut, "/", strings.NewReader(body))
+			response := httptest.NewRecorder()
+
+			h.PutApiV2ServersServerID(response, request, idstest.MustParseServerID(resource.Name))
+
+			require.Equal(t, test.status, response.Code, response.Body.String())
+
+			stored := &regionv1.Server{}
+			require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(resource), stored))
+			require.Equal(t, test.want, stored.Spec.UserData)
+		})
+	}
+}
+
 func TestServerUpdateV2VolumeSetSemantics(t *testing.T) {
 	t.Parallel()
 
@@ -2223,7 +2271,7 @@ func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
 		{ConditionType: srvProviderGate},
 		{ConditionType: "example.unikorn-cloud.org/second-ready"},
 	}
-	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, "service", "Prepared", "done")
+	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, "service", "Prepared", "done", nil)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
@@ -3174,5 +3222,167 @@ func TestServerGetV2ProvisioningStatusFreshness(t *testing.T) {
 
 		require.NotNil(t, result.Metadata.ProvisioningStatusDetail)
 		require.Equal(t, *tc.wantReason, result.Metadata.ProvisioningStatusDetail.Reason)
+	}
+}
+
+// newGateClient serves gate reports for one server with the given gates,
+// as the provider-create gate's internal service.
+func newGateClient(t *testing.T, gates ...string) (*server.ClientV2, client.Client, *regionv1.Server, context.Context) {
+	t.Helper()
+
+	resource := testServerV2(srvServerID)
+	for _, gate := range gates {
+		resource.Spec.ProviderCreateGates = append(resource.Spec.ProviderCreateGates, regionv1.ServerProviderCreateGate{ConditionType: gate})
+	}
+
+	k8sClient := newSrvFakeClient(t, resource).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  identitymock.NewMockClientWithResponsesInterface(gomock.NewController(t)),
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
+	ctx = withPrincipal(ctx)
+	ctx = withProviderCreateServiceCertificate(ctx, t)
+
+	return c, k8sClient, resource, ctx
+}
+
+func gateReport(conditionType string, outputs map[string]string) *openapi.ServerProviderCreateGateAction {
+	request := &openapi.ServerProviderCreateGateAction{
+		ConditionType: conditionType,
+		Reason:        "Prepared",
+		Message:       "external state is ready",
+	}
+
+	if outputs != nil {
+		request.Outputs = &outputs
+	}
+
+	return request
+}
+
+func storedGate(ctx context.Context, t *testing.T, k8sClient client.Client, resource *regionv1.Server, conditionType string) *regionv1.ServerProviderCreateGateStatus {
+	t.Helper()
+
+	updated := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
+
+	status, ok := updated.ProviderCreateGateStatusRead(conditionType)
+	require.True(t, ok)
+
+	return status
+}
+
+const fabricGate = "fabric.unikorn-cloud.org/partition-ready"
+
+// The report that satisfies the gate brings its outputs with it.
+func TestServerSatisfyProviderCreateGateStoresOutputs(t *testing.T) {
+	t.Parallel()
+
+	c, k8sClient, resource, ctx := newGateClient(t, fabricGate)
+	id := idstest.MustParseServerID(resource.Name)
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, id, gateReport(fabricGate, map[string]string{"pkey": "0x0600"})))
+	require.Equal(t, map[string]string{"pkey": "0x0600"}, storedGate(ctx, t, k8sClient, resource, fabricGate).Outputs)
+}
+
+// A repeat report with the same outputs, or none, keeps them: only reason
+// and message update, as before.
+func TestServerSatisfyProviderCreateGateKeepsOutputsOnRepeat(t *testing.T) {
+	t.Parallel()
+
+	c, k8sClient, resource, ctx := newGateClient(t, fabricGate)
+	id := idstest.MustParseServerID(resource.Name)
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, id, gateReport(fabricGate, map[string]string{"pkey": "0x0600"})))
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, id, gateReport(fabricGate, map[string]string{"pkey": "0x0600"})))
+
+	none := gateReport(fabricGate, nil)
+	none.Message = "still ready"
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, id, none))
+
+	status := storedGate(ctx, t, k8sClient, resource, fabricGate)
+	require.Equal(t, map[string]string{"pkey": "0x0600"}, status.Outputs)
+	require.Equal(t, "still ready", status.Message)
+}
+
+// Outputs are frozen once the gate is True: the server may already be in
+// provider create with the metadata it had, so a change, or outputs brought
+// to a gate satisfied without them, could never reach the host. Both are a
+// conflict, and nothing is written.
+func TestServerSatisfyProviderCreateGateFreezesOutputsOnceTrue(t *testing.T) {
+	t.Parallel()
+
+	for name, first := range map[string]map[string]string{
+		"different outputs":            {"pkey": "0x0600"},
+		"outputs after a gate without": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			c, k8sClient, resource, ctx := newGateClient(t, fabricGate)
+			id := idstest.MustParseServerID(resource.Name)
+
+			require.NoError(t, c.SatisfyProviderCreateGate(ctx, id, gateReport(fabricGate, first)))
+
+			later := gateReport(fabricGate, map[string]string{"pkey": "0x0700"})
+			later.Message = "a different message"
+
+			err := c.SatisfyProviderCreateGate(ctx, id, later)
+			require.Error(t, err)
+			require.True(t, coreerrors.IsConflict(err), "expected 409, got: %v", err)
+
+			status := storedGate(ctx, t, k8sClient, resource, fabricGate)
+			require.Equal(t, first, status.Outputs)
+			require.Equal(t, "external state is ready", status.Message)
+		})
+	}
+}
+
+// Once a provider-create retry resets the gate, the next satisfying report
+// sets the outputs afresh.
+func TestServerSatisfyProviderCreateGateTakesNewOutputsAfterAReset(t *testing.T) {
+	t.Parallel()
+
+	c, k8sClient, resource, ctx := newGateClient(t, fabricGate)
+	id := idstest.MustParseServerID(resource.Name)
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, id, gateReport(fabricGate, map[string]string{"pkey": "0x0600"})))
+
+	reset := &regionv1.Server{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, reset))
+	reset.ProviderCreateGatesReset("region", "ProviderCreateRetry", "provider create will retry")
+	require.NoError(t, k8sClient.Status().Update(ctx, reset))
+
+	require.NoError(t, c.SatisfyProviderCreateGate(ctx, id, gateReport(fabricGate, map[string]string{"pkey": "0x0700"})))
+	require.Equal(t, map[string]string{"pkey": "0x0700"}, storedGate(ctx, t, k8sClient, resource, fabricGate).Outputs)
+}
+
+// An output that would map to no metadata key is a bad request: a bad key,
+// or a gate without a "<service>.<domain>/" prefix to publish under. Not 422,
+// which satisfiers read as "gate not configured here". Without outputs, the
+// same gates are satisfied as before.
+func TestServerSatisfyProviderCreateGateRefusesOutputsItCannotPublish(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct{ gate, key string }{
+		{fabricGate, "P_Key"},
+		{"partition-ready", "pkey"},
+		{"test/gate", "pkey"},
+	} {
+		gc, k8sClient, resource, ctx := newGateClient(t, c.gate)
+		id := idstest.MustParseServerID(resource.Name)
+
+		err := gc.SatisfyProviderCreateGate(ctx, id, gateReport(c.gate, map[string]string{c.key: "0x0600"}))
+		require.Error(t, err, c)
+		require.True(t, coreerrors.IsBadRequest(err), "%v: expected 400, got: %v", c, err)
+
+		require.NoError(t, gc.SatisfyProviderCreateGate(ctx, id, gateReport(c.gate, nil)), c)
+		require.Nil(t, storedGate(ctx, t, k8sClient, resource, c.gate).Outputs, c)
 	}
 }

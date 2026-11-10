@@ -66,7 +66,7 @@ func expectSnapshotReadNotFound(apiError *coreapi.Error) {
 	Expect(apiError.TraceId).NotTo(BeNil())
 }
 
-var _ = Describe("Manual File Storage Snapshot reads", func() {
+var _ = Describe("Manual File Storage Snapshot reads", Label("smoke"), func() {
 	Context("When reading snapshots from the deployed Region API", func() {
 		Describe("Given a new File Storage with no Manual Snapshots", func() {
 			It("returns an empty snapshot collection, including tag-filtered reads", func() {

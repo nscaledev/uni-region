@@ -1484,6 +1484,16 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          description: >-
+            The report's outputs differ from those the satisfied gate already
+            holds. Final: the gate keeps its outputs until a provider-create
+            retry resets it, so retrying the same report is refused again. A
+            500 is not a conflict and should be retried.
+          content:
+            application/json:
+              schema:
+                $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/error'
         '422':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
@@ -3667,6 +3677,7 @@ components:
     serverProviderCreateGates:
       description: Provider-create gates requested at server creation time.
       type: array
+      maxItems: 16
       items:
         $ref: '#/components/schemas/serverProviderCreateGate'
     serverRemainingProviderCreateGates:
@@ -3692,6 +3703,24 @@ components:
           description: Human-readable details for operators.
           type: string
           minLength: 1
+        outputs:
+          description: >-
+            Values the gate's satisfier publishes to the server. Each is
+            written as instance metadata when the server is created, named as
+            a tag would be under the gate's `<service>.<domain>/`: output
+            `pkey` on gate `fabric.unikorn-cloud.org/partition-ready` becomes
+            `fabric:pkey`. A key must be a tag's local name, and the condition
+            type must have that prefix; otherwise the report is a 400. Outputs
+            are sent with the report that satisfies the gate, and are frozen
+            once it is satisfied, until a provider-create retry resets it: a
+            later report with the same outputs or none keeps them, and one
+            with any other outputs is a 409. The values are readable from
+            inside the server, so they must never be secret.
+          type: object
+          maxProperties: 8
+          additionalProperties:
+            type: string
+            maxLength: 255
     serverV2Networking:
       description: A server's network configuration.
       type: object
@@ -3756,8 +3785,8 @@ components:
             Contains base64-encoded configuration information or scripts to use upon launch.
             The format of the data is governed by the cloud-init standard, and may be a script,
             a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
-            as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
-            it clears the stored value. A changed value is not applied to the running guest —
+            as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
+            value, and an empty string clears it. A changed value is not applied to the running guest —
             it takes effect only when the server is next rebuilt (image change) or recreated.
           type: string
           format: byte

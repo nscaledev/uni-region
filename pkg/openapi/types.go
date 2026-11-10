@@ -1135,6 +1135,9 @@ type ServerProviderCreateGateAction struct {
 	// Message Human-readable details for operators.
 	Message string `json:"message"`
 
+	// Outputs Values the gate's satisfier publishes to the server. Each is written as instance metadata when the server is created, named as a tag would be under the gate's `<service>.<domain>/`: output `pkey` on gate `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`. A key must be a tag's local name, and the condition type must have that prefix; otherwise the report is a 400. Outputs are sent with the report that satisfies the gate, and are frozen once it is satisfied, until a provider-create retry resets it: a later report with the same outputs or none keeps them, and one with any other outputs is a 409. The values are readable from inside the server, so they must never be secret.
+	Outputs *map[string]string `json:"outputs,omitempty"`
+
 	// Reason Machine-readable reason for satisfying the gate.
 	Reason string `json:"reason"`
 }
@@ -1259,8 +1262,8 @@ type ServerV2CreateSpec struct {
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
-	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
-	// it clears the stored value. A changed value is not applied to the running guest —
+	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
+	// value, and an empty string clears it. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 
@@ -1313,8 +1316,8 @@ type ServerV2Spec struct {
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
-	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
-	// it clears the stored value. A changed value is not applied to the running guest —
+	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
+	// value, and an empty string clears it. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 

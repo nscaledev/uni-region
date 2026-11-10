@@ -44,7 +44,7 @@ func TestServerProviderCreateGates(t *testing.T) {
 	require.False(t, server.ProviderCreateGatesReady())
 	require.Equal(t, []string{testProviderCreateGate}, server.RemainingProviderCreateGates())
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionUnknown, "region", "Reset", "provider create will retry")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionUnknown, "region", "Reset", "provider create will retry", nil)
 	require.False(t, server.ProviderCreateGatesReady())
 	require.Equal(t, []string{testProviderCreateGate}, server.RemainingProviderCreateGates())
 
@@ -56,7 +56,7 @@ func TestServerProviderCreateGates(t *testing.T) {
 	require.Equal(t, "provider create will retry", status.Message)
 	unknownTransitionTime := status.LastTransitionTime
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "service", "Prepared", "external state is ready")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "service", "Prepared", "external state is ready", nil)
 	require.True(t, server.ProviderCreateGatesReady())
 	require.Empty(t, server.RemainingProviderCreateGates())
 
@@ -69,7 +69,7 @@ func TestServerProviderCreateGates(t *testing.T) {
 	require.True(t, status.LastTransitionTime.After(unknownTransitionTime.Time) || status.LastTransitionTime.Equal(&unknownTransitionTime))
 	trueTransitionTime := status.LastTransitionTime
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "other-service", "StillPrepared", "still ready")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "other-service", "StillPrepared", "still ready", nil)
 
 	status, ok = server.ProviderCreateGateStatusRead(testProviderCreateGate)
 	require.True(t, ok)
@@ -92,8 +92,8 @@ func TestServerProviderCreateGatesReset(t *testing.T) {
 		},
 	}
 
-	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "service", "Prepared", "")
-	server.ProviderCreateGateStatusWrite("example.unikorn-cloud.org/second-ready", corev1.ConditionTrue, "service", "Prepared", "")
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "service", "Prepared", "", nil)
+	server.ProviderCreateGateStatusWrite("example.unikorn-cloud.org/second-ready", corev1.ConditionTrue, "service", "Prepared", "", nil)
 	require.True(t, server.ProviderCreateGatesReady())
 
 	server.ProviderCreateGatesReset("region", "ProviderCreateRetry", "provider create will retry")
@@ -109,4 +109,33 @@ func TestServerProviderCreateGatesReset(t *testing.T) {
 		require.Equal(t, "ProviderCreateRetry", gate.Reason)
 		require.Equal(t, "provider create will retry", gate.Message)
 	}
+}
+
+// A gate's outputs are stored with its status, as a copy of the caller's
+// map, and a provider-create retry clears them with the status.
+func TestServerProviderCreateGateOutputs(t *testing.T) {
+	t.Parallel()
+
+	server := &regionv1.Server{
+		Spec: regionv1.ServerSpec{
+			ProviderCreateGates: []regionv1.ServerProviderCreateGate{
+				{ConditionType: testProviderCreateGate},
+			},
+		},
+	}
+
+	outputs := map[string]string{"pkey": "0x0600"}
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionTrue, "service", "Prepared", "ready", outputs)
+
+	outputs["pkey"] = "0x0700"
+
+	status, ok := server.ProviderCreateGateStatusRead(testProviderCreateGate)
+	require.True(t, ok)
+	require.Equal(t, map[string]string{"pkey": "0x0600"}, status.Outputs)
+
+	server.ProviderCreateGatesReset("region", "ProviderCreateRetry", "provider create will retry")
+
+	status, ok = server.ProviderCreateGateStatusRead(testProviderCreateGate)
+	require.True(t, ok)
+	require.Nil(t, status.Outputs)
 }

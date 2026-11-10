@@ -43,6 +43,14 @@ The struct is intentionally made of interfaces and scalars so handlers remain
 easy to unit test and do not need to construct their own ambient clients
 ad hoc.
 
+### GetV2 and FetchV2
+
+`GetV2` loads a `v2` resource and authorizes an `authz.Target` on it, declaring
+a primary target before the fetch. `FetchV2` loads one without a check, for the
+one case that needs a resource's scope before its own check; whatever it
+returns must be authorized before use. See the
+[handler README's Authorization section](../README.md#authorization).
+
 ## Invariants And Guard Rails
 
 - This package owns shared wiring and Identity allocation delegation. It does

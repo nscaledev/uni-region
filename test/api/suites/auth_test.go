@@ -29,7 +29,7 @@ import (
 	"github.com/unikorn-cloud/region/test/api"
 )
 
-var _ = Describe("Authentication Enforcement", func() {
+var _ = Describe("Authentication Enforcement", Label("smoke"), func() {
 	Context("When requests are made without a valid auth token", func() {
 		var unauthClient *api.APIClient
 

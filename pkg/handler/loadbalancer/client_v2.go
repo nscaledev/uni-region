@@ -31,6 +31,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
@@ -225,7 +226,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Loadbalancer
 			return true
 		}
 
-		return rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Read, &resource) != nil
+		return !rbac.PermitsProjectScopeReader(ctx, endpoint, identityapi.Read, &resource)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.LoadBalancer) int {
@@ -235,33 +236,18 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Loadbalancer
 	return convertV2List(result), nil
 }
 
+// GetV2Raw loads a load balancer the caller may read.
 func (c *Client) GetV2Raw(ctx context.Context, loadBalancerID string) (*regionv1.LoadBalancer, error) {
+	return c.getV2(ctx, loadBalancerID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
+}
+
+// getV2 loads a load balancer and authorizes the target on it.  See
+// handlercommon.GetV2.
+func (c *Client) getV2(ctx context.Context, loadBalancerID string, target authz.Target) (*regionv1.LoadBalancer, error) {
 	result := &regionv1.LoadBalancer{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: loadBalancerID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup load balancer", err)
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Read, result); err != nil {
+	if err := handlercommon.GetV2(ctx, c.Client, c.Namespace, loadBalancerID, target, result); err != nil {
 		return nil, err
-	}
-
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse API version", err)
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
 	}
 
 	return result, nil
@@ -762,12 +748,30 @@ func (s *createSaga) Actions() []saga.Action {
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.LoadBalancerV2Create) (*openapi.LoadBalancerV2Read, error) {
-	networkResource, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
+	target := authz.Target{
+		Endpoint:   endpoint,
+		Operation:  authz.Create,
+		Kind:       authz.Primary,
+		ObjectName: request.Metadata.Name,
+	}
+
+	authz.Declare(ctx, target)
+
+	networks := network.New(c.ClientArgs)
+
+	// The create is checked in the network's project before the network is
+	// read, so a caller refused the network is recorded in that project.
+	organizationID, projectID, err := networks.Scope(ctx, request.Spec.NetworkId.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScopeCreateReader(ctx, c.Identity, endpoint, identityapi.Create, networkResource); err != nil {
+	if err := rbac.AllowProjectScopeCreateOn(ctx, c.Identity, target, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	networkResource, err := networks.GetV2Raw(ctx, request.Spec.NetworkId.String())
+	if err != nil {
 		return nil, err
 	}
 
@@ -886,12 +890,8 @@ func (s *updateSaga) Actions() []saga.Action {
 }
 
 func (c *Client) UpdateV2(ctx context.Context, loadBalancerID regionids.LoadBalancerID, request *openapi.LoadBalancerV2Update) (*openapi.LoadBalancerV2Read, error) {
-	current, err := c.GetV2Raw(ctx, loadBalancerID.String())
+	current, err := c.getV2(ctx, loadBalancerID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Update, Kind: authz.Primary})
 	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Update, current); err != nil {
 		return nil, err
 	}
 
@@ -914,12 +914,8 @@ func (c *Client) UpdateV2(ctx context.Context, loadBalancerID regionids.LoadBala
 }
 
 func (c *Client) DeleteV2(ctx context.Context, loadBalancerID regionids.LoadBalancerID) error {
-	resource, err := c.GetV2Raw(ctx, loadBalancerID.String())
+	resource, err := c.getV2(ctx, loadBalancerID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Delete, Kind: authz.Primary})
 	if err != nil {
-		return err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Delete, resource); err != nil {
 		return err
 	}
 

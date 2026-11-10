@@ -91,31 +91,48 @@ related dependencies rather than from nested path scope.
 - create can carry an `infrastructureRef` that pins initial placement to a
   provider-specific physical host; reads expose the value in status so callers
   can verify the placement request that was persisted
-- create can carry immutable `providerCreateGates`; reads expose only
-  `status.remainingProviderCreateGates`, while the stored Kubernetes object
-  retains per-gate status details for operators
+- create can carry immutable `providerCreateGates` (at most 16); reads
+  expose only `status.remainingProviderCreateGates`, while the stored
+  Kubernetes object retains per-gate status details for operators
 - internal service callers can satisfy an existing provider-create gate through
   `POST /api/v2/servers/{serverID}/provider-create-gates`, which records the
-  authenticated service actor, reason, and message on the status subresource
+  authenticated service actor, reason, and message on the status subresource.
+  The satisfying report may carry `outputs` (at most 8), which the provider
+  writes into the server's metadata at create, named as tags would be under
+  the gate's service prefix (`pkey` on
+  `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`). Outputs
+  are frozen once the gate is True, because metadata is written only at
+  create and the controller may already be creating the server: a later
+  report with the same outputs or none keeps them, and one with any other
+  outputs, including outputs brought to a gate satisfied without them, is
+  refused with 409 and writes nothing. An output that maps to no metadata key
+  is a 400, not a 422, which satisfiers read as "gate not configured here".
+  A lost optimistic-lock race on the status patch is a 500, to be retried
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
-  already be able to see the server and also be allowed to create images in the
-  owning organization
-- the package exposes operational verbs:
+  be allowed to update the server and to create images in the owning
+  organization
+- the package exposes operational verbs, each needing update on the server:
   - start
   - stop
   - soft reboot
   - hard reboot
   - console output/session
+- an accepted stop or reboot is stamped on the `Active` condition before the 202
+  returns (`Stopping`, `Rebooting`), so the request is observable without waiting
+  for a monitor poll; a VM reboot can finish inside one poll period and would
+  otherwise leave no trace. A rejected request (e.g. Nova 409) stamps nothing.
+  The health monitor owns the transition back out (`Rebooting` → `Running`)
 - server-name uniqueness is enforced per network to avoid aliasing cloud-side
   host identity; the Kubernetes resource name is derived deterministically from
   `(networkID, serverName)` so a duplicate create collides at the Kubernetes
   layer and is rejected with HTTP 409 without a read-before-write
 - server names are immutable after creation; update requests that supply a
   different name are rejected with HTTP 422
-- a v2 update replaces the persisted `userData` wholesale — an omitted field
-  clears the stored value. The value is never applied to the running guest; it
-  is consumed by the next recreate. A rebuild (image change) re-runs the
+- a v2 update keeps persisted `userData` when omitted or null, clears it when
+  an empty string is supplied, and otherwise replaces it. The value is never
+  applied to the running guest; it is consumed by the next recreate. A
+  rebuild (image change) re-runs the
   create-time user data, not the updated value — applying updated user data on
   rebuild is deferred until Nova's microversion 2.57 `user_data` field is wired
   through the client library
@@ -179,9 +196,13 @@ related dependencies rather than from nested path scope.
   existing gate list and the CRD marks it immutable; only Region writes the
   derived status entries.
 - The provider-create gate action has its own
-  `region:servers:v2/provider-create-gates` permission. It also requires normal
-  server read access because callers must not satisfy gates on servers they
-  cannot see.
+  `region:servers:v2/provider-create-gates` permission, and needs nothing else
+  on the server. It is for internal services; of the built-in roles only the
+  platform administrator also holds it.
+  Its outputs carry no extra permission: whoever may satisfy a gate may
+  publish its outputs. They land in instance metadata, readable from inside
+  the server, so they must not be secret.
+- `v1` update needs update on the server.
 - The Kubernetes resource name for a `v2` server is a deterministic UUID v5
   derived from `(networkID, serverName)` at creation time, making the name
   immutable for the lifetime of the resource — consistent with OpenStack not

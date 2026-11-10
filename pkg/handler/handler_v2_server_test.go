@@ -36,6 +36,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	identityv1 "github.com/unikorn-cloud/identity/pkg/apis/unikorn/v1alpha1"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -380,7 +381,7 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 	provider := mockprovider.NewMockProvider(ctrl)
 
 	providers := mockproviders.NewMockProviders(ctrl)
-	providers.EXPECT().LookupCloud(gomock.Any()).Return(provider, nil)
+	providers.EXPECT().LookupCloud(gomock.Any()).Return(provider, nil).AnyTimes()
 
 	c := fakeClientWithSchema(t, knownGoodFixture(t, serverName, namespace, orgID)...)
 
@@ -392,9 +393,9 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 
 	handler := NewServerV2Handler(clientArgs)
 
-	// We can't guarantee the order things are done in the handler, and in particular, the region provider
-	// may be requested before permissions are checked. So, make sure there is a provider, though we don't
-	// expect it to be called.
+	// The server check comes before the provider is looked up, but the images
+	// check comes after, so the provider may or may not be looked up.  It is
+	// never asked to do anything.
 	testcases := []struct {
 		name    string
 		makeCtx func(context.Context) context.Context
@@ -413,6 +414,20 @@ func TestServerV2_Snapshot_NotAllowedWithoutPermissions(t *testing.T) {
 			name: "only_image_create",
 			makeCtx: newOrganisationACLBuilder(orgID).
 				addEndpoint("region:images", identityapi.Create).
+				buildContext,
+		},
+		{
+			// A snapshot is an action on the server, so reading it is not enough.
+			name: "region_server_read_and_image_create",
+			makeCtx: newOrganisationACLBuilder(orgID).
+				addEndpoint("region:servers", identityapi.Read).
+				addEndpoint("region:images", identityapi.Create).
+				buildContext,
+		},
+		{
+			name: "only_region_server_update",
+			makeCtx: newOrganisationACLBuilder(orgID).
+				addEndpoint("region:servers", identityapi.Update).
 				buildContext,
 		},
 	}
@@ -479,10 +494,12 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 
 	handler := NewServerV2Handler(clientArgs)
 
-	ctx := newOrganisationACLBuilder(orgID).
+	recorder := &authz.Recorder{}
+
+	ctx := authz.NewContext(newOrganisationACLBuilder(orgID).
 		addEndpoint("region:images", identityapi.Create).
-		addEndpoint("region:servers", identityapi.Read).
-		buildContext(t.Context())
+		addEndpoint("region:servers", identityapi.Update).
+		buildContext(t.Context()), recorder)
 
 	response := httptest.NewRecorder()
 	request := newSnapshotRequest(ctx)
@@ -490,6 +507,16 @@ func TestServerV2_Snapshot_HappyPath(t *testing.T) {
 	handler.PostApiV2ServersServerIDSnapshot(response, request, idstest.MustParseServerID(serverName))
 
 	require.Equal(t, http.StatusCreated, response.Result().StatusCode)
+
+	// The snapshot is recorded as an action on the server; making the image is
+	// a supporting check, not a second description of the request.
+	snapshotRequest, state := recorder.Request()
+	require.Equal(t, authz.Checked, state)
+	require.Equal(t, "snapshot", snapshotRequest.Operation.Action)
+	require.Equal(t, serverName, snapshotRequest.ObjectID.String())
+	require.Len(t, authz.Primaries(recorder.Decisions()), 1)
+	require.Len(t, recorder.Decisions(), 2)
+	require.Empty(t, recorder.Defects())
 
 	// check that it got the name we asked and the ID we were told
 	var read openapi.Image

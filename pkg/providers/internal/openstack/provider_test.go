@@ -2497,66 +2497,6 @@ func TestImageTagRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMetadataKey tests the tag key transformation from namespaced CRD tag format
-// to the OpenStack metadata key format.
-func TestMetadataKey(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name     string
-		input    string
-		expected string
-		ok       bool
-	}{
-		{
-			name:     "ValidSimple",
-			input:    "compute.unikorn-cloud.org/instance-id",
-			expected: "compute:instance_id",
-			ok:       true,
-		},
-		{
-			name:     "ValidOtherService",
-			input:    "kubernetes.unikorn-cloud.org/cluster-id",
-			expected: "kubernetes:cluster_id",
-			ok:       true,
-		},
-		{
-			name:     "ValidHyphenInSubdomain",
-			input:    "my-service.unikorn-cloud.org/foo-bar",
-			expected: "my-service:foo_bar",
-			ok:       true,
-		},
-		{
-			name:  "InvalidNoSlash",
-			input: "compute.unikorn-cloud.org",
-			ok:    false,
-		},
-		{
-			name:  "InvalidUppercase",
-			input: "Compute.unikorn-cloud.org/id",
-			ok:    false,
-		},
-		{
-			name:  "InvalidBareName",
-			input: "instance-id",
-			ok:    false,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, ok := openstack.MetadataKey(c.input)
-			require.Equal(t, c.ok, ok)
-
-			if c.ok {
-				require.Equal(t, c.expected, got)
-			}
-		})
-	}
-}
-
 // TestReconcileServerTags verifies that server tags are correctly forwarded to
 // OpenStack instance metadata, invalid keys are silently dropped, and system keys
 // are always present and cannot be overwritten by user tags.
@@ -2637,6 +2577,93 @@ func TestReconcileServerTags(t *testing.T) {
 
 		// The system key must win — value must be the real organizationID.
 		expectedMetadata := map[string]string{
+			"serverID":                 server.Name,
+			"organizationID":           organizationID,
+			"projectID":                projectID,
+			"regionID":                 regionID,
+			"region:server_id":         server.Name,
+			"identity:organization_id": organizationID,
+			"identity:project_id":      projectID,
+			"region:region_id":         regionID,
+		}
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
+
+	t.Run("GateOutputsPublishedBetweenTagsAndSystemKeys", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		server := serverFixture(withTags(
+			// A tenant tag colliding with the gate's output: the gate wins.
+			corev1.Tag{Name: "fabric.unikorn-cloud.org/pkey", Value: "tenant"},
+		))
+		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+			{ConditionType: "fabric.unikorn-cloud.org/partition-ready"},
+			{ConditionType: "storage.unikorn-cloud.org/pending"},
+			{ConditionType: "region.unikorn-cloud.org/ready"},
+		}
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/partition-ready", k8score.ConditionTrue, "hfm", "Programmed", "ready", map[string]string{"pkey": "0x0600"})
+		// Not satisfied: its outputs are not published.
+		server.ProviderCreateGateStatusWrite("storage.unikorn-cloud.org/pending", k8score.ConditionUnknown, "s", "Waiting", "waiting", map[string]string{"volume": "v"})
+		// A system key's name: the system key still wins.
+		server.ProviderCreateGateStatusWrite("region.unikorn-cloud.org/ready", k8score.ConditionTrue, "x", "Ready", "ready", map[string]string{"server-id": "evil"})
+
+		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+		openstackNetworks := []servers.Network{{UUID: openstackNetwork.ID, Port: openstackServerPort.ID}}
+		openstackServer := openstackServerFixture(server)
+
+		expectedMetadata := map[string]string{
+			"fabric:pkey":              "0x0600",
+			"serverID":                 server.Name,
+			"organizationID":           organizationID,
+			"projectID":                projectID,
+			"regionID":                 regionID,
+			"region:server_id":         server.Name,
+			"identity:organization_id": organizationID,
+			"identity:project_id":      projectID,
+			"region:region_id":         regionID,
+		}
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
+
+	t.Run("LaterGateWinsACollision", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		server := serverFixture()
+		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+			{ConditionType: "fabric.unikorn-cloud.org/b-ready"},
+			{ConditionType: "fabric.unikorn-cloud.org/a-ready"},
+		}
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/a-ready", k8score.ConditionTrue, "a", "Ready", "ready", map[string]string{"pkey": "0x0a00"})
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/b-ready", k8score.ConditionTrue, "b", "Ready", "ready", map[string]string{"pkey": "0x0b00"})
+
+		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+		openstackNetworks := []servers.Network{{UUID: openstackNetwork.ID, Port: openstackServerPort.ID}}
+		openstackServer := openstackServerFixture(server)
+
+		expectedMetadata := map[string]string{
+			"fabric:pkey":              "0x0a00",
 			"serverID":                 server.Name,
 			"organizationID":           organizationID,
 			"projectID":                projectID,

@@ -35,16 +35,17 @@ import (
 const StaleTestResourceTTL = 6 * time.Hour
 
 // SweepStaleTestResources deletes test-prefixed servers, volumes, file storage,
-// and networks in the configured org/project/region that are older than
-// StaleTestResourceTTL.
+// load balancers, and networks in the configured org/project/region that are
+// older than StaleTestResourceTTL.
 //
 // A killed CI runner (timeout/OOM/SIGKILL) never runs in-process cleanup, so the
 // resources it created — and their scarce VLANs — leak until reclaimed by hand.
 // Running this before the suite means each run reclaims the previous run's
 // orphans, which is the only mechanism that survives a hard process kill.
 //
-// Servers are deleted before file storage, and file storage before networks,
-// because both dependents can block network deletion. Cleanup failures
+// Servers are deleted before file storage, and file storage and load balancers
+// before networks, because those dependents can block network deletion. Cleanup
+// failures
 // intentionally fail BeforeSuite: starting a new run while stale resources still
 // hold VLANs would compound the leak.
 func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConfig) {
@@ -62,6 +63,7 @@ func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConf
 			func() { WaitForFileStorageGone(c, ctx, storage.Metadata.Id) })
 	}
 
+	sweepStaleLoadBalancers(c, ctx, config, config.RegionID)
 	sweepStaleNetworks(c, ctx, config, config.RegionID)
 }
 
@@ -116,6 +118,19 @@ func sweepStaleVolumes(c *APIClient, ctx context.Context, config *TestConfig, re
 			volume.Metadata.CreationTime, volume.Metadata.DeletionTime,
 			func() error { return c.DeleteVolume(ctx, volume.Metadata.Id) },
 			func() { WaitForVolumeGone(c, ctx, volume.Metadata.Id) })
+	}
+}
+
+func sweepStaleLoadBalancers(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	loadBalancers, err := c.ListLoadBalancers(ctx, config.OrgID, config.ProjectID, regionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list load balancers")
+
+	for i := range loadBalancers {
+		loadBalancer := &loadBalancers[i]
+		sweepStaleTestResource("load balancer", loadBalancer.Metadata.Id, loadBalancer.Metadata.Name,
+			loadBalancer.Metadata.CreationTime, loadBalancer.Metadata.DeletionTime,
+			func() error { return c.DeleteLoadBalancer(ctx, loadBalancer.Metadata.Id) },
+			func() { WaitForLoadBalancerGone(c, ctx, loadBalancer.Metadata.Id) })
 	}
 }
 

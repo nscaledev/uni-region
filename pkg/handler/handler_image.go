@@ -21,8 +21,11 @@ package handler
 import (
 	"net/http"
 
+	"github.com/google/uuid"
+
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
@@ -63,7 +66,7 @@ func (h *ImageHandler) GetApiV1OrganizationsOrganizationIDRegionsRegionIDImages(
 }
 
 func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter) {
-	if err := rbac.AllowOrganizationScopeID(r.Context(), "region:images", identityapi.Create, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScopeOn(r.Context(), v1Target("region:images", authz.Create, uuid.Nil), organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
@@ -84,7 +87,7 @@ func (h *ImageHandler) PostApiV1OrganizationsOrganizationIDRegionsRegionIDImages
 }
 
 func (h *ImageHandler) DeleteApiV1OrganizationsOrganizationIDRegionsRegionIDImagesImageID(w http.ResponseWriter, r *http.Request, organizationID openapi.OrganizationIDParameter, regionID openapi.RegionIDParameter, imageID openapi.ImageIDParameter) {
-	if err := rbac.AllowOrganizationScopeID(r.Context(), "region:images", identityapi.Delete, organizationID); err != nil {
+	if err := rbac.AllowOrganizationScopeOn(r.Context(), v1Target("region:images", authz.Delete, uuid.UUID(imageID)), organizationID); err != nil {
 		errors.HandleError(w, r, err)
 		return
 	}
