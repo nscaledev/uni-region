@@ -206,7 +206,8 @@ stored objects rely on for linkage, migration, and operational coordination.
   A rebuild failure is not attributable: an unrelated host failure on the desired
   image is indistinguishable from a failed rebuild, whatever is recorded, so it
   surfaces on the monitor's lifecycle axis rather than as a reconciler diagnosis.
-  Recovery is another image or a replacement server — never data restoration.
+  Recovery is another image or user data, or a replacement server — never data
+  restoration.
 - `Server.Status.Observed` is the partition that lets the two status writers stop
   arbitrating. `Server` status has two writers: the reconciler drives the provider
   toward spec, the monitor polls the provider and records what it saw. Anything they

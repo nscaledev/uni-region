@@ -150,7 +150,8 @@ related dependencies rather than from nested path scope.
   flavor, metadata, and placement. Flavor changes remain unsupported and are
   rejected with HTTP 422. An accepted rebuild destroys the previous root disk
   contents even if the rebuild subsequently fails, so failure recovery is
-  choosing another image or replacing the server — never data restoration.
+  changing the image or user data, or replacing the server — never data
+  restoration.
 - while a rebuild is pending or in flight the v2 read reports
   `provisioningStatus=provisioning`, from the accepted update onward, because a
   result without the current generation stamp projects as `provisioning` with

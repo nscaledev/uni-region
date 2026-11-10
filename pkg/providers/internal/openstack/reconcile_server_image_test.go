@@ -289,7 +289,7 @@ func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
 	require.True(t, provisioners.IsTerminal(err), "a failed rebuild must park, not retry or settle")
 	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
 		"the advertised remedy is a spec edit, so the park must carry the user-fixable disposition, not the operator-only ErrTerminal")
-	require.ErrorContains(t, err, "the provider reports the server in an error state; select another image or replace the server")
+	require.ErrorContains(t, err, "the provider reports the server in an error state; change the image or user data, or replace the server")
 	requireNoReconcilerStamp(t, server)
 }
 
