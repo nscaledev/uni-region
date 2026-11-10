@@ -188,15 +188,6 @@ func NewTestImageClient(endpoint string, options *unikornv1.RegionOpenstackImage
 	}
 }
 
-func NewTestNetworkClient(endpoint string) *NetworkClient {
-	return &NetworkClient{
-		client: &gophercloud.ServiceClient{
-			ProviderClient: &gophercloud.ProviderClient{},
-			Endpoint:       endpoint,
-		},
-	}
-}
-
 func NewTestPlacementClient(endpoint string, httpClient *http.Client) *PlacementClient {
 	providerClient := &gophercloud.ProviderClient{
 		HTTPClient: *httpClient,
