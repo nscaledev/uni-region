@@ -781,7 +781,8 @@ type NetworkV2CreateSpec struct {
 	// provider carve-out is applied.
 	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
-	// Routes A list of network routes.
+	// Routes A list of network routes. On update, omitting the list keeps the stored
+	// routes, and an empty list removes them.
 	Routes *Routes `json:"routes,omitempty"`
 }
 
@@ -804,7 +805,8 @@ type NetworkV2Spec struct {
 	// populated then no internal host resolution will be possible.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
-	// Routes A list of network routes.
+	// Routes A list of network routes. On update, omitting the list keeps the stored
+	// routes, and an empty list removes them.
 	Routes *Routes `json:"routes,omitempty"`
 }
 
@@ -943,7 +945,8 @@ type Route struct {
 	Prefix string `json:"prefix"`
 }
 
-// Routes A list of network routes.
+// Routes A list of network routes. On update, omitting the list keeps the stored
+// routes, and an empty list removes them.
 type Routes = []Route
 
 // SecurityGroupId A security group ID.

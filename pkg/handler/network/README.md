@@ -53,6 +53,8 @@ service-principal root.
   sites where the two collide, e.g. a storage VIP pool route covering a
   management network. It is only checked on create: the prefix is immutable,
   so existing networks are never re-checked when the list changes.
+- A `v2` update keeps the stored `routes` when the field is omitted, clears
+  them when an empty list is supplied, and otherwise replaces them.
 - A `Network v2` is the visible coordination point for a resource subtree whose
   real ownership root is the hidden service principal created for it.
 - Delete must respect both ownership cascade and explicit external references.

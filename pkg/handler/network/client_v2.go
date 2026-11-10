@@ -527,6 +527,11 @@ func (c *Client) Update(ctx context.Context, networkID regionids.NetworkID, requ
 		return nil, err
 	}
 
+	// An omitted list keeps the stored routes; an explicit empty list clears them.
+	if request.Spec.Routes == nil {
+		required.Spec.Routes = current.Spec.Routes
+	}
+
 	if required.Annotations == nil {
 		required.Annotations = map[string]string{}
 	}

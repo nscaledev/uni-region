@@ -18,6 +18,7 @@ package network_test
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"testing"
@@ -370,6 +371,112 @@ func TestUpdateV2PreservesReservations(t *testing.T) {
 			require.Equal(t, test.expectedPersistedReservation, persisted.Spec.Reservations)
 			require.Len(t, persisted.Spec.DNSNameservers, 1)
 			require.Equal(t, "1.1.1.1", persisted.Spec.DNSNameservers[0].String())
+		})
+	}
+}
+
+// TestUpdateV2Routes verifies that an update omitting routes keeps the stored
+// ones, while an explicit list, even an empty one, replaces them. Requests are
+// decoded from JSON, as the handler does, so omission and an empty list arrive
+// as distinct values.
+func TestUpdateV2Routes(t *testing.T) {
+	t.Parallel()
+
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+
+	_, routePrefix, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		spec     string
+		expected openapi.Routes
+	}{
+		{
+			name:     "OmittedKeepsStored",
+			spec:     `{"dnsNameservers": ["8.8.8.8"]}`,
+			expected: openapi.Routes{{Prefix: "10.0.0.0/8", Nexthop: "10.0.0.10"}},
+		},
+		{
+			name: "EmptyClears",
+			spec: `{"dnsNameservers": ["8.8.8.8"], "routes": []}`,
+		},
+		{
+			name:     "ListReplaces",
+			spec:     `{"dnsNameservers": ["8.8.8.8"], "routes": [{"prefix": "192.168.53.0/24", "nexthop": "10.0.0.18"}]}`,
+			expected: openapi.Routes{{Prefix: "192.168.53.0/24", Nexthop: "10.0.0.18"}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := &regionv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "55555555-5555-4555-a555-555555555555",
+					Namespace:       testNamespace,
+					ResourceVersion: "1",
+					Labels: map[string]string{
+						coreconstants.OrganizationLabel:   organizationID,
+						coreconstants.ProjectLabel:        projectID,
+						constants.RegionLabel:             "region-1",
+						constants.IdentityLabel:           "identity-1",
+						constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+					},
+					Annotations: map[string]string{
+						coreconstants.AllocationAnnotation: "allocation-1",
+					},
+				},
+				Spec: regionv1.NetworkSpec{
+					Prefix: &corev1alpha1.IPv4Prefix{
+						IPNet: *prefix,
+					},
+					DNSNameservers: []corev1alpha1.IPv4Address{
+						{IP: net.ParseIP("8.8.8.8")},
+					},
+					Routes: []regionv1.Route{
+						{
+							Prefix:  corev1alpha1.IPv4Prefix{IPNet: *routePrefix},
+							NextHop: corev1alpha1.IPv4Address{IP: net.ParseIP("10.0.0.10")},
+						},
+					},
+				},
+			}
+
+			k8sClient := newNetworkFakeClient(t, current)
+			c := network.New(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: testNamespace,
+			})
+
+			ctx := rbac.NewContext(t.Context(), networkUpdateContext())
+			ctx = identityauth.NewContext(ctx, &identityauth.Info{
+				Userinfo: &identityapi.Userinfo{Sub: "user-1"},
+			})
+			ctx = principal.NewContext(ctx, &principal.Principal{
+				Actor:          "actor@example.com",
+				OrganizationID: organizationID,
+				ProjectID:      projectID,
+			})
+
+			request := &openapi.NetworkV2Update{}
+			require.NoError(t, json.Unmarshal([]byte(`{"metadata": {"name": "test-network"}, "spec": `+test.spec+`}`), request))
+
+			updated, err := c.Update(ctx, idstest.MustParseNetworkID(current.Name), request)
+			require.NoError(t, err)
+			require.Equal(t, test.expected, ptr.Deref(updated.Spec.Routes, nil))
+
+			persisted := &regionv1.Network{}
+			require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Name: current.Name, Namespace: testNamespace}, persisted))
+
+			var routes openapi.Routes
+			for _, route := range persisted.Spec.Routes {
+				routes = append(routes, openapi.Route{Prefix: route.Prefix.String(), Nexthop: route.NextHop.String()})
+			}
+
+			require.Equal(t, test.expected, routes)
 		})
 	}
 }
