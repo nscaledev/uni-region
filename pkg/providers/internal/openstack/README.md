@@ -602,6 +602,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   port is reused without a `PUT`, while private-IP status projection still runs.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
+- Subnet updates always send both the DNS nameserver and host route lists, so
+  the Neutron subnet matches the network spec exactly and an empty or omitted
+  list clears them. gophercloud drops nil option pointers, so leaving either
+  pointer unset makes Neutron keep the stale value.
 
 ## Credential Sessions
 
