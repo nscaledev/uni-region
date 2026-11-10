@@ -79,6 +79,12 @@ func NewNetworkClient(ctx context.Context, provider CredentialProvider, options 
 	return c, nil
 }
 
+func NewTestNetworkClient(options *unikornv1.RegionOpenstackNetworkSpec) *NetworkClient {
+	return &NetworkClient{
+		options: options,
+	}
+}
+
 // externalNetworks does a memoized lookup of external networks.
 func (c *NetworkClient) externalNetworks(ctx context.Context) ([]networks.Network, error) {
 	if result, ok := c.externalNetworkCache.Get(); ok {
@@ -312,8 +318,10 @@ func (c *NetworkClient) UpdateSubnet(ctx context.Context, subnetID string, dnsNa
 
 	opts := &subnets.UpdateOpts{
 		DNSNameservers: &dnsNameservers,
-		// Set even when empty: gophercloud omits a nil pointer and Neutron keeps the old routes.
-		HostRoutes: &routes,
+	}
+
+	if len(routes) > 0 {
+		opts.HostRoutes = &routes
 	}
 
 	subnet, err := subnets.Update(ctx, c.client, subnetID, opts).Extract()
