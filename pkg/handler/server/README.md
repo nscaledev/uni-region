@@ -209,12 +209,14 @@ related dependencies rather than from nested path scope.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
-- Rebuild submits at most one Nova-accepted action per target image and customer
-  user-data, except in one unguarded race for servers created before the
-  user-data record (see the provider's
+- Rebuild submits at most three Nova-accepted actions per generation, image and
+  customer user data (see the provider's
+  [rebuild attempt record](../../providers/internal/openstack/README.md#rebuild-attempt-record)),
+  except in one unguarded race for servers created before the user-data record
+  (see the provider's
   [user-data record](../../providers/internal/openstack/README.md#user-data-record)).
-  A rebuild that fails leaves the server in `ERROR`; there is no
-  automatic retry, and recovery is another image or user-data update, or server replacement.
+  After exhaustion, recovery is another image or user-data update, or server
+  replacement.
 - A v2 user-data change is refused with 409 until the Server carries
   `regions.unikorn-cloud.org/user-data-recorded`, and v1 and v2 updates keep
   that annotation. See the provider's

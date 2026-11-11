@@ -18,6 +18,9 @@ limitations under the License.
 package openstack_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -105,6 +108,7 @@ const (
 // desiredRebuildServer is a CR wanting the new image, with no status latch.
 func desiredRebuildServer() *unikornv1.Server {
 	return &unikornv1.Server{
+		ObjectMeta: metav1.ObjectMeta{Generation: 1},
 		Spec: unikornv1.ServerSpec{
 			Image: &unikornv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)},
 		},
@@ -167,14 +171,40 @@ func rebuildOptions() openstack.ServerRebuildOptions {
 	return rebuildOptionsFor(nil)
 }
 
-// rebuildOptionsFor is the rebuild of a server whose only Nova metadata is the
-// user-data record.
+// rebuildOptionsFor is the first rebuild of a server whose only Nova metadata
+// is the user-data record.
 func rebuildOptionsFor(userData []byte) openstack.ServerRebuildOptions {
 	return openstack.ServerRebuildOptions{
 		ImageID:  idstest.MustParseImageID(rebuildNewImageID),
 		UserData: userData,
-		Metadata: rebuildMetadata(userData),
+		Metadata: rebuildSubmittedMetadata(1, userData, 1),
 	}
+}
+
+// rebuildSubmittedMetadata is the metadata a rebuild toward the new image
+// sends: the user-data record and the accepted attempt count.
+func rebuildSubmittedMetadata(generation int64, customerUserData []byte, attempts int) map[string]string {
+	metadata := rebuildMetadata(customerUserData)
+	metadata["region:system:rebuild_attempts"] = rebuildAttemptsValue(attempts, generation, customerUserData)
+
+	return metadata
+}
+
+// rebuildAttemptsValue spells out the persisted attempt count toward the new
+// image, so a change to the stored form fails here rather than round-tripping.
+func rebuildAttemptsValue(attempts int, generation int64, customerUserData []byte) string {
+	target := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s\x00%s", generation, rebuildNewImageID, types.UserDataHash(customerUserData)))
+
+	return fmt.Sprintf("%d:%s", attempts, hex.EncodeToString(target[:]))
+}
+
+// novaErroredRebuild is a server Nova left in ERROR on the new image after
+// recording attempts.
+func novaErroredRebuild(attempts string) *servers.Server {
+	server := novaRebuildServer("ERROR", rebuildNewImageID)
+	server.Metadata["region:system:rebuild_attempts"] = attempts
+
+	return server
 }
 
 // rebuildMetadata is the Nova record of the customer user data a rebuild
@@ -271,26 +301,138 @@ func TestReconcileServerImageConvergedIsDone(t *testing.T) {
 	requireNoReconcilerStamp(t, server)
 }
 
-// TestReconcileServerImageConvergedErrorParks pins that a quiesced ERROR on the
-// desired image parks as user-action-required: the ref moves at accept, not on
-// a successful write, so this state cannot certify the spec image was realized
-// and must not read as provisioned (INST-1235). The message is ours, cause-neutral
-// and actionable — it diagnoses nothing (the row also catches e.g. a failed
-// live-migration with the guest still running) and never carries Nova's fault
-// vocabulary.
+// TestReconcileServerImageConvergedErrorParks keeps a failed rebuild terminal
+// after the final accepted retry.
 func TestReconcileServerImageConvergedErrorParks(t *testing.T) {
 	t.Parallel()
 
 	client := mock.NewMockServerInterface(gomock.NewController(t))
 	server := desiredRebuildServer()
 
-	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaRebuildServer("ERROR", rebuildNewImageID))
+	_, err := openstack.ReconcileServerImage(t.Context(), client, server, novaErroredRebuild(rebuildAttemptsValue(3, 1, nil)))
 	require.Error(t, err)
-	require.True(t, provisioners.IsTerminal(err), "a failed rebuild must park, not retry or settle")
+	require.True(t, provisioners.IsTerminal(err), "a failed rebuild must park after all attempts")
 	require.ErrorIs(t, err, provisioners.ErrUserActionRequired,
-		"the advertised remedy is a spec edit, so the park must carry the user-fixable disposition, not the operator-only ErrTerminal")
-	require.ErrorContains(t, err, "the provider reports the server in an error state; change the image or user data, or replace the server")
+		"the advertised remedy is a spec edit, so the park must carry the user-fixable disposition")
+	require.ErrorContains(t, err, "the provider reports the server in an error state after 3 rebuild attempts")
 	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageRetriesFailedRebuild counts attempts from Nova
+// alone: each pass starts from a Server with no status, as after a lost status
+// write.
+func TestReconcileServerImageRetriesFailedRebuild(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+
+	for attempts := 1; attempts < 3; attempts++ {
+		client.EXPECT().RebuildServer(gomock.Any(), "server-1", openstack.ServerRebuildOptions{
+			ImageID:  idstest.MustParseImageID(rebuildNewImageID),
+			Metadata: rebuildSubmittedMetadata(1, nil, attempts+1),
+		}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+		_, err := openstack.ReconcileServerImage(t.Context(), client, desiredRebuildServer(), novaErroredRebuild(rebuildAttemptsValue(attempts, 1, nil)))
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	}
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, desiredRebuildServer(), novaErroredRebuild(rebuildAttemptsValue(3, 1, nil)))
+	require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
+}
+
+// TestReconcileServerRetriesWithRegeneratedPayload pins that the retry target
+// ignores the submitted payload, which SSH CA augmentation regenerates with a
+// random MIME boundary on each pass.
+func TestReconcileServerRetriesWithRegeneratedPayload(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	server := desiredRebuildServer()
+
+	for attempts, payload := range []string{"", "boundary-a", "boundary-b"} {
+		if attempts == 0 {
+			continue
+		}
+
+		options := &types.ServerCreateOptions{UserData: []byte(payload)}
+
+		client.EXPECT().GetServer(gomock.Any(), gomock.Any()).Return(novaErroredRebuild(rebuildAttemptsValue(attempts, 1, nil)), nil)
+		client.EXPECT().RebuildServer(gomock.Any(), "server-1", openstack.ServerRebuildOptions{
+			ImageID:  idstest.MustParseImageID(rebuildNewImageID),
+			UserData: options.UserData,
+			Metadata: rebuildSubmittedMetadata(1, nil, attempts+1),
+		}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+		err := openstack.ReconcileServerForCreate(t.Context(), nil, client, server, options, nil, "")
+		require.ErrorIs(t, err, provisioners.ErrYield)
+	}
+}
+
+// TestReconcileServerImageClearsConvergedRebuild pins that convergence clears
+// the count in Nova, so a later unrelated ERROR settles instead of retrying.
+func TestReconcileServerImageClearsConvergedRebuild(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+	client.EXPECT().UpdateServerMetadata(gomock.Any(), "server-1", map[string]string{"region:system:rebuild_attempts": "0"})
+
+	converged := novaErroredRebuild(rebuildAttemptsValue(1, 1, nil))
+	converged.Status = "ACTIVE"
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, desiredRebuildServer(), converged)
+	require.NoError(t, err)
+
+	server := desiredRebuildServer()
+
+	_, err = openstack.ReconcileServerImage(t.Context(), client, server, novaErroredRebuild("0"))
+	require.NoError(t, err)
+	requireNoReconcilerStamp(t, server)
+}
+
+// TestReconcileServerImageDefersClearDuringTask pins that a count is not left
+// behind just because a task held the server when the rebuild converged.
+func TestReconcileServerImageDefersClearDuringTask(t *testing.T) {
+	t.Parallel()
+
+	client := mock.NewMockServerInterface(gomock.NewController(t))
+
+	converged := novaErroredRebuild(rebuildAttemptsValue(1, 1, nil))
+	converged.Status = "ACTIVE"
+	converged.TaskState = taskStateRebooting
+
+	_, err := openstack.ReconcileServerImage(t.Context(), client, desiredRebuildServer(), converged)
+	require.ErrorIs(t, err, provisioners.ErrYield)
+}
+
+// TestReconcileServerImageDoesNotRetryUncountedError pins that an ERROR with no
+// count toward the current target is not retried: a count from an earlier
+// generation or another target, or none at all.
+func TestReconcileServerImageDoesNotRetryUncountedError(t *testing.T) {
+	t.Parallel()
+
+	for name, attempts := range map[string]string{
+		"none":               "",
+		"cleared":            "0",
+		"earlier generation": rebuildAttemptsValue(1, 0, nil),
+		"other user data":    rebuildAttemptsValue(1, 1, []byte("#cloud-config\n")),
+		"unparseable":        "x:y",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			client := mock.NewMockServerInterface(gomock.NewController(t))
+			server := desiredRebuildServer()
+
+			openstackServer := novaRebuildServer("ERROR", rebuildNewImageID)
+			if attempts != "" {
+				openstackServer.Metadata["region:system:rebuild_attempts"] = attempts
+			}
+
+			_, err := openstack.ReconcileServerImage(t.Context(), client, server, openstackServer)
+			require.NoError(t, err)
+			requireNoReconcilerStamp(t, server)
+		})
+	}
 }
 
 // TestReconcileServerImageConvergedErrorBeforeLaunchIsCreateRetrys pins the guard:
@@ -544,7 +686,10 @@ func TestReconcileServerRebuildUsesEffectiveUserData(t *testing.T) {
 	client.EXPECT().RebuildServer(gomock.Any(), "server-1", openstack.ServerRebuildOptions{
 		ImageID:  idstest.MustParseImageID(rebuildNewImageID),
 		UserData: server.Spec.UserData,
-		Metadata: map[string]string{"region:system:user_data_hash": "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2"},
+		Metadata: map[string]string{
+			"region:system:user_data_hash":   "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2",
+			"region:system:rebuild_attempts": rebuildAttemptsValue(1, 1, server.Spec.UserData),
+		},
 	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	_, err := openstack.ReconcileServer(t.Context(), nil, client, server, nil, "identity-keypair")
@@ -563,7 +708,7 @@ func TestCreateServerCopiesFullStatusBackForAugmentedServers(t *testing.T) {
 	require.NotSame(t, server, openstack.ServerForCreate(server, options), "test setup requires user-data augmentation to force a deep copy")
 
 	rebuild := rebuildOptionsFor(options.UserData)
-	rebuild.Metadata = rebuildMetadata(server.Spec.UserData)
+	rebuild.Metadata = rebuildSubmittedMetadata(1, server.Spec.UserData, 1)
 
 	client := mock.NewMockServerInterface(gomock.NewController(t))
 	client.EXPECT().GetServer(gomock.Any(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
@@ -699,7 +844,10 @@ func TestReconcileServerImageRebuildDecision(t *testing.T) {
 				client.EXPECT().RebuildServer(gomock.Any(), "server-1", openstack.ServerRebuildOptions{
 					ImageID:  idstest.MustParseImageID(rebuildNewImageID),
 					UserData: userData,
-					Metadata: map[string]string{"region:system:user_data_hash": desired},
+					Metadata: map[string]string{
+						"region:system:user_data_hash":   desired,
+						"region:system:rebuild_attempts": rebuildAttemptsValue(1, 1, userData),
+					},
 				}).
 					Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 			}

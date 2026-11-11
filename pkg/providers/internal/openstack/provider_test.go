@@ -2391,7 +2391,7 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 	rebuild := rebuildOptionsFor(options.UserData)
-	rebuild.Metadata = rebuildMetadata(server.Spec.UserData)
+	rebuild.Metadata = rebuildSubmittedMetadata(server.Generation, server.Spec.UserData, 1)
 
 	compute := mock.NewMockServerInterface(c)
 	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
