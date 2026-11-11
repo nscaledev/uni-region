@@ -249,6 +249,10 @@ func (s *updateV2Saga) generate(ctx context.Context) error {
 		return err
 	}
 
+	if err := preserveUserDataRecorded(required, s.current); err != nil {
+		return err
+	}
+
 	s.updated = s.current.DeepCopy()
 	s.updated.Labels = required.Labels
 	s.updated.Annotations = required.Annotations

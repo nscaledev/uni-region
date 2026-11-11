@@ -19,7 +19,6 @@ package openstack_test
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,54 +36,46 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// fakeNovaServer captures server create and action requests and returns minimal responses.
+// fakeNovaServer captures server create, action and metadata requests and
+// returns minimal responses.
 type fakeNovaServer struct {
 	body map[string]any
 }
 
-func (f *fakeNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost && r.URL.Path == "/servers" {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := json.Unmarshal(raw, &f.body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"server":{"id":"test-id","name":"test-server","status":"BUILD"}}`))
-
-		return
-	}
-
-	if r.Method == http.MethodPost && r.URL.Path == "/servers/server-id/action" {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := json.Unmarshal(raw, &f.body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"server":{"id":"server-id","status":"REBUILD"}}`))
-
-		return
-	}
-
-	http.NotFound(w, r)
+type fakeNovaResponse struct {
+	status int
+	body   string
 }
 
-func TestRebuildServerSendsOnlyImage(t *testing.T) {
+//nolint:gochecknoglobals
+var fakeNovaResponses = map[string]fakeNovaResponse{
+	"/servers":                    {http.StatusAccepted, `{"server":{"id":"test-id","name":"test-server","status":"BUILD"}}`},
+	"/servers/server-id/action":   {http.StatusAccepted, `{"server":{"id":"server-id","status":"REBUILD"}}`},
+	"/servers/server-id/metadata": {http.StatusOK, `{"metadata":{}}`},
+}
+
+// ServeHTTP serves POST only, so a metadata PUT, which would replace rather
+// than merge, gets 404.
+func (f *fakeNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	response, ok := fakeNovaResponses[r.URL.Path]
+	if !ok || r.Method != http.MethodPost {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&f.body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.status)
+	_, _ = w.Write([]byte(response.body))
+}
+
+// TestUpdateServerMetadataMerges pins that the user-data record is written
+// with Nova's merging metadata call, so other server metadata survives.
+func TestUpdateServerMetadataMerges(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeNovaServer{}
@@ -93,24 +84,68 @@ func TestRebuildServerSendsOnlyImage(t *testing.T) {
 	defer srv.Close()
 
 	client := openstack.NewTestComputeClient(srv.URL + "/")
-	options := openstack.ServerRebuildOptions{
-		ImageID: idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+
+	require.NoError(t, client.UpdateServerMetadata(t.Context(), "server-id", map[string]string{"region:system:user_data_hash": "digest"}))
+	assert.Equal(t, map[string]any{"metadata": map[string]any{"region:system:user_data_hash": "digest"}}, fake.body)
+}
+
+func TestRebuildServerSendsUserData(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name             string
+		userData         []byte
+		metadata         map[string]string
+		expectedUserData string
+		expectedMetadata any
+	}{
+		{
+			name:             "populated payload",
+			userData:         []byte("#cloud-config\nusers: []\n"),
+			metadata:         map[string]string{"region:system:user_data_hash": "digest"},
+			expectedUserData: "I2Nsb3VkLWNvbmZpZwp1c2VyczogW10K",
+			// Metadata travels in the rebuild request so Nova commits it on acceptance.
+			expectedMetadata: map[string]any{"region:system:user_data_hash": "digest"},
+		},
+		{
+			// An empty payload must clear Nova user data.
+			name:             "empty payload",
+			userData:         []byte{},
+			expectedUserData: "",
+		},
 	}
 
-	_, err := client.RebuildServer(t.Context(), "server-id", options)
-	require.NoError(t, err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
-	require.True(t, ok, "body missing 'rebuild' key")
-	assert.Equal(t, options.ImageID.String(), rebuildBody["imageRef"])
+			fake := &fakeNovaServer{}
 
-	// key_name and user_data are omitted so Nova preserves the stored keypair and
-	// create-time user data, keeping the rebuilt guest create-equivalent.
-	_, hasKeyName := rebuildBody["key_name"]
-	assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
+			srv := httptest.NewServer(fake)
+			defer srv.Close()
 
-	_, hasUserData := rebuildBody["user_data"]
-	assert.False(t, hasUserData, "user_data must be omitted so Nova keeps the create-time user data")
+			client := openstack.NewTestComputeClient(srv.URL + "/")
+			options := openstack.ServerRebuildOptions{
+				ImageID:  idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+				UserData: tc.userData,
+				Metadata: tc.metadata,
+			}
+
+			_, err := client.RebuildServer(t.Context(), "server-id", options)
+			require.NoError(t, err)
+
+			rebuildBody, ok := fake.body["rebuild"].(map[string]any)
+			require.True(t, ok, "body missing 'rebuild' key")
+			assert.Equal(t, options.ImageID.String(), rebuildBody["imageRef"])
+
+			// Rebuild cannot change the keypair, so it is intentionally omitted.
+			_, hasKeyName := rebuildBody["key_name"]
+			assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
+
+			assert.Equal(t, tc.expectedUserData, rebuildBody["user_data"])
+			assert.Equal(t, tc.expectedMetadata, rebuildBody["metadata"])
+		})
+	}
 }
 
 // newServerFixture is a server named test-server, matching the name the fake

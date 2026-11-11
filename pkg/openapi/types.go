@@ -1266,8 +1266,8 @@ type ServerV2CreateSpec struct {
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
 	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
-	// value, and an empty string clears it. A changed value is not applied to the running guest —
-	// it takes effect only when the server is next rebuilt (image change) or recreated.
+	// value, and an empty string clears it. A changed value triggers an in-place rebuild using the
+	// supplied cloud-init payload.
 	UserData *[]byte `json:"userData,omitempty"`
 
 	// Volumes Complete desired set of existing Volumes to attach to the Server.
@@ -1320,8 +1320,8 @@ type ServerV2Spec struct {
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
 	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
-	// value, and an empty string clears it. A changed value is not applied to the running guest —
-	// it takes effect only when the server is next rebuilt (image change) or recreated.
+	// value, and an empty string clears it. A changed value triggers an in-place rebuild using the
+	// supplied cloud-init payload.
 	UserData *[]byte `json:"userData,omitempty"`
 
 	// Volumes Complete desired set of existing Volumes to attach to the Server.

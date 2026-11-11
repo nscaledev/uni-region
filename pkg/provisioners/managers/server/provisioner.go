@@ -542,7 +542,16 @@ func (p *Provisioner) createServerAndReleaseReferences(ctx context.Context, cli 
 		return err
 	}
 
+	_, recorded := p.server.Annotations[constants.UserDataRecordedAnnotation]
+
 	provisionErr := provider.CreateServer(ctx, identity, p.server, options)
+
+	if !recorded {
+		if err := p.persistUserDataRecorded(ctx, cli); err != nil {
+			return err
+		}
+	}
+
 	if provisionErr != nil && !errors.Is(provisionErr, provisioners.ErrYield) && !provisioners.IsTerminal(provisionErr) {
 		return provisionErr
 	}
@@ -552,6 +561,35 @@ func (p *Provisioner) createServerAndReleaseReferences(ctx context.Context, cli 
 	}
 
 	return provisionErr
+}
+
+// persistUserDataRecorded saves the annotation the provider set in memory,
+// because the reconciler persists only status. The patch is metadata-only and
+// optimistically locked, so taking its resource version forward cannot hide
+// another writer from the status update that follows.
+func (p *Provisioner) persistUserDataRecorded(ctx context.Context, cli client.Client) error {
+	value, ok := p.server.Annotations[constants.UserDataRecordedAnnotation]
+	if !ok {
+		return nil
+	}
+
+	stored := p.server.DeepCopy()
+	delete(stored.Annotations, constants.UserDataRecordedAnnotation)
+
+	patched := stored.DeepCopy()
+	if patched.Annotations == nil {
+		patched.Annotations = map[string]string{}
+	}
+
+	patched.Annotations[constants.UserDataRecordedAnnotation] = value
+
+	if err := cli.Patch(ctx, patched, client.MergeFromWithOptions(stored, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("%w: failed to record server user-data annotation", err)
+	}
+
+	p.server.ResourceVersion = patched.ResourceVersion
+
+	return nil
 }
 
 // Deprovision implements the Provision interface.

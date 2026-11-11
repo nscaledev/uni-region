@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -79,6 +80,30 @@ func TestMetadataKey(t *testing.T) {
 
 			if c.ok {
 				require.Equal(t, c.expected, got)
+			}
+		})
+	}
+}
+
+func TestMetadataKeyCannotProduceSystemRecordKey(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{
+		"region.example.com/user-data-hash",
+		"region.example.com/system:user-data-hash",
+		"region:system.example.com/user-data-hash",
+		"region.example.com/system-user-data-hash",
+		"region.system:example.com/user-data-hash",
+		"compute.example.com/instance-id",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			key, ok := regionv1.MetadataKey(name)
+			require.NotEqual(t, "region:system:user_data_hash", key)
+
+			if ok {
+				require.Equal(t, 1, strings.Count(key, ":"))
 			}
 		})
 	}

@@ -42,6 +42,10 @@ descriptor/version string used by shared runtime layers.
 - `ServerPendingEntryTimeAnnotation` has a single-writer operational contract:
   the region monitor stamps it when a server enters `Pending` and removes it
   when the server leaves that state.
+- `UserDataRecordedAnnotation` is set on a Server only by the server
+  controller, and the server handlers carry it across updates. Its states and
+  retirement are defined in the
+  [OpenStack provider README](../providers/internal/openstack/README.md#user-data-record).
 - `ImageSourceTag`, `ImageSourceImport`, `ImageSourceSnapshot`, and
   `ImageOrganizationIDTag` are part of the current image-origin contract used to
   distinguish imported images pushed into OpenStack via the back channel from

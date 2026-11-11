@@ -84,6 +84,13 @@ const (
 )
 
 const (
+	// UserDataRecordedAnnotation marks that the provider holds the server's
+	// user-data record. The API refuses user-data changes until it is set;
+	// only its presence matters.
+	UserDataRecordedAnnotation = "regions.unikorn-cloud.org/user-data-recorded"
+)
+
+const (
 	// DefaultNetworkReservationPrefixLength is the default reservation applied
 	// when spec.reservations is omitted.
 	DefaultNetworkReservationPrefixLength = 25
