@@ -68,7 +68,11 @@ func (s *createV2Saga) resolveScope(ctx context.Context) error {
 }
 
 func (s *createV2Saga) authorize(ctx context.Context) error {
-	return rbac.AllowProjectScopeCreateOn(ctx, s.client.Identity, s.target, s.organizationID, s.projectID)
+	if err := rbac.AllowProjectScopeCreateOn(ctx, s.client.Identity, s.target, s.organizationID, s.projectID); err != nil {
+		return err
+	}
+
+	return authorizeCreatePlacement(ctx, &s.request.Spec, s.organizationID, s.projectID)
 }
 
 func (s *createV2Saga) resolveNetwork(ctx context.Context) error {

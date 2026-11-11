@@ -76,7 +76,8 @@ func MockACLMiddleware(_ []string) func(http.Handler) http.Handler {
 			// Create project-level endpoints for compute resources
 			projectEndpoints := identityapi.AclEndpoints{
 				{Name: "region:servers", Operations: identityapi.AclOperations{identityapi.Read, identityapi.Create, identityapi.Update, identityapi.Delete}},
-				{Name: "region:servers:v2/provider-create-gates", Operations: identityapi.AclOperations{identityapi.Update}},
+				{Name: "region:servers:v2/provider-create-gates", Operations: identityapi.AclOperations{identityapi.Create, identityapi.Update}},
+				{Name: "region:servers:v2/infrastructure-ref", Operations: identityapi.AclOperations{identityapi.Create}},
 				{Name: "region:identities", Operations: identityapi.AclOperations{identityapi.Read, identityapi.Create, identityapi.Update, identityapi.Delete}},
 				{Name: "region:networks", Operations: identityapi.AclOperations{identityapi.Read, identityapi.Create, identityapi.Update, identityapi.Delete}},
 				{Name: "region:networks:v2", Operations: identityapi.AclOperations{identityapi.Read}},

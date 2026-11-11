@@ -73,7 +73,13 @@ import (
 // endpoint is the permission that governs servers, v1 and v2 alike.
 const endpoint = "region:servers"
 
+// providerCreateGatesEndpoint governs provider-create gates.  Create lets a
+// caller configure gates on a new server; update lets it satisfy one.
 const providerCreateGatesEndpoint = "region:servers:v2/provider-create-gates"
+
+// infrastructureRefEndpoint governs pinning a new server to a physical host
+// with infrastructureRef.  Create is the only operation it has.
+const infrastructureRefEndpoint = "region:servers:v2/infrastructure-ref"
 
 type ClientV2 struct {
 	*Client
@@ -572,6 +578,38 @@ func (c *ClientV2) validateSecurityGroupReferences(ctx context.Context, networkI
 		}
 
 		if err := assertSameNetwork(networkID, securityGroup); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// authorizeCreatePlacement checks the create-time inputs that decide where
+// and when the provider builds a server.  infrastructureRef names a physical
+// host and providerCreateGates make another service's report a precondition
+// of provider create, which that service may act on for the named host.
+// Neither is for tenants: each needs its own permission, held by the internal
+// services that place servers, in addition to create on the server.
+func authorizeCreatePlacement(ctx context.Context, spec *openapi.ServerV2CreateSpec, organizationID identityids.OrganizationID, projectID identityids.ProjectID) error {
+	if spec.InfrastructureRef != nil {
+		target := authz.Target{
+			Endpoint:  infrastructureRefEndpoint,
+			Operation: authz.Create,
+		}
+
+		if err := rbac.AllowProjectScopeOn(ctx, target, organizationID, projectID); err != nil {
+			return err
+		}
+	}
+
+	if spec.ProviderCreateGates != nil && len(*spec.ProviderCreateGates) > 0 {
+		target := authz.Target{
+			Endpoint:  providerCreateGatesEndpoint,
+			Operation: authz.Create,
+		}
+
+		if err := rbac.AllowProjectScopeOn(ctx, target, organizationID, projectID); err != nil {
 			return err
 		}
 	}

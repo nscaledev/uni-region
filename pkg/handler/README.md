@@ -140,6 +140,10 @@ decision marked primary, and never from the URL. See identity's
   endpoints (`region:networks:v2/references`,
   `region:servers:v2/provider-create-gates`) and are recorded under them. They
   no longer also need read on the network or server.
+- A server create that pins a host or configures provider-create gates also
+  needs create on `region:servers:v2/infrastructure-ref` or
+  `region:servers:v2/provider-create-gates` in the server's project, as a
+  supporting check after the create's own.
 - A create declares itself first, so a request that fails before its check,
   such as on a bad organization ID, a missing network or a missing parent, is
   still recorded as a create. A create scoped

@@ -82,7 +82,8 @@ func fakeClientWithSchema(t *testing.T, objects ...client.Object) client.Client 
 }
 
 type aclBuilder struct {
-	org identityapi.AclOrganization
+	org    identityapi.AclOrganization
+	global identityapi.AclEndpoints
 }
 
 func newOrganisationACLBuilder(orgID string) *aclBuilder {
@@ -127,10 +128,26 @@ func (b *aclBuilder) addProjectEndpoint(projectID, endpoint string, perms ...ide
 	return b
 }
 
-func (b *aclBuilder) buildContext(ctx context.Context) context.Context {
-	return rbac.NewContext(ctx, &identityapi.Acl{
-		Organizations: &identityapi.AclOrganizationList{b.org},
+// addGlobalEndpoint grants at global scope, as for an internal service.
+func (b *aclBuilder) addGlobalEndpoint(endpoint string, perms ...identityapi.AclOperation) *aclBuilder {
+	b.global = append(b.global, identityapi.AclEndpoint{
+		Name:       endpoint,
+		Operations: perms,
 	})
+
+	return b
+}
+
+func (b *aclBuilder) buildContext(ctx context.Context) context.Context {
+	acl := &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{b.org},
+	}
+
+	if b.global != nil {
+		acl.Global = &b.global
+	}
+
+	return rbac.NewContext(ctx, acl)
 }
 
 func withPrincipal(ctx context.Context) context.Context {
@@ -306,7 +323,11 @@ func newServerV2CreateRequest(ctx context.Context, t *testing.T, name, flavorID,
 	return httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v2/servers", bytes.NewReader(body))
 }
 
+// pinnedOnlyServerV2CreateFixture serves creates on a pinned-only flavor to a
+// tenant holding create on servers in the project.  placerCtx is the same
+// caller with the placement service's grant to pin a server to a host.
 type pinnedOnlyServerV2CreateFixture struct {
+	placerCtx context.Context //nolint:containedctx // test fixture
 	handler   *ServerV2Handler
 	flavorID  string
 	networkID string
@@ -355,12 +376,19 @@ func newPinnedOnlyServerV2CreateFixture(t *testing.T) (context.Context, *pinnedO
 		Providers: providers,
 	})
 
-	ctx := newOrganisationACLBuilder(orgID).
-		addEndpoint("region:networks:v2", identityapi.Read).
-		addProjectEndpoint(projectID, "region:servers", identityapi.Create).
+	tenant := func() *aclBuilder {
+		return newOrganisationACLBuilder(orgID).
+			addEndpoint("region:networks:v2", identityapi.Read).
+			addProjectEndpoint(projectID, "region:servers", identityapi.Create)
+	}
+
+	ctx := tenant().buildContext(t.Context())
+	placerCtx := tenant().
+		addGlobalEndpoint("region:servers:v2/infrastructure-ref", identityapi.Create).
 		buildContext(t.Context())
 
 	return ctx, &pinnedOnlyServerV2CreateFixture{
+		placerCtx: placerCtx,
 		handler:   handler,
 		flavorID:  flavorID,
 		networkID: networkID,
@@ -553,8 +581,8 @@ func TestServerV2_Create_PinnedOnlyFlavorWithoutInfrastructureRef(t *testing.T) 
 func TestServerV2_Create_PinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
 	t.Parallel()
 
-	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t)
-	ctx = withPrincipal(ctx)
+	_, fixture := newPinnedOnlyServerV2CreateFixture(t)
+	ctx := withPrincipal(fixture.placerCtx)
 	infrastructureRef := "node-42"
 
 	response := httptest.NewRecorder()
@@ -571,4 +599,28 @@ func TestServerV2_Create_PinnedOnlyFlavorWithInfrastructureRef(t *testing.T) {
 	require.Equal(t, fixture.flavorID, read.Spec.FlavorId.String())
 	require.NotNil(t, read.Status.InfrastructureRef)
 	require.Equal(t, infrastructureRef, *read.Status.InfrastructureRef)
+}
+
+// TestServerV2_Create_InfrastructureRefRefusedForTenant pins that a tenant
+// allowed to create servers still cannot choose the physical host, even on a
+// pinned-only flavor that requires one.
+func TestServerV2_Create_InfrastructureRefRefusedForTenant(t *testing.T) {
+	t.Parallel()
+
+	ctx, fixture := newPinnedOnlyServerV2CreateFixture(t)
+	ctx = withPrincipal(ctx)
+	infrastructureRef := "node-42"
+
+	response := httptest.NewRecorder()
+	request := newServerV2CreateRequest(ctx, t, "test-server", fixture.flavorID, srvTestImageID, fixture.networkID, &infrastructureRef)
+
+	fixture.handler.PostApiV2Servers(response, request)
+
+	require.Equal(t, http.StatusForbidden, response.Result().StatusCode)
+
+	var errorResponse coreapi.Error
+
+	requireDeserialiseBody(t, response.Result().Body, &errorResponse)
+	require.Equal(t, coreapi.Forbidden, errorResponse.Error)
+	require.Contains(t, errorResponse.ErrorDescription, "region:servers:v2/infrastructure-ref")
 }
