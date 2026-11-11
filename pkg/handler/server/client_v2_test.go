@@ -181,6 +181,25 @@ func aclWithOrgScopeServerCreate() *identityapi.Acl {
 	}
 }
 
+// aclWithServerPlacement is aclWithOrgScopeServerCreate for an internal
+// placement service, which also holds the global grants that let it pin a
+// server to a host and configure provider-create gates on it.
+func aclWithServerPlacement() *identityapi.Acl {
+	acl := aclWithOrgScopeServerCreate()
+	acl.Global = &identityapi.AclEndpoints{
+		{
+			Name:       "region:servers:v2/infrastructure-ref",
+			Operations: identityapi.AclOperations{identityapi.Create},
+		},
+		{
+			Name:       "region:servers:v2/provider-create-gates",
+			Operations: identityapi.AclOperations{identityapi.Create},
+		},
+	}
+
+	return acl
+}
+
 // aclWithSrvNetworkReadOnly grants network:read at organization scope but no
 // server:create, so the server RBAC check returns forbidden.
 func aclWithSrvNetworkReadOnly(orgID string) *identityapi.Acl {
@@ -975,7 +994,7 @@ func TestServerCreateV2SetsInfrastructureRef(t *testing.T) {
 		Providers: newMockProvidersWithReadyImage(ctrl),
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithServerPlacement()))
 
 	infrastructureRef := "node-uuid-123"
 	request := minimalServerV2CreateRequest()
@@ -1017,7 +1036,7 @@ func TestServerCreateV2RejectsInfrastructureRefWithIdentitySSHKey(t *testing.T) 
 		Identity:  mockIdentity,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithServerPlacement()))
 
 	infrastructureRef := "node-uuid-123"
 	request := minimalServerV2CreateRequest()
@@ -1049,7 +1068,7 @@ func TestServerCreateV2AllowsInfrastructureRefWithSSHCertificateAuthority(t *tes
 		Providers: newMockProvidersWithReadyImage(ctrl),
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithServerPlacement()))
 
 	infrastructureRef := "node-uuid-123"
 	request := minimalServerV2CreateRequest()
@@ -1144,7 +1163,7 @@ func TestServerCreateV2SetsProviderCreateGates(t *testing.T) {
 		Providers: mockProviders,
 	})
 
-	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithOrgScopeServerCreate()))
+	ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithServerPlacement()))
 
 	gates := openapi.ServerProviderCreateGates{
 		{ConditionType: srvProviderGate},
@@ -1165,6 +1184,155 @@ func TestServerCreateV2SetsProviderCreateGates(t *testing.T) {
 	require.Equal(t, []regionv1.ServerProviderCreateGate{
 		{ConditionType: srvProviderGate},
 	}, created.Spec.ProviderCreateGates)
+}
+
+// createV2WithACL creates request as a caller holding acl, with the identity
+// and provider lookups an allowed create would make, and returns the client
+// so the caller can check what was stored.
+func createV2WithACL(t *testing.T, acl *identityapi.Acl, request *openapi.ServerV2Create) (client.Client, *openapi.ServerV2Read, error) {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+
+	k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID)).Build()
+
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+	expectProjectFound(mockIdentity).AnyTimes()
+
+	c := server.NewClientV2(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: srvNamespace,
+		Identity:  mockIdentity,
+		Providers: newMockProvidersWithReadyImage(ctrl),
+	})
+
+	result, err := c.CreateV2(withPrincipal(rbac.NewContext(t.Context(), acl)), request)
+
+	return k8sClient, result, err
+}
+
+func requireNoServers(t *testing.T, k8sClient client.Client) {
+	t.Helper()
+
+	servers := &regionv1.ServerList{}
+	require.NoError(t, k8sClient.List(t.Context(), servers))
+	require.Empty(t, servers.Items)
+}
+
+// TestServerCreateV2RefusesTenantInfrastructureRef pins that create on the
+// server does not let a caller choose its physical host: that needs the
+// infrastructure-ref permission, which tenants are not granted.
+func TestServerCreateV2RefusesTenantInfrastructureRef(t *testing.T) {
+	t.Parallel()
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = ptr.To("node-uuid-123")
+	request.Spec.SshInjection = ptr.To(openapi.SshInjectionNone)
+
+	k8sClient, _, err := createV2WithACL(t, aclWithOrgScopeServerCreate(), request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+	require.ErrorContains(t, err, "region:servers:v2/infrastructure-ref")
+	requireNoServers(t, k8sClient)
+}
+
+// TestServerCreateV2RefusesTenantProviderCreateGates pins that create on the
+// server does not let a caller configure provider-create gates, so it cannot
+// ask the service that satisfies one to act for its server.
+func TestServerCreateV2RefusesTenantProviderCreateGates(t *testing.T) {
+	t.Parallel()
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.ProviderCreateGates = &openapi.ServerProviderCreateGates{{ConditionType: srvProviderGate}}
+
+	k8sClient, _, err := createV2WithACL(t, aclWithOrgScopeServerCreate(), request)
+
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+	require.ErrorContains(t, err, "region:servers:v2/provider-create-gates")
+	requireNoServers(t, k8sClient)
+}
+
+// TestServerCreateV2PlacementPermissionsAreSeparate pins that each create-time
+// placement input needs its own grant: satisfying gates does not allow
+// configuring them, and configuring gates does not allow pinning a host.
+func TestServerCreateV2PlacementPermissionsAreSeparate(t *testing.T) {
+	t.Parallel()
+
+	withGlobal := func(endpoint string, operation identityapi.AclOperation) *identityapi.Acl {
+		acl := aclWithOrgScopeServerCreate()
+		acl.Global = &identityapi.AclEndpoints{
+			{Name: endpoint, Operations: identityapi.AclOperations{operation}},
+		}
+
+		return acl
+	}
+
+	t.Run("satisfier configuring gates", func(t *testing.T) {
+		t.Parallel()
+
+		request := minimalServerV2CreateRequest()
+		request.Spec.ProviderCreateGates = &openapi.ServerProviderCreateGates{{ConditionType: srvProviderGate}}
+
+		k8sClient, _, err := createV2WithACL(t, withGlobal("region:servers:v2/provider-create-gates", identityapi.Update), request)
+
+		require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+		requireNoServers(t, k8sClient)
+	})
+
+	t.Run("gate configurer pinning a host", func(t *testing.T) {
+		t.Parallel()
+
+		request := minimalServerV2CreateRequest()
+		request.Spec.InfrastructureRef = ptr.To("node-uuid-123")
+		request.Spec.SshInjection = ptr.To(openapi.SshInjectionNone)
+
+		k8sClient, _, err := createV2WithACL(t, withGlobal("region:servers:v2/provider-create-gates", identityapi.Create), request)
+
+		require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+		requireNoServers(t, k8sClient)
+	})
+}
+
+// TestServerCreateV2PlacementServiceSetsBoth pins that a caller holding both
+// placement grants may pin a host and gate its create in one request.
+func TestServerCreateV2PlacementServiceSetsBoth(t *testing.T) {
+	t.Parallel()
+
+	request := minimalServerV2CreateRequest()
+	request.Spec.InfrastructureRef = ptr.To("node-uuid-123")
+	request.Spec.SshInjection = ptr.To(openapi.SshInjectionNone)
+	request.Spec.ProviderCreateGates = &openapi.ServerProviderCreateGates{{ConditionType: srvProviderGate}}
+
+	_, result, err := createV2WithACL(t, aclWithServerPlacement(), request)
+
+	require.NoError(t, err)
+	require.Equal(t, "node-uuid-123", *result.Status.InfrastructureRef)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{srvProviderGate}, *result.Status.RemainingProviderCreateGates)
+}
+
+// TestServerCreateV2WithoutPlacementInputsNeedsNoPlacementGrant pins that a
+// tenant create naming neither input, or an empty gate list, is unaffected.
+func TestServerCreateV2WithoutPlacementInputsNeedsNoPlacementGrant(t *testing.T) {
+	t.Parallel()
+
+	for name, gates := range map[string]*openapi.ServerProviderCreateGates{
+		"omitted": nil,
+		"empty":   {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			request := minimalServerV2CreateRequest()
+			request.Spec.ProviderCreateGates = gates
+
+			_, result, err := createV2WithACL(t, aclWithOrgScopeServerCreate(), request)
+
+			require.NoError(t, err)
+			require.Nil(t, result.Status.InfrastructureRef)
+		})
+	}
 }
 
 func TestServerUpdateV2PreservesSSHCertificateAuthority(t *testing.T) {

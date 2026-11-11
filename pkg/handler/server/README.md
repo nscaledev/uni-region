@@ -195,10 +195,22 @@ related dependencies rather than from nested path scope.
 - `providerCreateGates` is create-time coordination input. Updates preserve the
   existing gate list and the CRD marks it immutable; only Region writes the
   derived status entries.
+- `infrastructureRef` and `providerCreateGates` are for internal placement
+  services, not tenants. Create on the server lets a caller build a server
+  but not choose its physical host or make another service's report a
+  precondition of provider create: that service may act on the named host
+  for the caller's project. A create setting `infrastructureRef` also needs
+  create on `region:servers:v2/infrastructure-ref`, and one setting a
+  non-empty `providerCreateGates` also needs create on
+  `region:servers:v2/provider-create-gates`, each in the server's project
+  (a global grant covers every project). Both are checked after create on
+  the server, and either missing refuses the request with `403`. A
+  pinned-only flavor therefore cannot be used by a tenant directly.
 - The provider-create gate action has its own
-  `region:servers:v2/provider-create-gates` permission, and needs nothing else
-  on the server. It is for internal services; of the built-in roles only the
-  platform administrator also holds it.
+  `region:servers:v2/provider-create-gates` permission, update, and needs
+  nothing else on the server. Update does not imply create: the service that
+  satisfies a gate cannot configure one. It is for internal services; of the
+  built-in roles only the platform administrator also holds it.
   Its outputs carry no extra permission: whoever may satisfy a gate may
   publish its outputs. They land in instance metadata, readable from inside
   the server, so they must not be secret.

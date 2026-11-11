@@ -1244,7 +1244,8 @@ type ServerV2CreateSpec struct {
 	// recreating the root disk and destroying its contents.
 	ImageId ImageId `json:"imageId"`
 
-	// InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
+	// InfrastructureRef A provider-specific identifier for the physical host to provision the server onto, bypassing the provider's scheduler.
+	// Setting it requires create on region:servers:v2/infrastructure-ref, which is granted to internal placement services rather than to tenants; without it the request is refused with 403.
 	InfrastructureRef *InfrastructureRef `json:"infrastructureRef,omitempty"`
 
 	// NetworkId A network ID.
@@ -1253,7 +1254,8 @@ type ServerV2CreateSpec struct {
 	// Networking A server's network configuration.
 	Networking *ServerV2Networking `json:"networking,omitempty"`
 
-	// ProviderCreateGates Provider-create gates requested at server creation time.
+	// ProviderCreateGates Provider-create gates that must be satisfied before the provider creates the server.
+	// Setting a non-empty list requires create on region:servers:v2/provider-create-gates, which is granted to internal placement services rather than to tenants; without it the request is refused with 403.
 	ProviderCreateGates *ServerProviderCreateGates `json:"providerCreateGates,omitempty"`
 
 	// SshCertificateAuthorityId The SSH certificate authority used to bootstrap login trust when the server is created.

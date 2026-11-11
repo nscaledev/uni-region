@@ -3814,9 +3814,17 @@ components:
             allOf:
             - $ref: '#/components/schemas/sshInjection'
           infrastructureRef:
-            $ref: '#/components/schemas/infrastructureRef'
+            description: |-
+              A provider-specific identifier for the physical host to provision the server onto, bypassing the provider's scheduler.
+              Setting it requires create on region:servers:v2/infrastructure-ref, which is granted to internal placement services rather than to tenants; without it the request is refused with 403.
+            allOf:
+            - $ref: '#/components/schemas/infrastructureRef'
           providerCreateGates:
-            $ref: '#/components/schemas/serverProviderCreateGates'
+            description: |-
+              Provider-create gates that must be satisfied before the provider creates the server.
+              Setting a non-empty list requires create on region:servers:v2/provider-create-gates, which is granted to internal placement services rather than to tenants; without it the request is refused with 403.
+            allOf:
+            - $ref: '#/components/schemas/serverProviderCreateGates'
     serverV2Status:
       description: Read only status information about a server.
       type: object
