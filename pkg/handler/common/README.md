@@ -10,7 +10,7 @@ that most handlers need.
 
 Those capabilities are:
 
-- cached Kubernetes access
+- direct Kubernetes access, reads and writes alike
 - process namespace
 - provider lookup
 - outbound identity API access
@@ -31,15 +31,25 @@ handlers keep their allocation requirements, compensation, and error handling.
 
 It carries:
 
-- `client.Client` for cached Kubernetes access
+- `client.Client` for direct Kubernetes access, reads and writes alike
 - `Namespace` for process-local namespace scoping
 - `providers.Providers` for provider lookup
 - `identityapi.ClientWithResponsesInterface` for identity-side RBAC and tenancy
   interactions
+- `RetryConflictOnce`, which retries a conflicted guarded write once against a
+  fresh read and returns `409` if that conflicts too
 
 The struct is intentionally made of interfaces and scalars so handlers remain
 easy to unit test and do not need to construct their own ambient clients
 ad hoc.
+
+### GetV2 and FetchV2
+
+`GetV2` loads a `v2` resource and authorizes an `authz.Target` on it, declaring
+a primary target before the fetch. `FetchV2` loads one without a check, for the
+one case that needs a resource's scope before its own check; whatever it
+returns must be authorized before use. See the
+[handler README's Authorization section](../README.md#authorization).
 
 ## Invariants And Guard Rails
 

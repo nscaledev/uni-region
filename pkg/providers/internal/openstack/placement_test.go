@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gophercloud/gophercloud/v2"
@@ -29,6 +30,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -298,7 +300,26 @@ func TestServerCreatePlacementPreflight(t *testing.T) {
 			placementClient,
 		)
 
-		require.ErrorIs(t, preflight(t.Context(), server), provisioners.ErrYield)
+		err := preflight(t.Context(), server)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+
+		// The disposition alone is not the contract: the manager reads a reason
+		// and message off the condition only from a *provisioners.Error, so an
+		// untyped yield leaves the server on the generic "provisioning" condition
+		// with no indication that placement is what it is waiting for.
+		var perr *provisioners.Error
+
+		require.ErrorAs(t, err, &perr)
+		require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
+		require.Equal(t, "the requested host is not available for this flavor", perr.Message())
+
+		// The condition is API surface and the placement detail is not: the
+		// resource class and flavor traits come from Nova extra specs, the
+		// required traits from region config, and none of it is readable by the
+		// caller. It belongs in the log line, not here.
+		for _, leak := range []string{"node-a", "CUSTOM_GPU", "resource provider", "trait", "openstack"} {
+			require.NotContains(t, strings.ToLower(perr.Message()), strings.ToLower(leak))
+		}
 	})
 }
 

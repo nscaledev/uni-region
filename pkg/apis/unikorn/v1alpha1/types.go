@@ -77,6 +77,10 @@ type RegionSpec struct {
 	Security *RegionSecuritySpec `json:"security,omitempty"`
 	// Type defines the provider type.
 	Provider Provider `json:"provider"`
+	// BlockedNetworkPrefixes are address ranges a tenant network prefix
+	// must not overlap, e.g. infrastructure address space that would collide
+	// with tenant traffic.  Only enforced on network creation.
+	BlockedNetworkPrefixes []unikornv1core.IPv4Prefix `json:"blockedNetworkPrefixes,omitempty"`
 	// Kubernetes is provider specific configuration for the region.
 	Kubernetes *RegionKubernetesSpec `json:"kubernetes,omitempty"`
 	// Openstack is provider specific configuration for the region.
@@ -233,6 +237,10 @@ type FlavorMetadata struct {
 	// GPU defines additional GPU metadata.  When provided it will enable selection
 	// of images based on GPU vendor and model.
 	GPU *GPUSpec `json:"gpu,omitempty"`
+	// InfiniBand describes the flavor's InfiniBand ports, for consumers that need
+	// to know whether a flavor is IB-capable and how many ports it exposes. It is
+	// descriptive only: on its own it does not enable partition isolation.
+	InfiniBand *InfiniBandSpec `json:"infiniBand,omitempty"`
 	// PinnedOnly indicates that this flavor requires a specific physical host to
 	// be identified via InfrastructureRef when creating a server. Attempts to
 	// create a server with this flavor without an InfrastructureRef are rejected.
@@ -277,10 +285,23 @@ type GPUSpec struct {
 	Memory *resource.Quantity `json:"memory"`
 }
 
+type InfiniBandSpec struct {
+	// PortCount is the number of InfiniBand ports the flavor exposes. This counts
+	// ports, not host channel adapters (a single HCA can present one or two ports),
+	// because fabric partitioning programs a partition membership per port GUID.
+	// +kubebuilder:validation:Minimum=1
+	PortCount int `json:"portCount"`
+}
+
 type RegionOpenstackImageSpec struct {
 	// Selector defines a set of rules to lookup images.
 	// If not specified, all images are selected.
 	Selector *ImageSelector `json:"selector,omitempty"`
+	// IncludeCommunity additionally exposes images with community visibility, so
+	// development environments can share images without admin rights. Any project
+	// may publish a community image, so never enable this in production. Community
+	// images claiming to belong to an organization are ignored.
+	IncludeCommunity bool `json:"includeCommunity,omitempty"`
 }
 
 type ImageSelector struct {
@@ -328,8 +349,8 @@ type VolumeClassSelector struct {
 }
 
 type VolumeClassFlavorSelector struct {
-	// IDs is an explicit allowlist of Region flavors. If nil or empty, all
-	// flavors are considered compatible.
+	// IDs is an explicit allowlist of Region flavors that can attach Volumes of
+	// this class to Servers. If nil or empty, Server attachment is not supported.
 	// +kubebuilder:validation:items:Type=string
 	// +kubebuilder:validation:items:Pattern=`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
 	// +listType=set
@@ -350,9 +371,9 @@ type VolumeClassMetadata struct {
 	// ID is the immutable provider identifier for the volume class. For OpenStack,
 	// this is the Cinder volume type ID.
 	ID string `json:"id"`
-	// SupportedFlavors optionally restricts this volume class to selected Region
-	// flavors. An undefined selector or nil or empty IDs means no compatibility
-	// restriction.
+	// SupportedFlavors lists the Region flavors that can attach Volumes of this
+	// class to Servers. An undefined selector or nil or empty IDs means Server
+	// attachment is not supported.
 	SupportedFlavors *VolumeClassFlavorSelector `json:"supportedFlavors,omitempty"`
 	// MinimumSizeGiB is the minimum volume capacity accepted by the class, in
 	// whole GiB.
@@ -886,6 +907,7 @@ type VolumeClaimRef struct {
 	// Kind is the kind of resource claiming the volume attachment.
 	Kind VolumeClaimKind `json:"kind"`
 	// ID is the Region resource ID of the resource claiming the volume attachment.
+	// +kubebuilder:validation:MinLength=1
 	ID string `json:"id"`
 }
 
@@ -900,6 +922,13 @@ const (
 type VolumeStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// ProvisionedAt records the first successful discovery of backing storage.
+	// It is never cleared, because a missing provider volume must not be recreated
+	// under the same Region Volume ID.
+	ProvisionedAt *metav1.Time `json:"provisionedAt,omitempty"`
+	// AttachedAt is when the current attachment was first confirmed.
+	// Unset means no current attachment is recorded.
+	AttachedAt *metav1.Time `json:"attachedAt,omitempty"`
 	// Current service state of a volume.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 	// Size is the currently provisioned/observed size of the volume.
@@ -1104,6 +1133,7 @@ type ServerSpec struct {
 	// before the server controller calls the provider create path.
 	// +listType=map
 	// +listMapKey=conditionType
+	// +kubebuilder:validation:MaxItems=16
 	ProviderCreateGates []ServerProviderCreateGate `json:"providerCreateGates,omitempty"`
 }
 
@@ -1157,6 +1187,22 @@ type ServerPublicIPAllocationSpec struct {
 // independently (see Server.SetActiveCondition).
 type ActiveConditionReason string
 
+// ConditionDeletionHeld is True while the controller is holding the provider
+// delete because the provider is building. Its LastTransitionTime is when the
+// hold began; False means the build-state hold ended, not teardown completion.
+const ConditionDeletionHeld unikornv1core.ConditionType = "DeletionHeld"
+
+// DeletionHeldConditionReason is the closed vocabulary of DeletionHeld reasons.
+type DeletionHeldConditionReason string
+
+const (
+	// DeletionHeldConditionReasonProviderBuilding means the provider is still
+	// deploying the server and a delete would strand its node.
+	DeletionHeldConditionReasonProviderBuilding DeletionHeldConditionReason = "ProviderBuilding"
+	// DeletionHeldConditionReasonReleased means the build-state hold ended.
+	DeletionHeldConditionReasonReleased DeletionHeldConditionReason = "Released"
+)
+
 const (
 	// ActiveConditionReasonPending is the initial state before the provider has
 	// been observed reporting on the server.
@@ -1176,6 +1222,14 @@ const (
 	// completes. Distinct from Building (a first provision) so a rebuild is
 	// legible on the Active axis.
 	ActiveConditionReasonRebuilding ActiveConditionReason = "Rebuilding"
+	// ActiveConditionReasonRebooting means a reboot of a provisioned server has
+	// been accepted and is in flight (Nova HARD_REBOOT or REBOOT; for baremetal
+	// Ironic power-cycles the node). It reflects the provider's task state and
+	// clears to Running once the provider reports the reboot request processed.
+	// It indicates a reboot is in flight, not that the guest restarted:
+	// confirmation of that comes from guest OS evidence such as a changed boot ID
+	// or boot time.
+	ActiveConditionReasonRebooting ActiveConditionReason = "Rebooting"
 	// ActiveConditionReasonRunning means the server is running and usable; this is
 	// the only reason for which the Active condition Status is True.
 	ActiveConditionReasonRunning ActiveConditionReason = "Running"
@@ -1196,6 +1250,7 @@ type ServerStatus struct {
 	// ProviderCreateGates reports externally satisfied provider-create gates.
 	// +listType=map
 	// +listMapKey=conditionType
+	// +kubebuilder:validation:MaxItems=16
 	ProviderCreateGates []ServerProviderCreateGateStatus `json:"providerCreateGates,omitempty"`
 	// PrivateIP is the private IP address of the server.
 	PrivateIP *string `json:"privateIP,omitempty"`
@@ -1253,7 +1308,10 @@ type ServerStatus struct {
 type ServerObservedStatus struct {
 	// Generation is metadata.generation as read when this snapshot was taken, so a
 	// reader can tell whether the observation postdates a spec edit. Stamped on
-	// every poll, so a present subtree with no image means the image was unreadable.
+	// every poll, including a poll that finds no provider server at all, so a
+	// present subtree with no image means either the image was unreadable or there
+	// is no provider server to read one from. Those two are distinguished by the
+	// Active condition, not by this subtree.
 	Generation int64 `json:"generation"`
 	// Image is the image the provider reports the server running, as of the last poll
 	// that could read it. An unreadable ref preserves the previous value.
@@ -1335,6 +1393,14 @@ type ServerProviderCreateGateStatus struct {
 	// so it is length-bounded to keep the stored object small.
 	// +kubebuilder:validation:MaxLength=1024
 	Message string `json:"message,omitempty"`
+	// Outputs are values the gate's satisfier publishes to the server as
+	// instance metadata at provider create. Fixed once the gate is Open;
+	// cleared when a provider-create retry resets the gate. The rule's cost
+	// depends on the gate lists' MaxItems: see this package's README.
+	// +kubebuilder:validation:MaxProperties=8
+	// +kubebuilder:validation:XValidation:rule="self.all(k, k.matches('^[a-z0-9][a-z0-9-]*$') && size(self[k]) <= 255)",message="output keys are a tag's local name and values at most 255 characters"
+	// +optional
+	Outputs map[string]string `json:"outputs,omitempty"`
 }
 
 // OpenstackServerList is a typed list of servers.
@@ -1391,8 +1457,240 @@ type FileStorage struct {
 	Status            FileStorageStatus `json:"status,omitempty"`
 }
 
+// FileStorageSnapshotList is a list of FileStorageSnapshot resources.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageSnapshotList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageSnapshot `json:"items"`
+}
+
+// FileStorageSnapshot records customer intent and observed lifecycle state for
+// one manual snapshot of a File Storage.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="display name",type="string",JSONPath=".metadata.labels['unikorn-cloud\\.org/name']"
+// +kubebuilder:printcolumn:name="file storage",type="string",JSONPath=".spec.fileStorageID"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageSnapshot struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              FileStorageSnapshotSpec   `json:"spec"`
+	Status            FileStorageSnapshotStatus `json:"status,omitempty"`
+}
+
+// FileStorageSnapshotSpec is the capture request plus mutable reconciliation and user metadata.
+// +kubebuilder:validation:XValidation:rule="self.name == oldSelf.name",message="name is immutable"
+// +kubebuilder:validation:XValidation:rule="self.fileStorageID == oldSelf.fileStorageID",message="fileStorageID is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.expirationTime) == has(oldSelf.expirationTime) && (!has(self.expirationTime) || self.expirationTime == oldSelf.expirationTime)",message="expirationTime is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.protectedPath) == has(oldSelf.protectedPath) && (!has(self.protectedPath) || self.protectedPath == oldSelf.protectedPath)",message="protectedPath is immutable"
+type FileStorageSnapshotSpec struct {
+	// Pause inhibits reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// Name is the immutable, case-sensitive Manual Snapshot Name.
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=63
+	Name string `json:"name"`
+	// FileStorageID identifies the immutable parent File Storage.
+	FileStorageID regionids.FileStorageID `json:"fileStorageID"`
+	// ExpirationTime optionally requests automatic expiration. Omission means
+	// that the snapshot does not expire automatically.
+	ExpirationTime *metav1.Time `json:"expirationTime,omitempty"`
+	// ProtectedPath is the relative path captured by the snapshot.
+	// Omission selects the File Storage root.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+	// Tags are arbitrary user-managed key/value metadata.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+}
+
+type FileStorageSnapshotStatus struct {
+	// SnapshotTime is the provider-observed capture time.
+	SnapshotTime *metav1.Time `json:"snapshotTime,omitempty"`
+	// AbsoluteProtectedPath is the exact path returned by the provider. Writers
+	// must preserve it byte-for-byte and must not clear a known value on an
+	// incomplete or failed observation.
+	AbsoluteProtectedPath *string `json:"absoluteProtectedPath,omitempty"`
+	// Conditions are the sanitized lifecycle and health state.
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// FileStorageDirectoryQuotaList is a list of FileStorageDirectoryQuota resources.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageDirectoryQuotaList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageDirectoryQuota `json:"items"`
+}
+
+// FileStorageDirectoryQuota records customer intent and observed lifecycle state
+// for the hard limits of one directory of a File Storage.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="display name",type="string",JSONPath=".metadata.labels['unikorn-cloud\\.org/name']"
+// +kubebuilder:printcolumn:name="file storage",type="string",JSONPath=".spec.fileStorageID"
+// +kubebuilder:printcolumn:name="path",type="string",JSONPath=".spec.path"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageDirectoryQuota struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              FileStorageDirectoryQuotaSpec   `json:"spec"`
+	Status            FileStorageDirectoryQuotaStatus `json:"status,omitempty"`
+}
+
+// FileStorageDirectoryQuotaSpec is the desired set of hard limits for a directory.
+// +kubebuilder:validation:XValidation:rule="self.fileStorageID == oldSelf.fileStorageID",message="fileStorageID is immutable"
+// +kubebuilder:validation:XValidation:rule="self.path == oldSelf.path",message="path is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.directoryLimits) || has(self.defaultUserLimits) || has(self.defaultGroupLimits) || (has(self.rules) && size(self.rules) > 0)",message="at least one limit or rule is required"
+// +kubebuilder:validation:XValidation:rule="!has(self.rules) || self.rules.all(a, self.rules.exists_one(b, a.subject == b.subject))",message="rules must not repeat a subject"
+type FileStorageDirectoryQuotaSpec struct {
+	// Pause inhibits reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// FileStorageID identifies the immutable parent File Storage.
+	FileStorageID regionids.FileStorageID `json:"fileStorageID"`
+	// Path is the immutable directory path relative to the File Storage root.
+	// It cannot be empty, absolute or end in a slash, so the root cannot be targeted.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="path must not contain . or .. path components"
+	Path string `json:"path"`
+	// DirectoryLimits is the hard limit on the whole directory tree, whoever
+	// owns the data. Observed as Status.Usage.Directory.
+	DirectoryLimits *FileStorageDirectoryQuotaLimits `json:"directoryLimits,omitempty"`
+	// DefaultUserLimits applies to every user without an explicit rule.
+	DefaultUserLimits *FileStorageDirectoryQuotaLimits `json:"defaultUserLimits,omitempty"`
+	// DefaultGroupLimits applies to every group without an explicit rule.
+	DefaultGroupLimits *FileStorageDirectoryQuotaLimits `json:"defaultGroupLimits,omitempty"`
+	// Rules are per-user/group hard limits. The list is atomic because name and
+	// id are optional and cannot be map keys, and an update replaces the whole list.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	Rules []FileStorageDirectoryQuotaRule `json:"rules,omitempty"`
+	// Tags are arbitrary user-managed key/value metadata.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+}
+
+// FileStorageDirectoryQuotaLimits is a set of hard limits. At least one is required.
+// +kubebuilder:validation:XValidation:rule="has(self.capacity) || has(self.inodes)",message="capacity or inodes is required"
+type FileStorageDirectoryQuotaLimits struct {
+	// Capacity is the hard capacity limit in bytes. Its value is validated in code.
+	Capacity *resource.Quantity `json:"capacity,omitempty"`
+	// Inodes is the hard limit on the number of files and directories.
+	// +kubebuilder:validation:Minimum=1
+	Inodes *int64 `json:"inodes,omitempty"`
+}
+
+// FileStorageDirectoryQuotaRule is the hard limit of one user or group.
+type FileStorageDirectoryQuotaRule struct {
+	Subject FileStorageDirectoryQuotaSubject `json:"subject"`
+	Limits  FileStorageDirectoryQuotaLimits  `json:"limits"`
+}
+
+// FileStorageDirectoryQuotaSubjectKind is the kind of subject a rule applies to.
+// +kubebuilder:validation:Enum=user;group
+type FileStorageDirectoryQuotaSubjectKind string
+
+const (
+	FileStorageDirectoryQuotaSubjectKindUser  FileStorageDirectoryQuotaSubjectKind = "user"
+	FileStorageDirectoryQuotaSubjectKindGroup FileStorageDirectoryQuotaSubjectKind = "group"
+)
+
+// FileStorageDirectoryQuotaSubject identifies a user or group by name or by uid/gid.
+// +kubebuilder:validation:XValidation:rule="has(self.name) != has(self.id)",message="exactly one of name or id is required"
+type FileStorageDirectoryQuotaSubject struct {
+	Kind FileStorageDirectoryQuotaSubjectKind `json:"kind"`
+	// Name is the user or group name. It has no pattern because directory
+	// service names vary (DOMAIN\user, user@realm).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Name *string `json:"name,omitempty"`
+	// ID is the uid or gid.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=4294967294
+	ID *int64 `json:"id,omitempty"`
+}
+
+// FileStorageDirectoryQuotaStatus is the observed state. The controller owns
+// observedGeneration, the Available condition and rules; the usage monitor owns
+// usage and the Healthy condition. Both write conditions, and a JSON merge patch
+// replaces the whole list, so writers must patch with an optimistic lock or
+// server-side apply.
+type FileStorageDirectoryQuotaStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// Conditions are Available (lifecycle, written by the controller) and
+	// Healthy (limits reached or rule errors, written only by the usage monitor).
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// Rules reflects the provisioning state of each spec rule (controller-owned).
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	Rules []FileStorageDirectoryQuotaRuleStatus `json:"rules,omitempty"`
+	// Usage is the observed usage (usage monitor-owned).
+	Usage *FileStorageDirectoryQuotaUsage `json:"usage,omitempty"`
+}
+
+// FileStorageDirectoryQuotaRuleProvisioningStatus is the backend state of one rule.
+// +kubebuilder:validation:Enum=Pending;Provisioned;Errored
+type FileStorageDirectoryQuotaRuleProvisioningStatus string
+
+const (
+	FileStorageDirectoryQuotaRulePending     FileStorageDirectoryQuotaRuleProvisioningStatus = "Pending"
+	FileStorageDirectoryQuotaRuleProvisioned FileStorageDirectoryQuotaRuleProvisioningStatus = "Provisioned"
+	FileStorageDirectoryQuotaRuleErrored     FileStorageDirectoryQuotaRuleProvisioningStatus = "Errored"
+)
+
+// FileStorageDirectoryQuotaRuleStatus is the provisioning state of one spec rule.
+type FileStorageDirectoryQuotaRuleStatus struct {
+	Subject            FileStorageDirectoryQuotaSubject                `json:"subject"`
+	ProvisioningStatus FileStorageDirectoryQuotaRuleProvisioningStatus `json:"provisioningStatus"`
+	Message            string                                          `json:"message,omitempty"`
+}
+
+// FileStorageDirectoryQuotaUsage is the observed usage of the directory.
+type FileStorageDirectoryQuotaUsage struct {
+	// Directory is the usage of the whole directory tree, the observed
+	// counterpart of Spec.DirectoryLimits.
+	Directory *FileStorageDirectoryQuotaUsedAmount `json:"directory,omitempty"`
+	// Rules is the usage of each explicitly ruled subject, keyed by subject.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	Rules []FileStorageDirectoryQuotaRuleUsage `json:"rules,omitempty"`
+	// Timestamp is when the usage was last refreshed.
+	Timestamp *metav1.Time `json:"timestamp,omitempty"`
+}
+
+// FileStorageDirectoryQuotaUsedAmount is an amount of used capacity and inodes.
+type FileStorageDirectoryQuotaUsedAmount struct {
+	UsedCapacity *resource.Quantity `json:"usedCapacity,omitempty"`
+	UsedInodes   *int64             `json:"usedInodes,omitempty"`
+}
+
+// FileStorageDirectoryQuotaRuleUsage is the usage of one explicitly ruled subject.
+type FileStorageDirectoryQuotaRuleUsage struct {
+	Subject FileStorageDirectoryQuotaSubject    `json:"subject"`
+	Usage   FileStorageDirectoryQuotaUsedAmount `json:"usage"`
+}
+
 // FileStorageSpec defines the storage request.
+// +kubebuilder:validation:XValidation:rule="has(self.source) == has(oldSelf.source)",message="source cannot be added or removed after creation"
 type FileStorageSpec struct {
+	// Source describes where the File Storage's initial data comes from. When
+	// omitted, the File Storage starts empty. Add future source kinds as new
+	// members while preserving the rule that exactly one member is set.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="source is immutable"
+	Source *FileStorageSource `json:"source,omitempty"`
+
 	// StorageClassID is the storage class ID.
 	StorageClassID string `json:"storageClassID"`
 
@@ -1425,11 +1723,33 @@ type FileStorageSpec struct {
 	NFS *NFS `json:"nfs,omitempty"`
 }
 
+// FileStorageSource is the origin of a File Storage's initial data.
+// Exactly one member must be set. Absent means the File Storage starts empty.
+// Add future source kinds as new members while preserving the single-member union rule.
+// +kubebuilder:validation:XValidation:rule="(has(self.snapshot) ? 1 : 0) == 1",message="exactly one source must be set"
+type FileStorageSource struct {
+	// Snapshot restores from a manual File Storage snapshot.
+	// +optional
+	Snapshot *FileStorageSnapshotSource `json:"snapshot,omitempty"`
+}
+
+// FileStorageSnapshotSource restores initial data from a FileStorageSnapshot.
+type FileStorageSnapshotSource struct {
+	// ID of the source FileStorageSnapshot.
+	ID string `json:"id"`
+}
+
 type FileStorageSnapshotPolicy struct {
 	// Name is the policy identity key within the file storage volume.
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
 	// +kubebuilder:validation:MaxLength=19
 	Name string `json:"name"`
+	// ProtectedPath is the relative path within the file storage data hierarchy protected by this policy.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="protectedPath must not contain . or .. path components"
+	// +optional
+	ProtectedPath string `json:"protectedPath,omitempty"`
 	// Schedule defines when snapshots run in UTC.
 	Schedule FileStorageSnapshotPolicySchedule `json:"schedule"`
 	// Retention defines how many snapshots are retained.

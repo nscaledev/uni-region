@@ -40,6 +40,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/handlertest"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -254,4 +255,53 @@ func TestDeleteV2InUse(t *testing.T) {
 	err := c.DeleteV2(ctx, idstest.MustParseSSHCertificateAuthorityID(resource.Name))
 	require.Error(t, err)
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
+}
+
+// TestDeleteV2StaleReadRechecksLiveCopy covers a reference added just after
+// the guard's read: the delete preconditions turn the intervening write into
+// a conflict, so the guard is re-run against the live copy.
+func TestDeleteV2StaleReadRechecksLiveCopy(t *testing.T) {
+	t.Parallel()
+
+	resource := &regionv1.SSHCertificateAuthority{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "55555555-5555-4555-a555-555555555555",
+			Namespace: namespace,
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   organizationID,
+				coreconstants.ProjectLabel:        projectID,
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+			Finalizers: []string{"unikorn"},
+		},
+		Spec: regionv1.SSHCertificateAuthoritySpec{
+			PublicKey: mustAuthorizedKey(t),
+		},
+	}
+
+	store, ok := newFakeClient(t, resource).(client.WithWatch)
+	require.True(t, ok)
+
+	key := client.ObjectKeyFromObject(resource)
+
+	stale := &regionv1.SSHCertificateAuthority{}
+	require.NoError(t, store.Get(t.Context(), key, stale))
+
+	live := stale.DeepCopy()
+	live.Finalizers = append(live.Finalizers, "servers.region.unikorn-cloud.org/server-id")
+	require.NoError(t, store.Update(t.Context(), live))
+
+	c := sshcertificateauthority.New(common.ClientArgs{
+		Client:    handlertest.StaleRead(store, stale),
+		Namespace: namespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), aclWithReadDelete(organizationID))
+
+	err := c.DeleteV2(ctx, idstest.MustParseSSHCertificateAuthorityID(resource.Name))
+	require.Error(t, err)
+	require.True(t, coreerrors.IsForbidden(err), "expected 403 forbidden, got: %v", err)
+
+	require.NoError(t, store.Get(t.Context(), key, live))
+	require.Nil(t, live.DeletionTimestamp)
 }

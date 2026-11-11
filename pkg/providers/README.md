@@ -35,6 +35,10 @@ packages are the concrete provider implementations.
 
 ## Invariants And Guard Rails
 
+- Providers read Kubernetes through whichever client they are built with. The
+  API server builds them with its direct client, so the Region, the
+  credentials Secret and everything else a provider touches are read from the
+  API server; controllers build them with their manager's cached client.
 - The package exposes two lookup surfaces:
   - `LookupCommon` returns a `types.CommonProvider` for region-level capability
     discovery that every provider must support
@@ -61,13 +65,14 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
-- `types.Volume` is the focused create/delete capability embedded in the full
+- `types.Volume` is the focused create/delete/state-update capability embedded in the full
   `types.Provider` contract and consumed through `LookupCloud` by the Volume
   controller. Discovery-only providers remain on `types.CommonProvider` and do
   not implement workload lifecycle:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
-    create or delete; rediscovery is not a public existence-only contract
+    create, delete, or state update; `UpdateVolumeState` mutates the CRD status
+    without exposing provider SDK types
   - create success means the rediscovered backing volume is usable, not merely
     that an asynchronous provider request was accepted. Providers return
     `provisioners.ErrYield` while creation is still converging and a safe typed
@@ -77,11 +82,14 @@ packages are the concrete provider implementations.
     merely that an asynchronous provider request was accepted. Accepted delete
     requests return `provisioners.ErrYield` so allocation cleanup and finalizer
     removal wait for provider convergence
-  - provider-neutral observation belongs to the later read-side slice and is
-    not implied by the provider-internal state check required to converge
-    controller create/delete support
-  - VolumeClass inventory remains on `CommonProvider`, and server
-    attach/detach is a separate capability
+  - `UpdateVolumeState` projects observed size and health directly onto the
+    native Region `Volume` status for the Volume monitor
+  - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
+    client/request failures remain Go errors, while successfully observed
+    provider `error` and unrecognized/empty `unknown` lifecycle values remain
+    successful observations
+  - VolumeClass inventory remains on `CommonProvider`; Server attach and
+    Volume-based detach are separate capabilities
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or
@@ -95,12 +103,22 @@ packages are the concrete provider implementations.
     consumers are gone: at delete time it is either realized-and-complete or
     never realized. Callers must therefore never gate a delete on identity
     readiness or recorded status — that belongs to this layer.
-- `DetachVolume` follows the same absent-means-converged teardown rule: a
-  missing provider server, volume, or attachment is success. `AttachVolume`
-  instead requires both backing resources and reports semantic not-found when
-  either is absent. Concrete provider conflicts are normalized to the shared
-  conflict sentinel; provider failures that are neither not-found nor conflict
-  remain available to callers for diagnosis.
+- OpenStack Server deletion retains ownership until a fresh Nova lookup confirms
+  absence and owned networking cleanup completes.
+- `DetachVolume` verifies claimed attachment teardown against both compute and
+  block-storage state before the caller releases its claim. Per-Volume
+  finalizers block Server deletion until this active detach completes, so the
+  provider uses the same detach path for removed intent and deleting Servers.
+  Transitional or inconsistent claimed state yields for recovery; no provider-side
+  administrative reset is attempted. A provider detach `400 Bad Request` also
+  yields and retains the claim. A missing provider Volume remains idempotent
+  success. `AttachVolume` requires both backing resources and reports semantic
+  not-found when either is absent. It returns success only after provider
+  observation confirms the claimed attachment is usable. Providers request an
+  attachment only after observing their Volume available; accepted asynchronous
+  requests and transitional observations yield. Concrete provider conflicts are
+  normalized to the shared conflict sentinel; other failures remain available
+  to callers for diagnosis.
 - Providers must tolerate changing backing credentials and region state rather
   than assuming client material is static for process lifetime.
   Credential rotation, secret refresh, and region configuration refresh are part

@@ -18,9 +18,10 @@ package main
 
 import (
 	"github.com/unikorn-cloud/core/pkg/manager"
+	"github.com/unikorn-cloud/region/pkg/constants"
 	loadbalancer "github.com/unikorn-cloud/region/pkg/managers/load-balancer"
 )
 
 func main() {
-	manager.Run(&loadbalancer.Factory{})
+	manager.RunService(constants.Service, &loadbalancer.Factory{})
 }

@@ -25,6 +25,11 @@ organization: nscaledev
 #     - 5fb90278-7365-4c0a-a00c-fba299d99c52
 #   # Provider type, must be one of "openstack", "kubernetes", or "simulated".
 #   provider: openstack
+#   # Tenant network prefixes may not overlap these ranges, e.g. infrastructure
+#   # address space tenant traffic would collide with.  Checked on network
+#   # creation only, as the prefix is immutable.  Default is no restriction.
+#   blockedNetworkPrefixes:
+#   - 10.0.0.0/10
 #   # Openstack specific configuration.
 #   openstack:
 #     # Keystone endpoint.
@@ -80,6 +85,9 @@ organization: nscaledev
 #         # defined, and its value must be the ECDSA signature of the SHA256 hash of
 #         # the image ID.
 #         signingKey: ~
+#       # Also list images with community visibility.  For development only,
+#       # never enable this in production.
+#       includeCommunity: false
 #     # Network service configuration.
 #     network:
 #       # External network selection, the result is a boolean intersection of
@@ -114,8 +122,9 @@ organization: nscaledev
 #         # Add user-facing metadata to selected provider volume classes.
 #         metadata:
 #         - id: cda67b98-331d-4d4f-911e-b1fd64611b0b
-#           # Optional Region Flavor compatibility allowlist using canonical
-#           # lowercase, hyphenated UUIDs. Omit or leave empty when unrestricted.
+#           # Optional Region Flavor allowlist for Server attachment using
+#           # canonical lowercase, hyphenated UUIDs. Omit or leave empty to
+#           # prevent Volumes of this class from attaching to Servers.
 #           supportedFlavors:
 #             ids:
 #             - 967b535a-9445-4864-a3f2-518b3a4f21df

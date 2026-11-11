@@ -85,6 +85,25 @@ OPENAPI_FILES = \
 	pkg/openapi/client.go \
 	pkg/openapi/router.go
 
+DEEPCOPY_GEN_FILE = pkg/apis/unikorn/v1alpha1/zz_generated.deepcopy.go
+
+# Only the mocks a //go:generate directive recreates.  pkg/handler/image/mock and
+# pkg/handler/server/mock carry MockGen headers but no directive -- they were
+# produced by a mockgen command run by hand, recorded in their own header, and
+# `go generate` will not bring them back.  Deleting them here would simply lose
+# them.
+MOCK_FILES = \
+	pkg/providers/mock/interfaces.go \
+	pkg/providers/types/mock/interfaces.go \
+	pkg/providers/internal/openstack/mock/interfaces.go \
+	pkg/handler/storage/mock/saga.go
+
+# Everything the generators produce, named once so every target that has to
+# reason about generated output agrees on what that means.  The CRDs are a
+# directory of outputs rather than a single file, so they are listed apart from
+# the files.
+GENERATED_FILES = $(OPENAPI_FILES) $(DEEPCOPY_GEN_FILE) $(MOCK_FILES)
+
 MOCKGEN_VERSION=v0.3.0
 GINKGO_VERSION := $(shell awk '$$1 == "github.com/onsi/ginkgo/v2" { print $$2; exit }' go.mod)
 GOMEGA_VERSION := $(shell awk '$$1 == "github.com/onsi/gomega" { print $$2; exit }' go.mod)
@@ -143,6 +162,14 @@ test-unit:
 	go test -coverpkg ./... -coverprofile cover.out ./...
 	go tool cover -html cover.out -o cover.html
 
+CLOUDINIT_TEST_IMAGE ?= unikorn-region-cloudinit-test
+
+# Runs managed cloud-init augmentation against real cloud-init (needs docker).
+.PHONY: test-cloud-init
+test-cloud-init:
+	docker build -t $(CLOUDINIT_TEST_IMAGE) pkg/provisioners/managers/server/testdata/cloudinit
+	CLOUDINIT_TEST_IMAGE=$(CLOUDINIT_TEST_IMAGE) go test -count=1 -tags cloudinit -parallel 6 ./pkg/provisioners/managers/server/
+
 # Build a binary and install it.
 $(PREFIX)/%: $(BINDIR)/%
 	install -m 750 $< $@
@@ -188,10 +215,59 @@ touch:
 .PHOMY: lint
 lint: $(GENDIR)
 	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(LINT_VERSION)
-	$(GOBIN)/golangci-lint run --timeout=10m ./...
+	$(GOBIN)/golangci-lint run --timeout=10m --build-tags cloudinit ./...
 	helm lint --strict charts/region
+	./hack/check_chart_render.sh
 
 # Validate the server OpenAPI schema is legit.
+# Regenerating and then building proves the sources and the generators agree; it
+# says nothing about the files that were committed, which are what reviewers read
+# and what other modules compile against.  This compares the two.
+#
+# It regenerates from scratch rather than in place, because these targets are
+# driven by timestamps and a fresh checkout gives every file much the same one,
+# so whether an in-place regeneration does any work at all is decided by the
+# order git happened to write the tree.  That is what made the old check a coin
+# flip: it passed when make skipped the work and failed when make did not.
+# Deleting first also catches an output whose source has gone, which no generator
+# removes for us.
+#
+# The comparison is against the whole tree rather than against $(GENERATED_FILES),
+# because scoping it to that list would make the check only as complete as the
+# list is.  Whatever the generators write, a tree-wide status sees.
+#
+# That only holds on a tree with nothing else uncommitted in it, so this is a
+# check for CI rather than for the edit-test loop.  Refusing outright also stops
+# the destructive regeneration eating uncommitted work if it is run locally by
+# mistake; there, `make generate` and a look at `git status` is quicker.
+.PHONY: validate-generated
+validate-generated:
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "validate-generated regenerates in place and compares the whole tree; commit or stash first:" >&2; \
+		git status --short >&2; \
+		exit 1; \
+	fi
+	$(MAKE) clean-generated
+	$(MAKE) $(CRDDIR) $(GENDIR) $(OPENAPI_FILES) generate
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Generated files do not match their sources; regenerate and commit the result:" >&2; \
+		git status --short >&2; \
+		exit 1; \
+	fi
+
+# Only the generated output, so a caller wanting a from-scratch regeneration does
+# not also have to reinstall the tools that do the generating.
+#
+# Both directories go entirely: they are their own timestamp markers, and their
+# targets compare that timestamp against the sources.  Emptying $(CRDDIR) would
+# update its mtime to now and the target would then consider itself up to date
+# and skip, which is the trap this whole check exists to close.  Their rules
+# recreate them.
+.PHONY: clean-generated
+clean-generated:
+	rm -f $(GENERATED_FILES)
+	rm -rf $(CRDDIR) $(GENDIR)
+
 .PHONY: validate
 validate: $(OPENAPI_FILES)
 	go run github.com/unikorn-cloud/core/hack/validate_openapi
@@ -230,6 +306,12 @@ test-api-focus: test-api-setup
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
 	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --focus="$(FOCUS)" $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
 
+.PHONY: test-api-smoke
+test-api-smoke: test-api-setup
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	LOG_REQUESTS=true LOG_RESPONSES=true $(GOBIN)/ginkgo run -v --fail-on-empty --label-filter='smoke' $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+
 .PHONY: test-api-suite
 test-api-suite: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
@@ -241,6 +323,12 @@ test-api-parallel: test-api-setup
 	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
 	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
 	$(GOBIN)/ginkgo run --procs=4 $(GINKGO_INTEGRATION_TEST_FLAGS) ./test/api/suites/
+
+.PHONY: reset-shared-network
+reset-shared-network:
+	@if [ -f test/.env ]; then set -a; . test/.env; set +a; fi; \
+	SSL_CERT_FILE="$${REGION_CA_CERT:-$${IDENTITY_CA_CERT:-$$SSL_CERT_FILE}}" \
+	go run ./test/api/cmd/reset-shared-network
 
 .PHONY: test-api-ci
 test-api-ci: test-api-setup
@@ -312,6 +400,19 @@ PACT_BROKER_PASSWORD ?= pact
 PROVIDER_VERSION ?= $(REVISION)
 PACT_GOFLAGS="-tags=integration"
 
+# Provider state handlers delete every Network, Identity and Region in the test namespace, so local runs
+# target only a kind cluster of their own (named as in CI, without the region controllers that
+# integration-install deploys to KIND_CLUSTER), through its own kubeconfig, never the ambient context.
+# `kind get kubeconfig` fails when that cluster doesn't exist, so a missing cluster stops the run.
+CONTRACTS_KIND_CLUSTER ?= contract-testing
+CONTRACTS_KUBECONFIG = $(CURDIR)/.kind-$(CONTRACTS_KIND_CLUSTER).kubeconfig
+CONTRACTS_KIND_KUBECONFIG = kind get kubeconfig --name $(CONTRACTS_KIND_CLUSTER) > "$(CONTRACTS_KUBECONFIG)"
+
+# A local pact file is verified by one provider package, the one whose state handlers serve its consumer:
+# kubernetes for uni-kubernetes and nscale-environments, compute for uni-compute. Every package has a
+# local-files spec, so running them all fails the package that doesn't know the pact's states.
+CONTRACTS_LOCAL_PACKAGE ?= ./test/contracts/provider/kubernetes/
+
 # Run provider contract verification tests
 .PHONY: test-contracts-provider
 test-contracts-provider:
@@ -319,9 +420,10 @@ test-contracts-provider:
 	@echo "Provider Version: $(PROVIDER_VERSION)"
 	@echo "Provider Branch: $(GIT_BRANCH)"
 	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
-	KUBECONFIG="$(HOME)/.kube/config" \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
@@ -338,9 +440,10 @@ test-contracts-provider-verbose:
 	@echo "Provider Version: $(PROVIDER_VERSION)"
 	@echo "Provider Branch: $(GIT_BRANCH)"
 	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
-	KUBECONFIG="$(HOME)/.kube/config" \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \
@@ -357,17 +460,18 @@ test-contracts-provider-local:
 	@echo "Running provider verification from local pact file..."
 	@if [ -z "$(PACT_FILE)" ]; then \
 		echo "Error: PACT_FILE environment variable must be set"; \
-		echo "Usage: make test-contracts-provider-local PACT_FILE=/path/to/pact.json"; \
+		echo "Usage: make test-contracts-provider-local PACT_FILE=/path/to/pact.json [CONTRACTS_LOCAL_PACKAGE=./test/contracts/provider/compute/]"; \
 		exit 1; \
 	fi
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
-	KUBECONFIG="$(HOME)/.kube/config" \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_FILE="$(PACT_FILE)" \
 	PROVIDER_VERSION="$(PROVIDER_VERSION)" \
 	GIT_BRANCH="$(GIT_BRANCH)" \
 	GOFLAGS="$(PACT_GOFLAGS)" \
-	go test ./test/contracts/provider/... -v -count=1 -p 1
+	go test $(CONTRACTS_LOCAL_PACKAGE) -v -count=1 -args -ginkgo.focus="local files"
 
 # Run provider verification and publish results to Pact Broker (works on both macOS and Linux)
 # Sets CI=true which triggers auto-publishing to Pact Broker
@@ -403,8 +507,10 @@ test-contracts-provider-webhook:
 	@echo "Provider Version: $(PROVIDER_VERSION)"
 	@echo "Provider Branch: $(GIT_BRANCH)"
 	@echo "Publishing results to Pact Broker: $(PACT_BROKER_URL)"
+	$(CONTRACTS_KIND_KUBECONFIG)
 	CGO_LDFLAGS="$(PACT_LD_FLAGS)" \
 	$(PACT_LIB_ENV) \
+	KUBECONFIG="$(CONTRACTS_KUBECONFIG)" \
 	PACT_BROKER_URL="$(PACT_BROKER_URL)" \
 	PACT_BROKER_USERNAME="$(PACT_BROKER_USERNAME)" \
 	PACT_BROKER_PASSWORD="$(PACT_BROKER_PASSWORD)" \

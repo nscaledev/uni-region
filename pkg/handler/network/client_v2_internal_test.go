@@ -22,7 +22,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	"k8s.io/utils/ptr"
@@ -74,5 +76,43 @@ func TestGenerateReservations(t *testing.T) {
 		require.NotNil(t, out)
 		require.Equal(t, 25, out.PrefixLength)
 		require.Equal(t, ptr.To(28), out.ProviderReservedPrefixLength)
+	})
+}
+
+func TestValidateCreateRequestBlockedPrefix(t *testing.T) {
+	t.Parallel()
+
+	_, blocked, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+
+	region := &regionv1.Region{
+		Spec: regionv1.RegionSpec{
+			BlockedNetworkPrefixes: []unikornv1core.IPv4Prefix{{IPNet: *blocked}},
+		},
+	}
+
+	request := func(prefix string) *openapi.NetworkV2Create {
+		return &openapi.NetworkV2Create{
+			Spec: openapi.NetworkV2CreateSpec{
+				Prefix: prefix,
+			},
+		}
+	}
+
+	t.Run("RejectsBlockedPrefix", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := validateCreateRequest(region, request("10.0.0.0/24"))
+		require.Error(t, err)
+		require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
+		require.ErrorContains(t, err, "10.0.0.0/8")
+	})
+
+	t.Run("AcceptsOtherPrefix", func(t *testing.T) {
+		t.Parallel()
+
+		prefix, _, err := validateCreateRequest(region, request("192.168.0.0/24"))
+		require.NoError(t, err)
+		require.Equal(t, "192.168.0.0/24", prefix.String())
 	})
 }

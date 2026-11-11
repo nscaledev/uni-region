@@ -48,6 +48,7 @@ const (
 	InstanceLifecyclePhaseError      InstanceLifecyclePhase = "Error"
 	InstanceLifecyclePhasePending    InstanceLifecyclePhase = "Pending"
 	InstanceLifecyclePhaseQueued     InstanceLifecyclePhase = "Queued"
+	InstanceLifecyclePhaseRebooting  InstanceLifecyclePhase = "Rebooting"
 	InstanceLifecyclePhaseRebuilding InstanceLifecyclePhase = "Rebuilding"
 	InstanceLifecyclePhaseRunning    InstanceLifecyclePhase = "Running"
 	InstanceLifecyclePhaseStopped    InstanceLifecyclePhase = "Stopped"
@@ -207,6 +208,63 @@ type ExternalNetworks = []ExternalNetwork
 // FileStorageId A file storage ID.
 type FileStorageId = regionids.FileStorageID
 
+// FileStorageSnapshotId A Manual File Storage Snapshot ID.
+type FileStorageSnapshotId = regionids.FileStorageSnapshotID
+
+// FileStorageSnapshotV2Create Manual Snapshot resource.
+type FileStorageSnapshotV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec Capture intent. Omitted expiration means no automatic expiration; omitted protected path selects the File Storage root.
+	Spec FileStorageSnapshotV2CreateSpec `json:"spec"`
+}
+
+// FileStorageSnapshotV2CreateSpec Capture intent. Omitted expiration means no automatic expiration; omitted protected path selects the File Storage root.
+type FileStorageSnapshotV2CreateSpec struct {
+	// ExpirationTime Optional expiration deadline using the platform date-time format. Fractional seconds are truncated before validating that the normalized deadline is strictly later than request acceptance time. Malformed timestamps return 400; non-future normalized deadlines return 422.
+	ExpirationTime *time.Time `json:"expirationTime,omitempty"`
+
+	// ProtectedPath Optional canonical relative path within the File Storage. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected.
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+}
+
+// FileStorageSnapshotV2Read A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
+type FileStorageSnapshotV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec Immutable Manual Snapshot capture intent.
+	Spec FileStorageSnapshotV2Spec `json:"spec"`
+
+	// Status Snapshot details observed during capture.
+	Status FileStorageSnapshotV2Status `json:"status"`
+}
+
+// FileStorageSnapshotV2Spec Immutable Manual Snapshot capture intent.
+type FileStorageSnapshotV2Spec struct {
+	// ExpirationTime Optional immutable expiration deadline. The snapshot is hidden once the deadline is reached. Omission means no automatic expiration.
+	ExpirationTime *time.Time `json:"expirationTime,omitempty"`
+
+	// FileStorageId A file storage ID.
+	FileStorageId FileStorageId `json:"fileStorageId"`
+
+	// ProtectedPath Optional immutable canonical relative protected path within the File Storage. Omission selects the File Storage root.
+	ProtectedPath *string `json:"protectedPath,omitempty"`
+}
+
+// FileStorageSnapshotV2Status Snapshot details observed during capture.
+type FileStorageSnapshotV2Status struct {
+	// AbsoluteProtectedPath Optional absolute path captured by the snapshot.
+	AbsoluteProtectedPath *string `json:"absoluteProtectedPath,omitempty"`
+
+	// SnapshotTime Optional provider-observed capture time; distinct from Region creation time.
+	SnapshotTime *time.Time `json:"snapshotTime,omitempty"`
+}
+
+// FileStorageSnapshotsV2Read A list of manual file storage snapshots.
+type FileStorageSnapshotsV2Read = []FileStorageSnapshotV2Read
+
 // Flavor A flavor.
 type Flavor struct {
 	// Metadata This metadata is for resources that just exist, and don't require
@@ -240,6 +298,9 @@ type FlavorSpec struct {
 
 	// Gpu GPU specification.
 	Gpu *GpuSpec `json:"gpu,omitempty"`
+
+	// InfiniBand InfiniBand specification.
+	InfiniBand *InfiniBandSpec `json:"infiniBand,omitempty"`
 
 	// Memory The amount of memory in GiB.
 	Memory int `json:"memory"`
@@ -460,6 +521,12 @@ type ImageVirtualization string
 // Images A list of images that are compatible with this platform.
 type Images = []Image
 
+// InfiniBandSpec InfiniBand specification.
+type InfiniBandSpec struct {
+	// PortCount The number of InfiniBand ports available to the flavor.
+	PortCount int `json:"portCount"`
+}
+
 // InfrastructureRef A provider-specific identifier for a physical host. When set, the provider's scheduler is bypassed and the server is provisioned directly onto the identified host.
 type InfrastructureRef = string
 
@@ -470,8 +537,11 @@ type InfrastructureRef = string
 // baremetal servers waiting on hardware, Building for servers the
 // provider is actively bringing up. Rebuilding means an already
 // provisioned server is being reimaged in place and is not usable until
-// it completes. Error means the provider reported the server in a
-// terminal error state.
+// it completes. Rebooting means a soft or hard reboot has been accepted
+// and is in flight; it returns to Running once the provider has
+// processed the request. To confirm the guest actually restarted, use
+// OS-level evidence such as a changed boot ID or boot time. Error
+// means the provider reported the server in a terminal error state.
 type InstanceLifecyclePhase string
 
 // Ipv4Address An IPv4 address.
@@ -725,7 +795,8 @@ type NetworkV2CreateSpec struct {
 	// provider carve-out is applied.
 	Reservations *NetworkReservations `json:"reservations,omitempty"`
 
-	// Routes A list of network routes.
+	// Routes A list of network routes. On update, omitting the list keeps the stored
+	// routes, and an empty list removes them.
 	Routes *Routes `json:"routes,omitempty"`
 }
 
@@ -748,7 +819,8 @@ type NetworkV2Spec struct {
 	// populated then no internal host resolution will be possible.
 	DnsNameservers Ipv4AddressList `json:"dnsNameservers"`
 
-	// Routes A list of network routes.
+	// Routes A list of network routes. On update, omitting the list keeps the stored
+	// routes, and an empty list removes them.
 	Routes *Routes `json:"routes,omitempty"`
 }
 
@@ -887,7 +959,8 @@ type Route struct {
 	Prefix string `json:"prefix"`
 }
 
-// Routes A list of network routes.
+// Routes A list of network routes. On update, omitting the list keeps the stored
+// routes, and an empty list removes them.
 type Routes = []Route
 
 // SecurityGroupId A security group ID.
@@ -1079,6 +1152,9 @@ type ServerProviderCreateGateAction struct {
 	// Message Human-readable details for operators.
 	Message string `json:"message"`
 
+	// Outputs Values the gate's satisfier publishes to the server. Each is written as instance metadata when the server is created, named as a tag would be under the gate's `<service>.<domain>/`: output `pkey` on gate `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`. A key must be a tag's local name, and the condition type must have that prefix; otherwise the report is a 400. Outputs are sent with the report that satisfies the gate, and are frozen once it is Open, until a provider-create retry resets it: a later report with the same outputs or none keeps them, and one with any other outputs is a 409. Outputs are accepted only on an Open report; a Closed or Locked report with outputs is a 400. The values are readable from inside the server, so they must never be secret.
+	Outputs *map[string]string `json:"outputs,omitempty"`
+
 	// Reason Machine-readable reason for the reported state.
 	Reason string `json:"reason"`
 
@@ -1174,8 +1250,11 @@ type ServerStatus struct {
 	// baremetal servers waiting on hardware, Building for servers the
 	// provider is actively bringing up. Rebuilding means an already
 	// provisioned server is being reimaged in place and is not usable until
-	// it completes. Error means the provider reported the server in a
-	// terminal error state.
+	// it completes. Rebooting means a soft or hard reboot has been accepted
+	// and is in flight; it returns to Running once the provider has
+	// processed the request. To confirm the guest actually restarted, use
+	// OS-level evidence such as a changed boot ID or boot time. Error
+	// means the provider reported the server in a terminal error state.
 	Phase *InstanceLifecyclePhase `json:"phase,omitempty"`
 
 	// PrivateIP The private IP address of the server.
@@ -1223,10 +1302,14 @@ type ServerV2CreateSpec struct {
 
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
-	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
-	// it clears the stored value. A changed value is not applied to the running guest —
+	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
+	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
+	// value, and an empty string clears it. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
+
+	// Volumes Complete desired set of existing Volumes to attach to the Server.
+	Volumes *ServerV2VolumeList `json:"volumes,omitempty"`
 }
 
 // ServerV2Networking A server's network configuration.
@@ -1273,10 +1356,14 @@ type ServerV2Spec struct {
 
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
-	// a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
-	// it clears the stored value. A changed value is not applied to the running guest —
+	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
+	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
+	// value, and an empty string clears it. A changed value is not applied to the running guest —
 	// it takes effect only when the server is next rebuilt (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
+
+	// Volumes Complete desired set of existing Volumes to attach to the Server.
+	Volumes *ServerV2VolumeList `json:"volumes,omitempty"`
 }
 
 // ServerV2Status Read only status information about a server.
@@ -1297,8 +1384,11 @@ type ServerV2Status struct {
 	// baremetal servers waiting on hardware, Building for servers the
 	// provider is actively bringing up. Rebuilding means an already
 	// provisioned server is being reimaged in place and is not usable until
-	// it completes. Error means the provider reported the server in a
-	// terminal error state.
+	// it completes. Rebooting means a soft or hard reboot has been accepted
+	// and is in flight; it returns to Running once the provider has
+	// processed the request. To confirm the guest actually restarted, use
+	// OS-level evidence such as a changed boot ID or boot time. Error
+	// means the provider reported the server in a terminal error state.
 	PowerState *InstanceLifecyclePhase `json:"powerState,omitempty"`
 
 	// PrivateIP The private IP address of the server.
@@ -1331,6 +1421,9 @@ type ServerV2Update struct {
 	// Spec A server's specification.
 	Spec ServerV2Spec `json:"spec"`
 }
+
+// ServerV2VolumeList Complete desired set of existing Volumes to attach to the Server.
+type ServerV2VolumeList = []VolumeId
 
 // ServerV2VolumeStatus Observed attachment state for a desired Volume.
 type ServerV2VolumeStatus struct {
@@ -1501,6 +1594,9 @@ type StorageSnapshotPolicyListV2Status = []StorageSnapshotPolicyV2Status
 type StorageSnapshotPolicyV2Spec struct {
 	// Name Stable identity key for the snapshot policy.
 	Name string `json:"name"`
+
+	// ProtectedPath Optional relative path protected by this policy. Omission protects the File Storage root. It is immutable for an existing policy name.
+	ProtectedPath *string `json:"protectedPath,omitempty"`
 
 	// Retention Retention policy for storage snapshots.
 	Retention StorageSnapshotRetentionV2Spec `json:"retention"`
@@ -1706,7 +1802,7 @@ type VolumeClassV2Spec struct {
 	// RegionId The Region that owns this volume class inventory entry.
 	RegionId RegionId `json:"regionId"`
 
-	// SupportedFlavorIds Optional allowlist of Region flavors compatible with this volume class. Omitted or empty means no compatibility restriction.
+	// SupportedFlavorIds Optional allowlist of Region flavors that can attach Volumes of this class to Servers. Omitted or empty means Server attachment is not supported; standalone Volume creation remains available.
 	SupportedFlavorIds *[]FlavorId `json:"supportedFlavorIds,omitempty"`
 }
 
@@ -1748,6 +1844,9 @@ type VolumeV2Spec struct {
 
 // VolumeV2Status Provider-observed volume state.
 type VolumeV2Status struct {
+	// AttachedAt Timestamp when the current volume attachment was first confirmed. Omitted when no current attachment is recorded.
+	AttachedAt *time.Time `json:"attachedAt,omitempty"`
+
 	// RegionId The Region in which the volume is provisioned.
 	RegionId RegionId `json:"regionId"`
 
@@ -1766,6 +1865,9 @@ type VolumesV2Read = []VolumeV2Read
 
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
+
+// FilestorageSnapshotIDParameter A Manual File Storage Snapshot ID.
+type FilestorageSnapshotIDParameter = FileStorageSnapshotId
 
 // IdentityIDParameter A cloud identity ID.
 type IdentityIDParameter = IdentityId
@@ -1832,6 +1934,12 @@ type ConsoleSessionResponse = ConsoleSession
 
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
+
+// FileStorageSnapshotV2Response A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
+type FileStorageSnapshotV2Response = FileStorageSnapshotV2Read
+
+// FileStorageSnapshotsV2Response A list of manual file storage snapshots.
+type FileStorageSnapshotsV2Response = FileStorageSnapshotsV2Read
 
 // FlavorsResponse A list of flavors.
 type FlavorsResponse = Flavors
@@ -2019,6 +2127,13 @@ type GetApiV2FilestorageParams struct {
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
 }
 
+// GetApiV2FilestorageFilestorageIDSnapshotsParams defines parameters for GetApiV2FilestorageFilestorageIDSnapshots.
+type GetApiV2FilestorageFilestorageIDSnapshotsParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
+}
+
 // GetApiV2FilestorageclassesParams defines parameters for GetApiV2Filestorageclasses.
 type GetApiV2FilestorageclassesParams struct {
 	// RegionID Allows resources to be filtered by region.
@@ -2183,6 +2298,9 @@ type PostApiV2FilestorageJSONRequestBody = StorageV2Create
 
 // PutApiV2FilestorageFilestorageIDJSONRequestBody defines body for PutApiV2FilestorageFilestorageID for application/json ContentType.
 type PutApiV2FilestorageFilestorageIDJSONRequestBody = StorageV2Update
+
+// PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDSnapshots for application/json ContentType.
+type PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody = FileStorageSnapshotV2Create
 
 // PostApiV2LoadbalancersJSONRequestBody defines body for PostApiV2Loadbalancers for application/json ContentType.
 type PostApiV2LoadbalancersJSONRequestBody = LoadBalancerV2Create

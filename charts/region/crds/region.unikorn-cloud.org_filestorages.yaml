@@ -130,6 +130,16 @@ spec:
                       maxLength: 19
                       pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
                       type: string
+                    protectedPath:
+                      description: ProtectedPath is the relative path within the file
+                        storage data hierarchy protected by this policy.
+                      maxLength: 1024
+                      pattern: ^([^/]+/)*[^/]+$
+                      type: string
+                      x-kubernetes-validations:
+                      - message: protectedPath must not contain . or .. path components
+                        rule: self.split('/').all(component, component != '.' && component
+                          != '..')
                     retention:
                       description: Retention defines how many snapshots are retained.
                       properties:
@@ -202,6 +212,27 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
+              source:
+                description: |-
+                  Source describes where the File Storage's initial data comes from. When
+                  omitted, the File Storage starts empty. Add future source kinds as new
+                  members while preserving the rule that exactly one member is set.
+                properties:
+                  snapshot:
+                    description: Snapshot restores from a manual File Storage snapshot.
+                    properties:
+                      id:
+                        description: ID of the source FileStorageSnapshot.
+                        type: string
+                    required:
+                    - id
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: source is immutable
+                  rule: self == oldSelf
+                - message: exactly one source must be set
+                  rule: '(has(self.snapshot) ? 1 : 0) == 1'
               storageClassID:
                 description: StorageClassID is the storage class ID.
                 type: string
@@ -228,6 +259,9 @@ spec:
             - size
             - storageClassID
             type: object
+            x-kubernetes-validations:
+            - message: source cannot be added or removed after creation
+              rule: has(self.source) == has(oldSelf.source)
           status:
             properties:
               attachments:

@@ -6,16 +6,22 @@ Volume creation validates the selected Network and VolumeClass, derives Region,
 Identity, organization, and project scope from that Network, and persists a
 controller-finalized `Volume` CRD owned by the Network with deletion blocking.
 Requested size is stored as a binary quantity while the API remains whole-GiB.
-Before persisting the CRD, creation allocates that binary-byte capacity against
-the Identity `volumes` quota. The allocation ID is stored on the Volume; a
+Before persisting the CRD, creation allocates that capacity in whole GiB
+against the Identity `volume` quota, matching the GiB contract of the
+registered quota kind. The allocation ID is stored on the Volume; a
 failed CRD write compensates by deleting the allocation.
 
 List and get expose project-scoped metadata, immutable Network/class/size, the
 standard lifecycle and health projection, and observed size when it is present
-in CRD status. Attachment-derived fields are not projected by this package.
+in CRD status. They project the optional `AttachedAt` timestamp directly from
+Volume status without inferring attachment state from the internal claim.
 
 Updates replace mutable metadata and tags with optimistic locking while
 preserving Network, VolumeClass, size, claims, controller state, and any
 future allocation annotation. Delete is idempotent once started and rejects a
 Volume with an active attachment claim or resource reference until it is
-manually detached.
+manually detached. The delete carries UID and resource-version preconditions;
+if the Volume changed after the guard's read, the guard is re-run against a
+fresh read before retrying once, so a new claim or reference returns `403`
+and an unrelated change still deletes, with `409` reserved for a conflict that
+survives the retry.

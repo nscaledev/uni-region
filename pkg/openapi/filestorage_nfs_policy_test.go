@@ -65,6 +65,20 @@ func TestFileStorageNFSPolicyContract(t *testing.T) {
 	require.Equal(t, "#/components/schemas/storageV2Spec", componentSchema(t, swagger, "storageV2Create").Properties["spec"].Value.AllOf[1].Ref)
 }
 
+func TestFileStorageUpdateDeclaresConflictResponse(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	resource := swagger.Paths.Find("/api/v2/filestorage/{filestorageID}")
+	require.NotNil(t, resource)
+	require.NotNil(t, resource.Put)
+	conflict := resource.Put.Responses.Value("409")
+	require.NotNil(t, conflict)
+	require.Equal(t, "#/components/responses/unikorn-cloud_core_v1.17.1_pkg_openapi_common_conflictResponse", conflict.Ref)
+}
+
 func TestFileStorageNFSPolicyGeneratedClientPreservesOmission(t *testing.T) {
 	t.Parallel()
 

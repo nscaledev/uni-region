@@ -17,6 +17,8 @@ limitations under the License.
 package volume
 
 import (
+	"context"
+
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	coremanager "github.com/unikorn-cloud/core/pkg/manager"
 	"github.com/unikorn-cloud/core/pkg/manager/options"
@@ -26,7 +28,10 @@ import (
 	"github.com/unikorn-cloud/region/pkg/managers"
 	volumeprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/volume"
 
+	"k8s.io/apimachinery/pkg/types"
+
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -59,13 +64,22 @@ func (f *Factory) Reconciler(options *options.Options, controllerOptions coreman
 	return coremanager.NewReconciler(options, controllerOptions, manager, f.ProvisionerCreate(volumeprovisioner.New))
 }
 
-// RegisterWatches registers the Volume desired-state watch.
+// RegisterWatches registers Volume desired-state and Server attachment-intent watches.
 func (*Factory) RegisterWatches(manager manager.Manager, controller controller.Controller) error {
-	return controller.Watch(source.Kind(
+	if err := controller.Watch(source.Kind(
 		manager.GetCache(),
 		&unikornv1.Volume{},
 		&handler.TypedEnqueueRequestForObject[*unikornv1.Volume]{},
 		&predicate.TypedGenerationChangedPredicate[*unikornv1.Volume]{},
+	)); err != nil {
+		return err
+	}
+
+	return controller.Watch(source.Kind(
+		manager.GetCache(),
+		&unikornv1.Server{},
+		handler.TypedEnqueueRequestsFromMapFunc(serverVolumes),
+		predicate.TypedFuncs[*unikornv1.Server]{UpdateFunc: serverUpdate},
 	))
 }
 
@@ -74,4 +88,27 @@ func (*Factory) Schemes() []coreclient.SchemeAdder {
 	return []coreclient.SchemeAdder{
 		unikornv1.AddToScheme,
 	}
+}
+
+// serverUpdate allows Server spec and deletion transitions through the watch.
+// The update handler maps both old and new objects, enqueueing removed as well as added Volumes.
+// For example, [A] -> [] enqueues A, [A] -> [B] enqueues both A and B, and
+// deleting a Server with [A, B] enqueues both Volumes for teardown.
+func serverUpdate(e event.TypedUpdateEvent[*unikornv1.Server]) bool {
+	if e.ObjectOld == nil || e.ObjectNew == nil {
+		return false
+	}
+
+	return e.ObjectOld.Generation != e.ObjectNew.Generation ||
+		e.ObjectOld.DeletionTimestamp == nil && e.ObjectNew.DeletionTimestamp != nil
+}
+
+func serverVolumes(_ context.Context, server *unikornv1.Server) []reconcile.Request {
+	requests := make([]reconcile.Request, len(server.Spec.Volumes))
+
+	for i := range server.Spec.Volumes {
+		requests[i].NamespacedName = types.NamespacedName{Namespace: server.Namespace, Name: server.Spec.Volumes[i].ID}
+	}
+
+	return requests
 }

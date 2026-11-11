@@ -27,7 +27,6 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -102,22 +101,6 @@ const (
 	// These ones are well defined openstack image properties.
 	imageArchitectureProperty = "architecture"
 )
-
-var tagKeyRegex = regexp.MustCompile(
-	`^([a-z0-9][a-z0-9-]*)\.[^/]+/([a-z0-9][a-z0-9-]*)$`,
-)
-
-// metadataKey converts a namespaced tag key of the form
-// "<service>.unikorn-cloud.org/<local-name>" into the OpenStack metadata key
-// "<service>:<local_name>", returning false if the key does not match the schema.
-func metadataKey(key string) (string, bool) {
-	m := tagKeyRegex.FindStringSubmatch(key)
-	if m == nil {
-		return "", false
-	}
-
-	return m[1] + ":" + strings.ReplaceAll(m[2], "-", "_"), true
-}
 
 type providerCredentials struct {
 	endpoint  string
@@ -482,46 +465,59 @@ func convertFlavors(resources []flavors.Flavor, region *unikornv1.Region) types.
 			Disk:         resource.NewScaledQuantity(int64(flavor.Disk), resource.Giga),
 		}
 
-		// Apply any extra metadata to the flavor.
-		//
-		//nolint:nestif
-		if region != nil && region.Spec.Openstack != nil && region.Spec.Openstack.Compute != nil && region.Spec.Openstack.Compute.Flavors != nil {
-			i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
-				return flavor.ID == metadata.ID
-			})
-
-			if i >= 0 {
-				metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
-
-				f.Baremetal = metadata.Baremetal
-				f.PinnedOnly = metadata.PinnedOnly
-
-				if metadata.CPU != nil {
-					if metadata.CPU.Architecture != nil {
-						f.Architecture = types.Architecture(*metadata.CPU.Architecture)
-					}
-
-					f.CPUFamily = metadata.CPU.Family
-				}
-
-				if metadata.GPU != nil {
-					f.GPU = &types.GPU{
-						// TODO: while these align, you should really put a
-						// proper conversion in here.
-						Vendor:        types.GPUVendor(metadata.GPU.Vendor),
-						Model:         metadata.GPU.Model,
-						Memory:        metadata.GPU.Memory,
-						PhysicalCount: metadata.GPU.PhysicalCount,
-						LogicalCount:  metadata.GPU.LogicalCount,
-					}
-				}
-			}
-		}
+		// Apply any per-flavor metadata overrides.
+		applyFlavorMetadata(&f, region, flavor.ID)
 
 		result[i] = f
 	}
 
 	return result
+}
+
+// applyFlavorMetadata overlays any Region-level per-flavor metadata (CPU, GPU,
+// InfiniBand, bare-metal/pinning) onto the converted flavor.
+func applyFlavorMetadata(f *types.Flavor, region *unikornv1.Region, flavorID string) {
+	if region == nil || region.Spec.Openstack == nil || region.Spec.Openstack.Compute == nil || region.Spec.Openstack.Compute.Flavors == nil {
+		return
+	}
+
+	i := slices.IndexFunc(region.Spec.Openstack.Compute.Flavors.Metadata, func(metadata unikornv1.FlavorMetadata) bool {
+		return flavorID == metadata.ID
+	})
+	if i < 0 {
+		return
+	}
+
+	metadata := &region.Spec.Openstack.Compute.Flavors.Metadata[i]
+
+	f.Baremetal = metadata.Baremetal
+	f.PinnedOnly = metadata.PinnedOnly
+
+	if metadata.CPU != nil {
+		if metadata.CPU.Architecture != nil {
+			f.Architecture = types.Architecture(*metadata.CPU.Architecture)
+		}
+
+		f.CPUFamily = metadata.CPU.Family
+	}
+
+	if metadata.GPU != nil {
+		f.GPU = &types.GPU{
+			// TODO: while these align, you should really put a
+			// proper conversion in here.
+			Vendor:        types.GPUVendor(metadata.GPU.Vendor),
+			Model:         metadata.GPU.Model,
+			Memory:        metadata.GPU.Memory,
+			PhysicalCount: metadata.GPU.PhysicalCount,
+			LogicalCount:  metadata.GPU.LogicalCount,
+		}
+	}
+
+	if metadata.InfiniBand != nil {
+		f.InfiniBand = &types.InfiniBand{
+			PortCount: metadata.InfiniBand.PortCount,
+		}
+	}
 }
 
 func (p *Provider) VolumeClasses(ctx context.Context) (types.VolumeClassList, error) {
@@ -1988,19 +1984,12 @@ func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInter
 }
 
 func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
-	namespacedSystemMetadata := map[string]string{
-		"region:volume_id":         volume.Name,
-		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
-		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
-		"region:region_id":         volume.Labels[constants.RegionLabel],
-		"region:network_id":        volume.Spec.NetworkID,
-		"region:identity_id":       identity.Name,
-	}
+	namespacedSystemMetadata := volumeSystemMetadata(identity, volume)
 
 	metadata := make(map[string]string, len(volume.Spec.Tags)+len(namespacedSystemMetadata))
 
 	for _, tag := range volume.Spec.Tags {
-		if key, ok := metadataKey(tag.Name); ok {
+		if key, ok := unikornv1.MetadataKey(tag.Name); ok {
 			metadata[key] = tag.Value
 		}
 	}
@@ -2010,8 +1999,20 @@ func volumeMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[
 	return metadata
 }
 
+func volumeSystemMetadata(identity *unikornv1.Identity, volume *unikornv1.Volume) map[string]string {
+	return map[string]string{
+		"region:volume_id":         volume.Name,
+		"identity:organization_id": volume.Labels[coreconstants.OrganizationLabel],
+		"identity:project_id":      volume.Labels[coreconstants.ProjectLabel],
+		"region:region_id":         volume.Labels[constants.RegionLabel],
+		"region:network_id":        volume.Spec.NetworkID,
+		"region:identity_id":       identity.Name,
+	}
+}
+
 const (
 	volumeStatusAvailable   = "available"
+	volumeStatusInUse       = "in-use"
 	volumeStatusErrorPrefix = "error"
 )
 
@@ -2022,11 +2023,20 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 	if err == nil {
 		logger.V(1).Info("volume already exists")
 
+		if err := projectVolumeState(volume, openstackVolume); err != nil {
+			return err
+		}
+
+		if volume.Status.ProvisionedAt == nil {
+			now := metav1.Now()
+			volume.Status.ProvisionedAt = &now
+		}
+
 		if strings.HasPrefix(openstackVolume.Status, volumeStatusErrorPrefix) {
 			return provisioners.Terminal(unikornv1core.ConditionReasonErrored, "provider volume entered an error state")
 		}
 
-		if openstackVolume.Status != volumeStatusAvailable {
+		if openstackVolume.Status != volumeStatusAvailable && openstackVolume.Status != volumeStatusInUse {
 			return provisioners.ErrYield
 		}
 
@@ -2037,8 +2047,17 @@ func reconcileVolume(ctx context.Context, blockStorage VolumeInterface, identity
 		return err
 	}
 
+	if volume.Status.ProvisionedAt != nil {
+		volume.SetHealthCondition(corev1.ConditionFalse, unikornv1core.ConditionReasonDegraded, "the provider volume is missing")
+
+		return provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored, "the provider volume is missing; replace the Region Volume")
+	}
+
 	logger.V(1).Info("creating volume")
 
+	// The next successful lookup stamps ProvisionedAt, so a failed create cannot
+	// permanently park the Volume. A provider delete before that lookup can permit
+	// replacement, but nothing can attach during that short creation window.
 	if _, err = blockStorage.CreateVolume(ctx, volume, volumeMetadata(identity, volume)); err != nil {
 		return err
 	}
@@ -2384,11 +2403,13 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 // and image reconciliation.
 // https://docs.openstack.org/api-guide/compute/server_concepts.html
 const (
-	novaStatusActive  = "ACTIVE"
-	novaStatusBuild   = "BUILD"
-	novaStatusError   = "ERROR"
-	novaStatusRebuild = "REBUILD"
-	novaStatusUnknown = "UNKNOWN"
+	novaStatusActive     = "ACTIVE"
+	novaStatusBuild      = "BUILD"
+	novaStatusError      = "ERROR"
+	novaStatusHardReboot = "HARD_REBOOT"
+	novaStatusReboot     = "REBOOT"
+	novaStatusRebuild    = "REBUILD"
+	novaStatusUnknown    = "UNKNOWN"
 )
 
 // healthMessageIndeterminate is the Healthy-condition message used whenever a
@@ -2419,6 +2440,12 @@ func convertServerHealthStatus(server *servers.Server) (corev1.ConditionStatus, 
 		// Active condition (ActiveConditionReasonRebuilding); it is not serving
 		// during the reimage, so health is reported as indeterminate rather than
 		// asserting a verdict. Message shared with markServerRebuildAccepted.
+		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate
+	case novaStatusHardReboot, novaStatusReboot:
+		// A rebooting server is likewise carried on the Active condition
+		// (ActiveConditionReasonRebooting). A user-requested reboot is not a fault,
+		// so it must not read as Degraded; the server is briefly not serving, so
+		// health is indeterminate until Nova settles.
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, healthMessageIndeterminate
 	case novaStatusUnknown:
 		return corev1.ConditionUnknown, unikornv1core.ConditionReasonUnknown, "unable to determine server status"
@@ -2560,6 +2587,20 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		}
 	}
 
+	// A reboot task (hard or soft) is a reboot in flight. PowerState does not
+	// express it: it may still read RUNNING before the power cycle lands
+	// (baremetal: Ironic power-cycles the node, which takes minutes), which would
+	// otherwise hide that the user's reboot is running at all. It precedes the
+	// ERROR check because a hard reboot is how an errored server is recovered,
+	// and Nova keeps the ERROR display status until the reboot finishes. Nova
+	// refuses to reboot a server that never launched, so this cannot mask the
+	// Error the provider-create-failure guard keys off.
+	if serverRebootInFlight(openstackserver) {
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonRebooting)
+
+		return
+	}
+
 	// Nova ERROR is a terminal lifecycle state that PowerState cannot express
 	// (it is NOSTATE for an errored server, which would otherwise leave the
 	// state untouched). Surface it explicitly so the provider-create-failure
@@ -2591,7 +2632,14 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 
 	switch openstackserver.PowerState {
 	case servers.NOSTATE:
-		// No state information available. We will keep the state as it is.
+		// No state information available. We will keep the state as it is, with
+		// one exception: Rebooting is a transient we stamp, and Nova only clears
+		// the reboot task once the driver reports the reboot done, so an ACTIVE
+		// server with no task has finished rebooting. Without this a baremetal
+		// node surfacing NOSTATE would be stuck reading Rebooting.
+		if rebootSettled(server, openstackserver) {
+			server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
+		}
 	case servers.RUNNING:
 		server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 	case servers.SHUTDOWN:
@@ -2609,6 +2657,31 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 	case servers.PAUSED, servers.SUSPENDED:
 		log.FromContext(ctx).Info("caught unsupported server power state", "powerState", openstackserver.PowerState.String())
 	}
+}
+
+// Nova's reboot task states are "rebooting", "reboot_pending", "reboot_started"
+// and their "_hard" variants, matched by prefix like the rebuild family.
+const novaTaskStateRebootPrefix = "reboot"
+
+// serverRebootInFlight reports whether Nova holds the server in a reboot task.
+// The task state, not the display status, is the signal: Nova only projects it
+// to HARD_REBOOT/REBOOT for an ACTIVE server, while a hard reboot of a STOPPED,
+// PAUSED or SUSPENDED server keeps that display status. Nova sets the task
+// before the reboot API returns 202 and clears it when the reboot finishes,
+// whether it succeeded or failed, so a cleared task means the reboot is over.
+func serverRebootInFlight(openstackserver *servers.Server) bool {
+	return strings.HasPrefix(openstackserver.TaskState, novaTaskStateRebootPrefix)
+}
+
+// rebootSettled reports whether a server last recorded as Rebooting is now
+// reported by Nova as ACTIVE with no task in flight, i.e. the reboot completed.
+func rebootSettled(server *unikornv1.Server, openstackserver *servers.Server) bool {
+	active, err := unikornv1.GetActiveCondition(server)
+	if err != nil || active.Reason != unikornv1.ActiveConditionReasonRebooting {
+		return false
+	}
+
+	return openstackserver.Status == novaStatusActive && openstackserver.TaskState == ""
 }
 
 func (p *Provider) lookupNetwork(ctx context.Context, networks NetworkInterface, namespace, id string) (*NetworkExt, error) {
@@ -2687,17 +2760,65 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		return port, nil
 	}
 
-	// TODO: we should only do this when the security groups or address pairs differ.
-	log.V(1).Info("updating port")
+	if serverPortRequiresUpdate(port, securityGroupIDs, addressPairs) {
+		log.V(1).Info("updating port")
 
-	port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
-	if err != nil {
-		return nil, err
+		port, err = client.UpdatePort(ctx, port.ID, securityGroupIDs, addressPairs)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
 
 	return port, nil
+}
+
+func sliceSetsEqual[T comparable](a, b []T) bool {
+	aSet := make(map[T]struct{}, len(a))
+	for _, value := range a {
+		aSet[value] = struct{}{}
+	}
+
+	bSet := make(map[T]struct{}, len(b))
+	for _, value := range b {
+		bSet[value] = struct{}{}
+	}
+
+	return maps.Equal(aSet, bSet)
+}
+
+func allowedAddressPairSetsEqual(portMAC string, a, b []ports.AddressPair) bool {
+	normalize := func(pairs []ports.AddressPair) map[ports.AddressPair]struct{} {
+		result := make(map[ports.AddressPair]struct{}, len(pairs))
+
+		for _, pair := range pairs {
+			// Neutron fills an omitted allowed-address-pair MAC with the
+			// port's MAC in its response, so compare the effective value.
+			if pair.MACAddress == "" {
+				pair.MACAddress = portMAC
+			}
+
+			// Neutron returns MAC addresses in canonical lowercase form even
+			// when the request used another valid representation. Normalize both
+			// observed and desired values with net.ParseMAC(...).String() before
+			// comparing so equivalent representations do not trigger updates.
+			if macAddress, err := net.ParseMAC(pair.MACAddress); err == nil {
+				pair.MACAddress = macAddress.String()
+			}
+
+			result[pair] = struct{}{}
+		}
+
+		return result
+	}
+
+	return maps.Equal(normalize(a), normalize(b))
+}
+
+func serverPortRequiresUpdate(port *ports.Port, securityGroupIDs []string, addressPairs []ports.AddressPair) bool {
+	return !sliceSetsEqual(port.SecurityGroups, securityGroupIDs) ||
+		!allowedAddressPairSetsEqual(port.MACAddress, port.AllowedAddressPairs, addressPairs)
 }
 
 func (p *Provider) reconcileFloatingIP(ctx context.Context, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
@@ -3004,7 +3125,10 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 			log.FromContext(ctx).Info("server rebuild refused pending another operation, waiting for a rebuildable state",
 				"server", server.Name, "novaServerID", openstackServer.ID)
 
-			return openstackServer, provisioners.ErrYield
+			// Same situation as R4′: we lost the race between observing a
+			// quiesced server and asking Nova to rebuild it, so same wording.
+			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+				"another operation is in progress on the server; the requested image will be applied once it completes")
 		}
 
 		log.FromContext(ctx).Info("the provider rejected the server rebuild",
@@ -3087,7 +3211,8 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		if serverRebuildInFlight(openstackServer) {
 			markServerRebuildAccepted(server)
 
-			return openstackServer, provisioners.ErrYield
+			return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+				"the provider is rebuilding the server onto the requested image")
 		}
 
 		// R3′: converged onto a quiesced ERROR. The ref alone cannot certify the
@@ -3114,18 +3239,38 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		log.FromContext(ctx).Info("image change deferred until first launch",
 			"server", server.Name, "novaServerID", openstackServer.ID)
 
-		return openstackServer, provisioners.ErrYield
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+			"the requested image differs from the running one; it will be applied once the server has booted")
 	}
 
 	// R4′: a foreign operation holds the server; Nova would refuse the rebuild.
+	// The task state is provider vocabulary, so it goes to the log; the condition
+	// says only that another operation holds the server.
 	if serverTaskActive(openstackServer) {
-		return openstackServer, provisioners.ErrYield
+		log.FromContext(ctx).Info("image change deferred while another operation holds the server",
+			"server", server.Name, "novaServerID", openstackServer.ID,
+			"novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
+
+		return openstackServer, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
+			"another operation is in progress on the server; the requested image will be applied once it completes")
 	}
 
 	// R4″: the one destructive row.
 	return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
 		ImageID: desiredImageID,
 	})
+}
+
+// writeProviderCreateGateOutputs adds satisfied provider-create gates' outputs
+// to metadata, logging any that map to no metadata key rather than dropping
+// them silently.
+func writeProviderCreateGateOutputs(ctx context.Context, metadata map[string]string, server *unikornv1.Server) {
+	outputs, unmapped := server.ProviderCreateGateOutputMetadata()
+	if len(unmapped) > 0 {
+		log.FromContext(ctx).Info("provider-create gate outputs map to no metadata key, not published", "outputs", unmapped)
+	}
+
+	maps.Copy(metadata, outputs)
 }
 
 func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, server *unikornv1.Server, port *ports.Port, keyName string, preflight serverCreatePreflight) (*servers.Server, error) {
@@ -3171,12 +3316,18 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 	metadata := make(map[string]string, len(server.Spec.Tags)+len(systemMetadata)+len(namespacedSystemMetadata))
 
 	for _, tag := range server.Spec.Tags {
-		if k, ok := metadataKey(tag.Name); ok {
+		if k, ok := unikornv1.MetadataKey(tag.Name); ok {
 			metadata[k] = tag.Value
 		}
 	}
 
-	// System keys written last — unconditionally overwrite any colliding user tag.
+	// Satisfied provider-create gates' outputs, after user tags so a tenant
+	// cannot override what the gate's owner published, and before system keys
+	// so they cannot override those.
+	writeProviderCreateGateOutputs(ctx, metadata, server)
+
+	// System keys written last — unconditionally overwrite any colliding user
+	// tag or gate output.
 	for k, v := range namespacedSystemMetadata {
 		metadata[k] = v
 	}
@@ -3310,12 +3461,28 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	if openstackServer != nil {
+		if serverDeleteHeld(openstackServer) {
+			return holdServerDelete(ctx, server, openstackServer)
+		}
+
 		log.V(1).Info("deleting server")
 
-		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil {
+		releaseServerDelete(server)
+
+		// Nova can retain deleting after failed synchronous cleanup; let it
+		// distinguish a retry from an already-running asynchronous deletion.
+		if err := compute.DeleteServer(ctx, openstackServer.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
 		}
+
+		log.Info("waiting for provider server deletion", "novaServerID", openstackServer.ID)
+
+		// DELETE acceptance, including a concurrent delete's 404, does not prove
+		// Nova has finished using the tenant credentials for network teardown.
+		return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for the provider to finish deleting the server")
 	}
+
+	releaseServerDelete(server)
 
 	networking, err := p.networkFromServicePrincipal(ctx, identity)
 	if err != nil {
@@ -3337,19 +3504,74 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		if floatingip != nil {
 			log.V(1).Info("deleting floating ip")
 
-			if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil {
+			if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return err
 			}
 		}
 
 		log.V(1).Info("deleting port")
 
-		if err := networking.DeletePort(ctx, port.ID); err != nil {
+		if err := networking.DeletePort(ctx, port.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
 		}
 	}
 
-	return nil
+	// A create can become visible while networking is removed. Keep ownership
+	// until a lookup after port removal confirms no matching server remains.
+	if _, err := compute.GetServer(ctx, server); err != nil {
+		if errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return nil
+		}
+
+		return err
+	}
+
+	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a provider server discovered during network cleanup")
+}
+
+const (
+	novaTaskStateSpawning        = "spawning"
+	novaTaskStateRebuildSpawning = "rebuild_spawning"
+)
+
+// holdServerDelete records the hold on the Server's DeletionHeld condition and
+// logs every held pass so a live controller is distinguishable from a wedged one.
+func holdServerDelete(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server) error {
+	log := log.FromContext(ctx)
+
+	log.Info("server deletion held by provider state",
+		"novaServerID", openstackServer.ID, "novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
+
+	server.SetDeletionHeldCondition(true, unikornv1.DeletionHeldConditionReasonProviderBuilding,
+		fmt.Sprintf("provider server is %s with task %s", openstackServer.Status, openstackServer.TaskState))
+
+	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning,
+		"waiting for the provider to finish building the server before deleting it")
+}
+
+// releaseServerDelete records that the build-state hold ended, independently of
+// teardown completion. A server that was never held gets no condition.
+func releaseServerDelete(server *unikornv1.Server) {
+	if _, err := unikornv1.GetDeletionHeldCondition(server); err != nil {
+		return
+	}
+
+	server.SetDeletionHeldCondition(false, unikornv1.DeletionHeldConditionReasonReleased, "provider build state no longer holds deletion")
+}
+
+// serverDeleteHeld reports whether Nova is deploying the server's Ironic node.
+// Nova only touches Ironic once the task state is spawning, and cannot tear a
+// node down mid-deploy, so the delete waits. A build still queued in
+// nova-compute is Nova's to abort cleanly.
+func serverDeleteHeld(openstackServer *servers.Server) bool {
+	switch openstackServer.Status {
+	case novaStatusBuild:
+		return openstackServer.TaskState == novaTaskStateSpawning
+	case novaStatusRebuild:
+		return openstackServer.TaskState == novaTaskStateRebuildSpawning
+	default:
+		return false
+	}
 }
 
 func (p *Provider) RebootServer(ctx context.Context, identity *unikornv1.Identity, server *unikornv1.Server, hard bool) error {
@@ -3499,27 +3721,7 @@ func (p *Provider) updateServerStateWithClients(
 		return err
 	}
 
-	setServerHealthStatus(server, openstackServer)
-	setServerMACAddress(ctx, server, openstackServer)
-
-	if enteredError := setServerObservedStatus(server, openstackServer); enteredError {
-		// The enrichment is best-effort and bounded so a hung Nova read cannot
-		// stall the whole poll cycle.
-		faultCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		logServerFault(faultCtx, serverClient, server, openstackServer)
-	}
-
-	region, _ := p.openstack.regionSnapshot()
-	baremetal := isBaremetalFlavor(region, server.Spec.FlavorID.String())
-
-	var ironicNode *nodes.Node
-
-	if shouldCallIronicForPhase(*openstackServer, baremetal) {
-		ironicNode = p.lookupIronicNodeForPhase(ctx, identity, server, openstackServer, baremetalForPhase)
-	}
-
-	setServerActive(ctx, server, openstackServer, ironicNode)
+	p.projectServerState(ctx, identity, server, openstackServer, serverClient, baremetalForPhase)
 
 	return nil
 }

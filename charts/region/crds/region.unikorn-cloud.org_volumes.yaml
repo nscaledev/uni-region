@@ -64,6 +64,7 @@ spec:
                   id:
                     description: ID is the Region resource ID of the resource claiming
                       the volume attachment.
+                    minLength: 1
                     type: string
                   kind:
                     description: Kind is the kind of resource claiming the volume
@@ -124,6 +125,12 @@ spec:
               rule: self.networkID == oldSelf.networkID
           status:
             properties:
+              attachedAt:
+                description: |-
+                  AttachedAt is when the current attachment was first confirmed.
+                  Unset means no current attachment is recorded.
+                format: date-time
+                type: string
               conditions:
                 description: Current service state of a volume.
                 items:
@@ -186,6 +193,13 @@ spec:
                   by the controller.
                 format: int64
                 type: integer
+              provisionedAt:
+                description: |-
+                  ProvisionedAt records the first successful discovery of backing storage.
+                  It is never cleared, because a missing provider volume must not be recreated
+                  under the same Region Volume ID.
+                format: date-time
+                type: string
               size:
                 anyOf:
                 - type: integer

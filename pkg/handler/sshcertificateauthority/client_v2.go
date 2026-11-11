@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -43,6 +44,7 @@ import (
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -154,7 +156,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Sshcertifica
 			return true
 		}
 
-		return rbac.AllowProjectScopeID(ctx, endpoint, identityapi.Read, organizationID, projectID) != nil
+		return !rbac.PermitsProjectScopeID(ctx, endpoint, identityapi.Read, organizationID, projectID)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.SSHCertificateAuthority) int {
@@ -164,38 +166,19 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Sshcertifica
 	return convertV2List(result), nil
 }
 
+// GetV2Raw loads an SSH certificate authority the caller may read.  Servers use
+// it to look up the authority they trust.
 func (c *Client) GetV2Raw(ctx context.Context, sshCertificateAuthorityID string) (*regionv1.SSHCertificateAuthority, error) {
+	return c.getV2(ctx, sshCertificateAuthorityID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
+}
+
+// getV2 loads an SSH certificate authority and authorizes the target on it.
+// See common.GetV2.
+func (c *Client) getV2(ctx context.Context, sshCertificateAuthorityID string, target authz.Target) (*regionv1.SSHCertificateAuthority, error) {
 	result := &regionv1.SSHCertificateAuthority{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: sshCertificateAuthorityID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup SSH certificate authority", err)
-	}
-
-	organizationID, projectID, err := result.OrganizationAndProjectID()
-	if err != nil {
+	if err := common.GetV2(ctx, c.Client, c.Namespace, sshCertificateAuthorityID, target, result); err != nil {
 		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, endpoint, identityapi.Read, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse API version", err)
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
 	}
 
 	return result, nil
@@ -211,6 +194,15 @@ func (c *Client) GetV2(ctx context.Context, sshCertificateAuthorityID regionids.
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAuthorityV2Create) (*openapi.SshCertificateAuthorityV2Read, error) {
+	target := authz.Target{
+		Endpoint:   endpoint,
+		Operation:  authz.Create,
+		Kind:       authz.Primary,
+		ObjectName: request.Metadata.Name,
+	}
+
+	authz.Declare(ctx, target)
+
 	organizationID, err := identityids.ParseOrganizationID(request.Spec.OrganizationId)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid organization ID", err)
@@ -221,7 +213,7 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAu
 		return nil, fmt.Errorf("%w: invalid project ID", err)
 	}
 
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, endpoint, identityapi.Create, organizationID, projectID); err != nil {
+	if err := rbac.AllowProjectScopeCreateOn(ctx, c.Identity, target, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -259,17 +251,14 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SshCertificateAu
 }
 
 func (c *Client) DeleteV2(ctx context.Context, sshCertificateAuthorityID regionids.SSHCertificateAuthorityID) error {
-	resource, err := c.GetV2Raw(ctx, sshCertificateAuthorityID.String())
-	if err != nil {
-		return err
-	}
+	return c.RetryConflictOnce(func() error {
+		return c.deleteV2(ctx, sshCertificateAuthorityID)
+	})
+}
 
-	organizationID, projectID, err := resource.OrganizationAndProjectID()
+func (c *Client) deleteV2(ctx context.Context, sshCertificateAuthorityID regionids.SSHCertificateAuthorityID) error {
+	resource, err := c.getV2(ctx, sshCertificateAuthorityID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Delete, Kind: authz.Primary})
 	if err != nil {
-		return err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, endpoint, identityapi.Delete, organizationID, projectID); err != nil {
 		return err
 	}
 
@@ -281,9 +270,20 @@ func (c *Client) DeleteV2(ctx context.Context, sshCertificateAuthorityID regioni
 		return errors.HTTPForbidden("SSH certificate authority is in use and cannot be deleted")
 	}
 
-	if err := c.Client.Delete(ctx, resource); err != nil {
+	// Preconditions turn a write landing between the read and the delete into
+	// a conflict, so the guard above is re-run against a fresh copy.
+	preconditions := client.Preconditions{
+		UID:             ptr.To(resource.UID),
+		ResourceVersion: ptr.To(resource.ResourceVersion),
+	}
+
+	if err := c.Client.Delete(ctx, resource, preconditions); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if kerrors.IsConflict(err) {
+			return err
 		}
 
 		return fmt.Errorf("%w: unable to delete SSH certificate authority", err)

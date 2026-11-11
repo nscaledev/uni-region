@@ -19,6 +19,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"path"
+	"strings"
 
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
@@ -27,9 +29,13 @@ import (
 )
 
 const (
-	sshTrustedUserCAKeysPath        = "/etc/ssh/trusted-user-ca-keys.pub"
-	sshTrustedUserCAConfigPath      = "/etc/ssh/sshd_config.d/90-unikorn-trusted-user-ca.conf"
-	sshCertificateAuthorityPartName = "unikorn-ssh-certificate-authority"
+	sshTrustedUserCAKeysPath   = "/etc/ssh/trusted-user-ca-keys.pub"
+	sshTrustedUserCAConfigPath = "/etc/ssh/sshd_config.d/90-unikorn-trusted-user-ca.conf"
+	// sshCertificateAuthorityPartName names our script in cloud-init's
+	// scripts directory. Scripts run in name order and only once, so it
+	// MUST sort before customer scripts, or one that reboots loses the CA
+	// for good. See the README's "Managed cloud-init augmentation" section.
+	sshCertificateAuthorityPartName = "00-unikorn-ssh-certificate-authority"
 	sshReloadCommand                = "systemctl reload sshd || systemctl reload ssh || service ssh reload || service sshd reload || systemctl restart sshd || systemctl restart ssh || service ssh restart || service sshd restart"
 )
 
@@ -43,26 +49,32 @@ func (p *Provisioner) getSSHCertificateAuthority(ctx context.Context, cli client
 	return resource, nil
 }
 
-func sshCertificateAuthorityCloudConfigPart(publicKey string) (*cloudInitPart, error) {
-	return cloudConfigPart(&cloudConfig{
-		WriteFiles: []cloudConfigWriteFile{
-			{
-				Path:        sshTrustedUserCAKeysPath,
-				Owner:       "root:root",
-				Permissions: "0644",
-				Content:     publicKey,
-			},
-			{
-				Path:        sshTrustedUserCAConfigPath,
-				Owner:       "root:root",
-				Permissions: "0644",
-				Content:     "TrustedUserCAKeys " + sshTrustedUserCAKeysPath,
-			},
-		},
-		RunCmd: [][]string{
-			{"sh", "-c", sshReloadCommand},
-		},
-	}, sshCertificateAuthorityPartName)
+// sshCertificateAuthorityPart is a shell script, not cloud-config: scripts
+// are never merged with the customer's cloud-config, and cloud-init runs them
+// once per instance. See the README's "Managed cloud-init augmentation" section.
+func sshCertificateAuthorityPart(publicKey string) cloudInitPart {
+	script := strings.Join([]string{
+		"#!/bin/sh",
+		"set -e",
+		"umask 022",
+		"mkdir -p " + path.Dir(sshTrustedUserCAConfigPath),
+		"printf '%s\\n' " + shellQuote(publicKey) + " > " + sshTrustedUserCAKeysPath,
+		"printf '%s\\n' " + shellQuote("TrustedUserCAKeys "+sshTrustedUserCAKeysPath) + " > " + sshTrustedUserCAConfigPath,
+		"chown root:root " + sshTrustedUserCAKeysPath + " " + sshTrustedUserCAConfigPath,
+		"chmod 0644 " + sshTrustedUserCAKeysPath + " " + sshTrustedUserCAConfigPath,
+		sshReloadCommand,
+		"",
+	}, "\n")
+
+	return cloudInitPart{
+		ContentType: "text/x-shellscript",
+		FileName:    sshCertificateAuthorityPartName,
+		Content:     []byte(script),
+	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func (p *Provisioner) serverCreateOptions(ctx context.Context, cli client.Client) (*types.ServerCreateOptions, error) {
@@ -79,12 +91,7 @@ func (p *Provisioner) serverCreateOptions(ctx context.Context, cli client.Client
 		return nil, err
 	}
 
-	part, err := sshCertificateAuthorityCloudConfigPart(resource.Spec.PublicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	userData, err := mergeCloudInitParts(p.server.Spec.UserData, *part)
+	userData, err := mergeCloudInitParts(p.server.Spec.UserData, sshCertificateAuthorityPart(resource.Spec.PublicKey))
 	if err != nil {
 		return nil, err
 	}

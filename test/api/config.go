@@ -31,6 +31,12 @@ type TestConfig struct {
 	RegionBaseURL           string
 	RegionCACertPath        string
 	RegionID                string
+	SharedNetworkCIDR       string
+	FakeRegionID            string
+	FakeNetworkID           string
+	FakeVolumeClassID       string
+	FakeServerFlavorID      string
+	FakeServerImageID       string
 	PrivateRegionID         string
 	SecondaryOrgID          string
 	SecondaryProjectID      string
@@ -44,6 +50,7 @@ type TestConfig struct {
 	ServerRebuildImageID    string
 	ServerInfrastructureRef string
 	FileStorageSnapshotDir  string
+	RegionNamespace         string
 }
 
 // HasInternalAPIConfig reports whether local internal API credentials are available.
@@ -65,6 +72,9 @@ func LoadTestConfig() (*TestConfig, error) {
 		"INTERNAL_API_CN":                "unikorn-compute",
 		"INTERNAL_API_ACTOR":             "api-tests",
 		"TEST_FILE_STORAGE_SNAPSHOT_DIR": ".snapshot",
+		// Uncommon /24 chosen to avoid overlapping a VAST VIP pool, which would make
+		// File Storage attachment fail silently. Validate on first attach; see ADR INST-1550.
+		"TEST_SHARED_NETWORK_CIDR": "192.168.214.0/24",
 	}
 
 	// .env is located in test/ directory
@@ -95,6 +105,12 @@ func LoadTestConfig() (*TestConfig, error) {
 		OrgID:                   v.GetString("TEST_ORG_ID"),
 		ProjectID:               v.GetString("TEST_PROJECT_ID"),
 		RegionID:                v.GetString("TEST_REGION_ID"),
+		SharedNetworkCIDR:       v.GetString("TEST_SHARED_NETWORK_CIDR"),
+		FakeRegionID:            v.GetString("FAKE_TEST_REGION_ID"),
+		FakeNetworkID:           v.GetString("FAKE_TEST_NETWORK_ID"),
+		FakeVolumeClassID:       v.GetString("FAKE_TEST_VOLUME_CLASS_ID"),
+		FakeServerFlavorID:      v.GetString("FAKE_TEST_SERVER_FLAVOR_ID"),
+		FakeServerImageID:       v.GetString("FAKE_TEST_SERVER_IMAGE_ID"),
 		PrivateRegionID:         v.GetString("TEST_PRIVATE_REGION_ID"),
 		SecondaryOrgID:          v.GetString("TEST_SECONDARY_ORG_ID"),
 		SecondaryProjectID:      v.GetString("TEST_SECONDARY_PROJECT_ID"),
@@ -108,6 +124,7 @@ func LoadTestConfig() (*TestConfig, error) {
 		ServerRebuildImageID:    v.GetString("TEST_SERVER_REBUILD_IMAGE_ID"),
 		ServerInfrastructureRef: v.GetString("TEST_SERVER_INFRASTRUCTURE_REF"),
 		FileStorageSnapshotDir:  v.GetString("TEST_FILE_STORAGE_SNAPSHOT_DIR"),
+		RegionNamespace:         v.GetString("TEST_REGION_NAMESPACE"),
 	}
 
 	// Validate required fields

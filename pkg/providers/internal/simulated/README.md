@@ -34,9 +34,9 @@ development, while keeping behaviour deterministic and cheap to run.
   images through the same query/filter contract used by real providers.
 - Unsupported operations fail explicitly with `ErrUnsupportedOperation` rather
   than pretending to succeed.
-- Volume creation is unsupported. Volume deletion is an idempotent no-op so
-  unconditional controller cleanup can converge when no simulated backing
-  volume could have been created.
+- Volume creation and observation are unsupported. Volume deletion is an
+  idempotent no-op so unconditional controller cleanup can converge when no
+  simulated backing volume could have been created.
 - Server volume attach/detach participates in the full interface contract but
   is currently unsupported; attachment fidelity belongs to the OpenStack
   provider until a higher-level simulated workflow requires it.

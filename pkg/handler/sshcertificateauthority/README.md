@@ -16,7 +16,10 @@ Its distinctive concerns are:
 
 - public keys are normalized and validated as OpenSSH authorized keys
 - unsupported key options and unsupported key types are rejected
-- deletion is blocked if explicit resource references still exist
+- deletion is blocked if explicit resource references still exist; the delete
+  carries UID and resource-version preconditions, and a conflict re-runs the
+  guard against a fresh read before retrying once, returning `409` only if that
+  conflicts too
 - a `ResourceAPIVersionLabel` is still written even though there is no active
   `v1 -> v2` migration concern for this resource; it is there as future-proofing
   rather than because the handler is carrying old API baggage

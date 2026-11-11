@@ -54,7 +54,7 @@ var ErrFailedImageFetch = goerrors.New("image fetch failed")
 var ErrProviderResource = goerrors.New("conflict with resource at provider")
 
 func (c *Client) ListImages(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) (openapi.Images, error) {
-	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, organizationID, regionID); err != nil {
 		return nil, err
 	}
 
@@ -149,7 +149,7 @@ func validateImage(ctx context.Context, uri string) error {
 }
 
 func (c *Client) CreateImage(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID, request *openapi.ImageCreateRequest) (*openapi.ImageResponse, error) {
-	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, organizationID, regionID); err != nil {
 		return nil, err
 	}
 
@@ -201,7 +201,7 @@ func (c *Client) CreateImage(ctx context.Context, organizationID identityids.Org
 }
 
 func (c *Client) DeleteImage(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID, imageID regionids.ImageID) error {
-	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, organizationID, regionID); err != nil {
 		return err
 	}
 

@@ -48,7 +48,8 @@ That is one of the places where provider scaffolding becomes directly user-visib
 - Deleting an identity uses foreground deletion so dependent resources remain
   coordinated beneath the visible parent.
 - Region access is enforced via `region.CheckAccess` during identity generation,
-  preventing callers from creating identities in regions they cannot see.
+  preventing callers from creating identities in regions the request
+  organization may not use.
 - Provider selection and wiring are derived from the selected region during
   generation rather than trusted blindly from the caller.
 

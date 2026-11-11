@@ -55,9 +55,128 @@ accounting meet.
 
 ## Invariants And Guard Rails
 
-- Storage is a `v2` resource and follows the flatter direct-lookup model.
+### Manual Snapshot Lifecycle
+
+`POST /api/v2/filestorage/{filestorageID}/snapshots` and
+`DELETE /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}`
+record durable Region intent and return `202 Accepted`. Neither request calls a
+provider, allocates snapshot-specific quota, or waits for backend convergence.
+
+Snapshot operations require their independent `region:filestoragesnapshots:v2`
+grant, not File Storage Read. Create uses parent scope and completes the principal
+before authorization. Delete uses child scope without requiring the parent.
+Visibility follows [snapshot reads](#manual-snapshot-reads).
+
+Create accepts standard resource metadata plus optional immutable expiration
+and protected path. The immutable, case-sensitive name uses the platform's
+label-value rules, is non-empty and at most 63 characters, and rejects exact
+`.` and `..`. Protected Path follows Snapshot Policy
+rules: canonical, relative, traversal-free, at most 1024 characters, with no
+empty value, absolute path, trailing/repeated slash, or `.`/`..` component.
+Omission protects the root and requests no automatic expiration. Schema shape
+errors, including malformed timestamps, use the existing middleware/decoding
+400 response.
+
+Creation uses core's `NewDeterministicObjectMetadata`, as other deterministic
+Region resources do. Following Servers, Region supplies the parent File Storage
+UUID as the hashing namespace and the validated, exact-case name as the invariant.
+Core owns UUIDv5 generation and rehashes digit-leading results until the UUID
+starts with a letter. [Snapshot IDs](../../ids/README.md)
+are opaque to callers; a raw UUIDv5 calculation is not the public contract.
+Golden vectors through `Client.CreateSnapshot` guard identity stability across
+dependency upgrades without duplicating core's hashing implementation.
+
+Kubernetes creation atomically rejects an occupied parent/name slot with
+canonical 409, including while its previous CR is terminating. Different parents
+and differently cased names occupy distinct API slots. This API uniqueness does
+not change the provider's tenant-wide exact-name uniqueness, which is resolved
+asynchronously.
+
+After the CR is fully removed, recreating the same parent/name pair deliberately
+reuses its API ID. The ID identifies a reusable slot, not a Kubernetes lifetime.
+Delayed old-lifetime create/delete operations can affect the recreated slot;
+customer Delete likewise uses no UID or resource-version preconditions. This
+unfenced same-slot race is accepted.
+
+The create response contains the complete pending read model. Standard
+unobserved Available/Healthy conditions project to `pending`/`unknown`, matching
+the other asynchronous Region create paths; the controller writes observed
+conditions. The stored CR inherits organization, project, Region ancestry,
+parent label, API version 2, immutable creator/principal attribution, description,
+and tags. Before persistence it receives a same-namespace File Storage owner
+reference with `blockOwnerDeletion: true`.
+A parent with deletion intent rejects creation with canonical 409.
+
+The lifecycle controller installs its finalizer before provider mutations and
+removes it after confirmed cleanup. Deleting an untouched CR before its first
+reconciliation can immediately remove it and release its slot.
+
+Individual Delete authorizes controller cleanup of the exact-name,
+exact-resolved-path provider slot without creator proof. Recorded capture
+completion and health do not authorize skipping cleanup.
+
+At request evaluation, `spec.expirationTime <= now` returns the exact canonical
+404, even for paused, provisioning, errored, provisioned, or already-deleting
+children. The request writes no deletion intent or other resource state. A retry
+that crosses the deadline changes from 202 to 404 without modifying ongoing
+cleanup.
+
+File Storage Delete explicitly requests **foreground** propagation. Its blocking
+snapshot children must finish cleanup first. Core's existing `foregroundDeletion`
+gate delays parent Deprovision until Kubernetes clears the cascade finalizer.
+A child that cannot safely complete deletion blocks normal parent teardown.
+
+### Manual Snapshot Reads
+
+`GET /api/v2/filestorage/{filestorageID}/snapshots` and
+`GET /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}`
+read only Region `FileStorageSnapshot` CRs. Manual Snapshot inventory and
+authorization are scoped to one parent File Storage. There is no project-wide
+snapshot collection or pagination. Reads never discover, adopt, or inventory
+provider or policy-created snapshots.
+
+List checks Snapshot Read in the parent's project and filters by parent ID,
+organization/project, and per-child RBAC. Get checks the child's
+scope without requiring the parent. Get/Delete validate the URL parent ID
+against `spec.fileStorageID` and the parent label.
+
+Missing or inaccessible parents return canonical 404 on List. Missing,
+inaccessible, wrong-parent, or expired items also return canonical 404. Other
+failures propagate normally; authorized empty collections return `200 []`.
+
+Tag filters use the standard core decoder and stored tag matching. Results sort
+by immutable, case-sensitive `spec.name`, then UUID; public `metadata.name`
+projects this Manual Snapshot Name rather than treating its mirrored label as
+rename authority.
+
+One clock observation at the start of each storage-client read fixes request
+evaluation time. `spec.expirationTime <= now` hides the child, even if its CR
+still exists, is paused, or is deleting or errored. Omission means no automatic
+expiration. Non-expired deleting and errored resources remain readable. Expiration
+does not depend on status, provider calls, expirer progress, or CR deletion.
+
+Read projection reuses core's project-scoped metadata and condition conversion.
+It exposes immutable `spec.fileStorageId`, optional expiration and relative
+protected path, and optional `status.snapshotTime` and exact
+`status.absoluteProtectedPath`. It preserves the latter byte-for-byte. Internal
+pause, labels, annotations, Kubernetes UID, and provider identifiers are not
+projected. Lifecycle producers own sanitizing condition messages; the read path
+projects only those standard provisioning and health conditions, never raw
+provider diagnostics.
+
+`Healthy=True` records capture readiness observed during provisioning. After
+`Available=True / Provisioned`, health, Snapshot Time, and Absolute Protected
+Path remain the last provisioning observation. They do not guarantee current
+provider existence or usability and never authorize provider mutation. GETs use
+the standard middleware stack and are excluded from mutation audit logging.
+
+### Parent File Storage
+
+- The parent File Storage is a `v2` resource with direct UUID lookup. Its
+  Manual Snapshot children use the nested lifecycle and read contracts above.
 - Region access is enforced via `region.CheckAccess` during request validation,
-  preventing callers from creating storage in regions they cannot see.
+  preventing callers from creating storage in regions the request
+  organization may not use.
 - File Storage update requires File Storage update authorization before mutating
   storage or allocation state.
 - Quota allocation changes are part of the storage lifecycle contract, not an
@@ -70,7 +189,9 @@ accounting meet.
 - Snapshot policy `name` is the stable identity key for user-managed policies.
   Create requests with omitted or empty `snapshotPolicies` store no
   user-managed policies, and non-empty create lists store exactly the caller
-  list.
+  list. `protectedPath` is an optional canonical relative path; omission protects
+  the File Storage root. It is immutable while a policy retains its name, though
+  its schedule and retention remain mutable.
 - `defaultSnapshotProtectionEnabled` controls the hidden platform-managed
   baseline. It defaults to enabled when omitted on create, is preserved when
   omitted on update, rejects null, and is the authoritative public desired state.
@@ -87,21 +208,27 @@ accounting meet.
   default protection is enabled.
 - Parent File Storage update preserves existing user-managed snapshot policies
   when `snapshotPolicies` is omitted, clears them when the list is
-  empty, and replaces them when the list is non-empty.
+  empty, and replaces them when the list is non-empty. A replacement entry whose
+  name already exists must retain its `protectedPath`; attempting to add, remove,
+  or change that path is rejected with `422 Unprocessable Content`.
 - Snapshot policy mutations use File Storage authorization, are blocked while
   the parent File Storage object is deleting, and mutate only the parent inline
   desired-state list.
 - Snapshot policy primitive constraints (name pattern and the provider-safe
-  19-character limit, the four-policy caller maximum, retention, and per-field
-  schedule values) are enforced by the OpenAPI schema through the
-  request-validation middleware before the handler runs. The handler validates
-  only the rules the schema cannot express: rejecting duplicate policy names, the
-  reserved `system-default` name, and invalid schedule shapes (the interval/field
-  combinations). The four-policy limit
+  19-character limit, the four-policy caller maximum, optional protected-path
+  shape, retention, and per-field schedule values) are enforced by the OpenAPI
+  schema through the request-validation middleware before the handler runs. The
+  handler validates rules the schema cannot express: rejecting protected-path
+  traversal components, duplicate policy names, the reserved `system-default`
+  name, and invalid schedule shapes (the interval/field combinations). The four-policy limit
   is caller-facing; the stored CRD list allows a fifth entry for the materialized
   hidden `system-default` baseline, which never counts against the caller maximum.
 - Update preserves the existing allocation annotation while mutating the storage
   resource.
+- Update uses optimistic locking. If a controller or another request modifies the
+  File Storage after it is read, PUT returns `409 Conflict` and compensates any
+  completed quota allocation change. Callers must re-read the resource before
+  retrying.
 - `posixAcl` and `atimeUpdateIntervalSeconds` are optional and nullable on create
   and update. The handler resolves omission or explicit null to `false` and `0`
   before persistence.

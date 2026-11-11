@@ -29,10 +29,13 @@ import (
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/flavors"
 	"github.com/gophercloud/gophercloud/v2/openstack/placement/v1/resourceproviders"
 
+	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioners"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
+
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -209,17 +212,35 @@ func (p serverCreatePlacementPreflight) check(ctx context.Context, server *uniko
 		return err
 	}
 
+	required := placementPreflightRequiredTraits(config, flavorTraits)
+
 	available, err := placementClient.ResourceProviderAvailable(ctx, PlacementResourceProviderQuery{
 		InfrastructureRef: *server.Spec.InfrastructureRef,
 		ResourceClass:     resourceClass,
-		RequiredTraits:    placementPreflightRequiredTraits(config, flavorTraits),
+		RequiredTraits:    required,
 	})
 	if err != nil {
 		return err
 	}
 
 	if !available {
-		return fmt.Errorf("%w: openstack placement resource provider %q is not ready for flavor %q", provisioners.ErrYield, *server.Spec.InfrastructureRef, server.Spec.FlavorID)
+		// Placement vocabulary stays in the log: the resource class and flavor
+		// traits come from Nova extra specs and the required traits from the
+		// region's own config, so none of it is visible to the caller this
+		// condition is written for. The log line is also what someone chasing a
+		// stalled create needs, and this path had nothing before.
+		log.FromContext(ctx).Info("no placement resource provider matched the pinned host",
+			"server", server.Name,
+			"infrastructureRef", *server.Spec.InfrastructureRef,
+			"flavorID", server.Spec.FlavorID,
+			"resourceClass", resourceClass,
+			"requiredTraits", required)
+
+		// Typed rather than a %w-wrapped sentinel: the manager lifts a reason and
+		// message onto the Available condition only from a *provisioners.Error, so
+		// wrapped this wait is indistinguishable from every other yield.
+		return provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+			"the requested host is not available for this flavor")
 	}
 
 	return nil

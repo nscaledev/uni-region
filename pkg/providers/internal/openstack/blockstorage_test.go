@@ -434,7 +434,7 @@ func TestConvertVolumeClassesAppliesMetadata(t *testing.T) {
 	}, out)
 }
 
-func TestConvertVolumeClassesTreatsEmptySupportedFlavorsAsUnrestricted(t *testing.T) {
+func TestConvertVolumeClassesPreservesEmptySupportedFlavors(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {

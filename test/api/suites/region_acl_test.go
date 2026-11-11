@@ -64,7 +64,7 @@ var _ = Describe("Region ACL Enforcement", func() {
 		})
 	})
 
-	Context("When a non-owning organization supplies a private region ID directly", func() {
+	Context("When a non-owning organization supplies a private region ID directly", Label("smoke"), func() {
 		BeforeEach(func() {
 			if secondaryClient == nil {
 				Skip("TEST_SECONDARY_ORG_ID and TEST_SECONDARY_AUTH_TOKEN not configured")

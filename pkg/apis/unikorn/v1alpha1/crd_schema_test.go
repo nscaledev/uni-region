@@ -40,10 +40,12 @@ import (
 )
 
 const (
-	fileStorageCRDFile = "region.unikorn-cloud.org_filestorages.yaml"
-	regionCRDFile      = "region.unikorn-cloud.org_regions.yaml"
-	serverCRDFile      = "region.unikorn-cloud.org_servers.yaml"
-	volumeCRDFile      = "region.unikorn-cloud.org_volumes.yaml"
+	fileStorageCRDFile               = "region.unikorn-cloud.org_filestorages.yaml"
+	fileStorageSnapshotCRDFile       = "region.unikorn-cloud.org_filestoragesnapshots.yaml"
+	fileStorageDirectoryQuotaCRDFile = "region.unikorn-cloud.org_filestoragedirectoryquotas.yaml"
+	regionCRDFile                    = "region.unikorn-cloud.org_regions.yaml"
+	serverCRDFile                    = "region.unikorn-cloud.org_servers.yaml"
+	volumeCRDFile                    = "region.unikorn-cloud.org_volumes.yaml"
 )
 
 func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ...string) *apixv1.JSONSchemaProps {
@@ -95,11 +97,19 @@ func TestVolumeClaimSchema(t *testing.T) {
 	claim := requireSchemaProperty(t, schema, "spec", "claimRef")
 	require.Contains(t, claim.Properties, "kind")
 	require.Contains(t, claim.Properties, "id")
+	require.Len(t, claim.Properties, 2)
 	require.Len(t, claim.Properties["kind"].Enum, 1)
 	require.JSONEq(t, `"Server"`, string(claim.Properties["kind"].Enum[0].Raw))
+	require.NotNil(t, claim.Properties["id"].MinLength)
+	require.Equal(t, int64(1), *claim.Properties["id"].MinLength)
 
 	status := requireSchemaProperty(t, schema, "status")
 	require.NotContains(t, status.Properties, "attachment")
+
+	attachedAt := requireSchemaProperty(t, status, "attachedAt")
+	require.Equal(t, "string", attachedAt.Type)
+	require.Equal(t, "date-time", attachedAt.Format)
+	require.NotContains(t, status.Required, "attachedAt")
 }
 
 type crdValidator struct {
@@ -114,6 +124,12 @@ func (v crdValidator) validates(t *testing.T, resource any) bool {
 }
 
 func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bool {
+	t.Helper()
+
+	return v.validatesUpdateUnstructured(t, obj, nil)
+}
+
+func (v crdValidator) validatesUpdateUnstructured(t *testing.T, obj, oldObj map[string]any) bool {
 	t.Helper()
 
 	validator, _, err := apixvalidation.NewSchemaValidator(v.schema)
@@ -131,7 +147,7 @@ func (v crdValidator) validatesUnstructured(t *testing.T, obj map[string]any) bo
 	celValidator := celvalidation.NewValidator(v.structural, true, celconfig.PerCallLimit)
 	require.NotNil(t, celValidator)
 
-	celErrors, _ := celValidator.Validate(t.Context(), field.NewPath("root"), v.structural, obj, nil, celconfig.RuntimeCELCostBudget)
+	celErrors, _ := celValidator.Validate(t.Context(), field.NewPath("root"), v.structural, obj, oldObj, celconfig.RuntimeCELCostBudget)
 
 	return len(celErrors) == 0
 }
@@ -192,4 +208,34 @@ func crdSchema(t *testing.T, crdFile string) *apixv1.JSONSchemaProps {
 	t.Fatalf("%s does not define schema for %s", crdFile, regionv1.GroupVersion)
 
 	return nil
+}
+
+// The CRD checks a gate's outputs as the gate report API does: at most 8,
+// keys as a tag's local name, values at most 255 characters. The rule is only
+// within the apiserver's CEL cost budget because the gate lists are bounded
+// (16): an unbounded list multiplies its estimated cost past the budget.
+func TestServerProviderCreateGateOutputsSchema(t *testing.T) {
+	t.Parallel()
+
+	schema := crdSchema(t, serverCRDFile)
+
+	for _, path := range [][]string{{"spec", "providerCreateGates"}, {"status", "providerCreateGates"}} {
+		gates := requireSchemaProperty(t, schema, path...)
+		require.NotNil(t, gates.MaxItems, path)
+		require.EqualValues(t, 16, *gates.MaxItems, path)
+	}
+
+	gates := requireSchemaProperty(t, schema, "status", "providerCreateGates")
+	require.NotNil(t, gates.Items)
+	require.NotNil(t, gates.Items.Schema)
+
+	outputs, ok := gates.Items.Schema.Properties["outputs"]
+	require.True(t, ok, "status.providerCreateGates[].outputs is missing")
+	require.Equal(t, "object", outputs.Type)
+	require.NotNil(t, outputs.MaxProperties)
+	require.EqualValues(t, 8, *outputs.MaxProperties)
+	require.NotNil(t, outputs.AdditionalProperties)
+	require.Equal(t, "string", outputs.AdditionalProperties.Schema.Type)
+	require.Len(t, outputs.XValidations, 1)
+	require.Equal(t, "self.all(k, k.matches('^[a-z0-9][a-z0-9-]*$') && size(self[k]) <= 255)", outputs.XValidations[0].Rule)
 }

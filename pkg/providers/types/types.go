@@ -65,6 +65,8 @@ type Flavor struct {
 	Disk *resource.Quantity
 	// GPU describes the GPU(s) if any are available to the flavor.
 	GPU *GPU
+	// InfiniBand describes the InfiniBand ports if any are available to the flavor.
+	InfiniBand *InfiniBand
 	// Baremetal is a bare-metal flavor.
 	Baremetal bool
 	// PinnedOnly requires an InfrastructureRef to be set when creating a server with this flavor.
@@ -84,6 +86,11 @@ type GPU struct {
 	// LogicalCount is the number of logical GPUs e.g. an AMD MI250 is 2 MI200s.
 	// This is primarily for scheduling e.g. autoscaling.
 	LogicalCount int
+}
+
+type InfiniBand struct {
+	// PortCount is the number of InfiniBand ports the flavor exposes.
+	PortCount int
 }
 
 // FlavorList allows us to attach sort functions and the like.
@@ -106,8 +113,8 @@ type VolumeClass struct {
 	Name string
 	// Description is the provider display description.
 	Description string
-	// SupportedFlavorIDs optionally restricts this class to the listed Region
-	// flavors. Nil or empty means no compatibility restriction.
+	// SupportedFlavorIDs lists the Region flavors that can attach Volumes of this
+	// class to Servers. Nil or empty means Server attachment is not supported.
 	SupportedFlavorIDs []regionids.FlavorID
 	// MinimumSizeGiB is the operator-configured minimum volume capacity accepted
 	// by the class, in whole GiB.

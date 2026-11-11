@@ -20,9 +20,9 @@ service-principal root.
 
 - `v1` networks are direct children of an explicit `Identity`
 - `v2` network creation provisions a service-principal identity implicitly
-- `v2` network creation uses a saga because creation spans multiple dependent
+- `v2` network creation validates the request before the saga runs, so a
+  rejected request creates nothing; the saga then spans multiple dependent
   steps:
-  - validate request
   - create service principal
   - generate network
   - create quota allocation
@@ -31,6 +31,12 @@ service-principal root.
   the hidden service-principal root and relies on cascading deletion
 - external references are represented as finalizers on the network and block
   delete until removed
+- reference add and remove always send an optimistic-lock patch, even when the
+  copy read already looks right, so a write that landed between the read and
+  the patch surfaces as a conflict instead of a silent no-op; a conflict is
+  retried once against a fresh read, then returned as `409`. A network
+  deleted under a reference add is a `404`; a remove whose network was
+  deleted succeeds, so removal stays idempotent once deletion has started
 
 ## Invariants And Guard Rails
 
@@ -38,8 +44,17 @@ service-principal root.
 - `Network v2` resources are labeled with `ResourceAPIVersionLabel=2`, and
   direct object access paths are gated accordingly.
 - `v2` lists prefilter by organization/project/region before per-item RBAC.
-- Region access is enforced via `region.CheckAccess` before network creation,
-  preventing callers from creating networks in regions they cannot see.
+- Region access is enforced via `region.Get` before network creation,
+  preventing callers from creating networks in regions the request
+  organization may not use.
+- A `v2` network prefix that overlaps any of the Region's
+  `BlockedNetworkPrefixes` is rejected with a 422 naming the clashing range.
+  This exists to keep tenant ranges out of infrastructure address space at
+  sites where the two collide, e.g. a storage VIP pool route covering a
+  management network. It is only checked on create: the prefix is immutable,
+  so existing networks are never re-checked when the list changes.
+- A `v2` update keeps the stored `routes` when the field is omitted, clears
+  them when an empty list is supplied, and otherwise replaces them.
 - A `Network v2` is the visible coordination point for a resource subtree whose
   real ownership root is the hidden service principal created for it.
 - Delete must respect both ownership cascade and explicit external references.

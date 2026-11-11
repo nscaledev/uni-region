@@ -18,6 +18,8 @@ limitations under the License.
 package storage
 
 import (
+	"strings"
+
 	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -99,12 +101,19 @@ func convertSnapshotPoliciesPointer(in []regionv1.FileStorageSnapshotPolicy) *op
 func convertSnapshotPolicySpec(policy regionv1.FileStorageSnapshotPolicy) openapi.StorageSnapshotPolicyV2Spec {
 	var dayOfWeek *openapi.StorageSnapshotDayOfWeekV2
 
+	var protectedPath *string
+
 	if policy.Schedule.DayOfWeek != nil {
 		dayOfWeek = ptr.To(openapi.StorageSnapshotDayOfWeekV2(*policy.Schedule.DayOfWeek))
 	}
 
+	if policy.ProtectedPath != "" {
+		protectedPath = ptr.To(policy.ProtectedPath)
+	}
+
 	return openapi.StorageSnapshotPolicyV2Spec{
-		Name: policy.Name,
+		Name:          policy.Name,
+		ProtectedPath: protectedPath,
 		Schedule: openapi.StorageSnapshotScheduleV2Spec{
 			Interval:   openapi.StorageSnapshotScheduleIntervalV2(policy.Schedule.Interval),
 			TimeOfDay:  policy.Schedule.TimeOfDay,
@@ -176,11 +185,12 @@ func convertSnapshotPolicyStatus(in regionv1.FileStorageSnapshotPolicyStatus) (c
 
 // validateSnapshotPolicyList enforces the snapshot policy rules the generated
 // OpenAPI schema cannot express, and which the request-validation middleware
-// therefore does not catch: per-list name uniqueness, cross-field schedule
-// consistency, and the reserved system-default name. Primitive field constraints
-// (name pattern and the provider-safe length limit, timeOfDay format, dayOfWeek
-// enum, dayOfMonth and keep ranges, and the four-policy list limit) are enforced
-// by the bundled schema before the handler runs.
+// therefore does not catch: protected-path traversal components, per-list name
+// uniqueness, cross-field schedule consistency, and the reserved system-default
+// name. Primitive field constraints (name pattern and the provider-safe length
+// limit, protected-path shape and length, timeOfDay format, dayOfWeek enum,
+// dayOfMonth and keep ranges, and the four-policy list limit) are enforced by
+// the bundled schema before the handler runs.
 //
 // system-default is unconditionally reserved for the hidden Default Snapshot
 // Protection baseline, independent of whether protection is currently enabled, so
@@ -197,6 +207,10 @@ func validateSnapshotPolicyList(policies *openapi.StorageSnapshotPolicyListV2Spe
 	for i := range *policies {
 		policy := &(*policies)[i]
 
+		if err := validateSnapshotPolicyProtectedPath(policy.ProtectedPath); err != nil {
+			return err
+		}
+
 		if err := validateSnapshotPolicyScheduleMatrix(policy.Schedule); err != nil {
 			return err
 		}
@@ -210,6 +224,51 @@ func validateSnapshotPolicyList(policies *openapi.StorageSnapshotPolicyListV2Spe
 		}
 
 		seen[policy.Name] = struct{}{}
+	}
+
+	return nil
+}
+
+func validateSnapshotPolicyProtectedPath(protectedPath *string) error {
+	if protectedPath == nil {
+		return nil
+	}
+
+	for _, component := range strings.Split(*protectedPath, "/") {
+		if component == "." || component == ".." {
+			return errors.HTTPUnprocessableContent("protectedPath must not contain . or .. path components")
+		}
+	}
+
+	return nil
+}
+
+// validateSnapshotPolicyProtectedPaths enforces immutable protected paths for
+// policies that retain their stable name across a File Storage update. A policy
+// removed from the current list, or introduced with a new name, is not an
+// existing policy and may therefore select its own protected path.
+func validateSnapshotPolicyProtectedPaths(
+	current []regionv1.FileStorageSnapshotPolicy,
+	requested *openapi.StorageSnapshotPolicyListV2Spec,
+) error {
+	if requested == nil {
+		return nil
+	}
+
+	currentByName := make(map[string]regionv1.FileStorageSnapshotPolicy, len(current))
+	for _, policy := range userManagedSnapshotPolicies(current) {
+		currentByName[policy.Name] = policy
+	}
+
+	for _, policy := range *requested {
+		currentPolicy, ok := currentByName[policy.Name]
+		if !ok {
+			continue
+		}
+
+		if currentPolicy.ProtectedPath != ptr.Deref(policy.ProtectedPath, "") {
+			return errors.HTTPUnprocessableContent("snapshot policy protectedPath cannot be changed for an existing policy name")
+		}
 	}
 
 	return nil
@@ -284,7 +343,8 @@ func generateSnapshotPolicy(policy openapi.StorageSnapshotPolicyV2Spec) regionv1
 	}
 
 	return regionv1.FileStorageSnapshotPolicy{
-		Name: policy.Name,
+		Name:          policy.Name,
+		ProtectedPath: ptr.Deref(policy.ProtectedPath, ""),
 		Schedule: regionv1.FileStorageSnapshotPolicySchedule{
 			Interval:   regionv1.FileStorageSnapshotPolicyInterval(policy.Schedule.Interval),
 			TimeOfDay:  policy.Schedule.TimeOfDay,

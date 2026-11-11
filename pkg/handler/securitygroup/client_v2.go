@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -36,6 +37,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	handlercommon "github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
@@ -158,7 +160,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 			return true
 		}
 
-		return rbac.AllowProjectScopeReader(ctx, "region:securitygroups:v2", identityapi.Read, &resource) != nil
+		return !rbac.PermitsProjectScopeReader(ctx, endpointV2, identityapi.Read, &resource)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.SecurityGroup) int {
@@ -168,34 +170,22 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2Securitygrou
 	return convertV2List(result), nil
 }
 
+// endpointV2 is the permission that governs v2 security groups.
+const endpointV2 = "region:securitygroups:v2"
+
+// GetV2Raw loads a security group the caller may read.  Other resources use it
+// to look up the security groups they depend on.
 func (c *Client) GetV2Raw(ctx context.Context, securityGroupID string) (*regionv1.SecurityGroup, error) {
+	return c.getV2(ctx, securityGroupID, authz.Target{Endpoint: endpointV2, Operation: authz.Read})
+}
+
+// getV2 loads a security group and authorizes the target on it.  See
+// handlercommon.GetV2.
+func (c *Client) getV2(ctx context.Context, securityGroupID string, target authz.Target) (*regionv1.SecurityGroup, error) {
 	result := &regionv1.SecurityGroup{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: securityGroupID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup security group", err)
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:securitygroups:v2", identityapi.Read, result); err != nil {
+	if err := handlercommon.GetV2(ctx, c.Client, c.Namespace, securityGroupID, target, result); err != nil {
 		return nil, err
-	}
-
-	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse API version", err)
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
 	}
 
 	return result, nil
@@ -335,18 +325,31 @@ func (c *Client) generateV2(ctx context.Context, organizationID identityids.Orga
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2Create) (*openapi.SecurityGroupV2Read, error) {
-	// Check the network exists, and the user has permission to it.
-	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
+	target := authz.Target{
+		Endpoint:   endpointV2,
+		Operation:  authz.Create,
+		Kind:       authz.Primary,
+		ObjectName: request.Metadata.Name,
+	}
+
+	authz.Declare(ctx, target)
+
+	networks := network.New(c.ClientArgs)
+
+	// The create is checked in the network's project before the network is
+	// read, so a caller refused the network is recorded in that project.
+	organizationID, projectID, err := networks.Scope(ctx, request.Spec.NetworkId.String())
 	if err != nil {
 		return nil, err
 	}
 
-	organizationID, projectID, err := network.OrganizationAndProjectID()
-	if err != nil {
+	if err := rbac.AllowProjectScopeCreateOn(ctx, c.Identity, target, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:securitygroups:v2", identityapi.Create, organizationID, projectID); err != nil {
+	// Check the user has permission to the network.
+	network, err := networks.GetV2Raw(ctx, request.Spec.NetworkId.String())
+	if err != nil {
 		return nil, err
 	}
 
@@ -368,17 +371,13 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.SecurityGroupV2C
 }
 
 func (c *Client) UpdateV2(ctx context.Context, securityGroupID regionids.SecurityGroupID, request *openapi.SecurityGroupV2Update) (*openapi.SecurityGroupV2Read, error) {
-	current, err := c.GetV2Raw(ctx, securityGroupID.String())
+	current, err := c.getV2(ctx, securityGroupID.String(), authz.Target{Endpoint: endpointV2, Operation: authz.Update, Kind: authz.Primary})
 	if err != nil {
 		return nil, err
 	}
 
 	organizationID, projectID, err := current.OrganizationAndProjectID()
 	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, "region:securitygroups:v2", identityapi.Delete, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -414,12 +413,14 @@ func (c *Client) UpdateV2(ctx context.Context, securityGroupID regionids.Securit
 }
 
 func (c *Client) DeleteV2(ctx context.Context, securityGroupID regionids.SecurityGroupID) error {
-	resource, err := c.GetV2Raw(ctx, securityGroupID.String())
-	if err != nil {
-		return err
-	}
+	return c.RetryConflictOnce(func() error {
+		return c.deleteV2(ctx, securityGroupID)
+	})
+}
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:securitygroups:v2", identityapi.Delete, resource); err != nil {
+func (c *Client) deleteV2(ctx context.Context, securityGroupID regionids.SecurityGroupID) error {
+	resource, err := c.getV2(ctx, securityGroupID.String(), authz.Target{Endpoint: endpointV2, Operation: authz.Delete, Kind: authz.Primary})
+	if err != nil {
 		return err
 	}
 
@@ -431,9 +432,20 @@ func (c *Client) DeleteV2(ctx context.Context, securityGroupID regionids.Securit
 		return errors.HTTPForbidden("security group is in use and cannot be deleted")
 	}
 
-	if err := c.Client.Delete(ctx, resource); err != nil {
+	// Preconditions turn a write landing between the read and the delete into
+	// a conflict, so the guard above is re-run against a fresh copy.
+	preconditions := client.Preconditions{
+		UID:             ptr.To(resource.UID),
+		ResourceVersion: ptr.To(resource.ResourceVersion),
+	}
+
+	if err := c.Client.Delete(ctx, resource, preconditions); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if kerrors.IsConflict(err) {
+			return err
 		}
 
 		return fmt.Errorf("%w: unable to delete security group", err)

@@ -66,16 +66,20 @@ encryption flag, with provider-neutral media and advertised-performance metadata
 when the Region publishes them. Optional minimum and maximum size bounds are
 returned in whole GiB only when configured by the Region operator. A non-empty
 `supportedFlavorIds` value is a typed Region Flavor compatibility allowlist;
-omitted or empty means unrestricted. The public contract deliberately contains
-no Cinder, storage-pool, or other provider-specific fields.
+omitted or empty means Volumes of that class cannot be attached to Servers but
+does not prevent standalone Volume creation. Unfiltered discovery omits and
+logs Regions whose provider inventory is unavailable, while explicitly
+selected Region failures fail the request. The public contract deliberately
+contains no Cinder, storage-pool, or other provider-specific fields.
 
 `/api/v2/volumes` is the published lifecycle contract for project-scoped block
 storage. Creation is anchored to a Network and requires a provider-neutral
 VolumeClass ID plus a positive whole-GiB size. Network, class, and size are
 immutable through this API; updates contain resource metadata and tags only.
 Reads expose the requested inputs alongside the Region the volume was
-provisioned in, provider-observed size, and the standard provisioning and
-health metadata. A Server v2 read also exposes its current desired Volume-keyed
+provisioned in, provider-observed size, the optional timestamp when the current
+attachment was first confirmed, and the standard provisioning and health
+metadata. A Server v2 read also exposes its current desired Volume-keyed
 attachment projection: attachment progress, optional provider-assigned device,
 and a safe message. This is derived status only; it never authorizes provider
 cleanup. The Region handler implements this lifecycle surface.
@@ -89,6 +93,18 @@ this option does not remove existing ACLs; they may remain enforced. For
 `atimeUpdateIntervalSeconds`, `0` disables read-driven atime updates. A positive
 value updates atime during a read only when the existing atime is older than that
 number of seconds.
+
+Manual Snapshot v2 create/delete contracts and read models follow the
+[storage lifecycle contract](../handler/storage/README.md#manual-snapshot-lifecycle)
+and
+[storage handler contract](../handler/storage/README.md#manual-snapshot-reads).
+POST returns the complete pending resource with 202; DELETE returns the standard
+accepted response. Snapshot operations require independent snapshot grants, not
+File Storage Read. Create/List use parent scope; Get/Delete use child scope
+without requiring the parent. Scoped access denials return canonical 404.
+Expired DELETE returns canonical 404 without mutation, including for an already
+deleting CR. Generated types, clients, router, and embedded schema all derive
+from `server.spec.yaml`.
 
 Keeping the schema unified matters because it allows:
 

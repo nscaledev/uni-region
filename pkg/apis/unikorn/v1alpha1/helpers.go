@@ -19,6 +19,8 @@ package v1alpha1
 
 import (
 	"fmt"
+	"maps"
+	"net"
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
@@ -28,6 +30,7 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -159,6 +162,11 @@ func (c *Volume) SetProvisioningCondition(status corev1.ConditionStatus, reason 
 	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
+// SetHealthCondition sets the provider-observed health of a Volume.
+func (c *Volume) SetHealthCondition(status corev1.ConditionStatus, reason unikornv1core.HealthConditionReason, message string) {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionHealthy, status, string(reason), message)
+}
+
 // ResourceLabels generates a set of labels to uniquely identify the resource
 // if it were to be placed in a single global namespace.
 func (c *Volume) ResourceLabels() (labels.Set, error) {
@@ -178,15 +186,38 @@ func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Con
 }
 
 // SetProvisioningCondition sets the Available condition with a reason drawn from
-// the provisioning vocabulary.
+// the provisioning vocabulary. The condition records the spec generation it was
+// evaluated against on every outcome, so a reader can tell a result for the
+// current spec from one left over from a previous spec. This is distinct from
+// Status.Observed.Generation, which stamps a provider observation, not a
+// provisioning result.
 func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
+		Type:               string(unikornv1core.ConditionAvailable),
+		Status:             metav1.ConditionStatus(status),
+		ObservedGeneration: c.Generation,
+		Reason:             string(reason),
+		Message:            message,
+	})
+}
+
+// ProvisioningConditionCurrent reports whether the Available condition was
+// evaluated against the current spec generation. A missing condition or an
+// unstamped (zero) generation is not current: it cannot be verified, so it must
+// not be read as a result for this spec. Current says nothing about success;
+// the condition's status and reason carry that.
+func (c *Server) ProvisioningConditionCurrent() bool {
+	condition := meta.FindStatusCondition(c.Status.Conditions, string(unikornv1core.ConditionAvailable))
+	if condition == nil {
+		return false
+	}
+
+	return condition.ObservedGeneration != 0 && condition.ObservedGeneration == c.Generation
 }
 
 // SetHealthCondition sets the Healthy condition with a reason drawn from the
-// health vocabulary. A server is the only region resource that carries a health
-// verdict (derived from the provider's observed server state); it is an
-// informational signal and nothing gates on it.
+// health vocabulary. Like a Volume health verdict, it is derived from provider
+// observation, informational, and does not gate lifecycle decisions.
 func (c *Server) SetHealthCondition(status corev1.ConditionStatus, reason unikornv1core.HealthConditionReason, message string) {
 	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionHealthy, status, string(reason), message)
 }
@@ -210,7 +241,8 @@ func GetActiveCondition(r unikornv1core.StatusConditionReader) (*unikornv1core.T
 
 // ConditionStatus projects a lifecycle reason onto the Active condition's boolean
 // status: a server is Active (True) only when it is running; every other state
-// (pending, queued, building, stopping, stopped, errored) is not-running (False).
+// (pending, queued, building, rebuilding, rebooting, stopping, stopped, errored)
+// is not-running (False).
 // ConditionStatus projects a reason onto the boolean Active status: True only
 // when Running, False for every other reason.
 //
@@ -240,6 +272,8 @@ func (r ActiveConditionReason) Message() string {
 		return "the server is being built"
 	case ActiveConditionReasonRebuilding:
 		return "the server is being rebuilt"
+	case ActiveConditionReasonRebooting:
+		return "the server is being rebooted"
 	case ActiveConditionReasonRunning:
 		return "the server is running"
 	case ActiveConditionReasonStopping:
@@ -273,7 +307,10 @@ func (c *Server) ProviderCreateGateStatusRead(conditionType string) (*ServerProv
 	return nil, false
 }
 
-func (c *Server) ProviderCreateGateStatusWrite(conditionType string, state ServerProviderCreateGateState, actor, reason, message string) {
+// ProviderCreateGateStatusWrite records a gate's status. It replaces the whole
+// entry, so outputs are an explicit argument: pass the outputs to keep, or nil
+// to clear them. The map is copied.
+func (c *Server) ProviderCreateGateStatusWrite(conditionType string, state ServerProviderCreateGateState, actor, reason, message string, outputs map[string]string) {
 	now := metav1.Now()
 	gate := ServerProviderCreateGateStatus{
 		ConditionType:      conditionType,
@@ -282,6 +319,7 @@ func (c *Server) ProviderCreateGateStatusWrite(conditionType string, state Serve
 		Actor:              actor,
 		Reason:             reason,
 		Message:            message,
+		Outputs:            maps.Clone(outputs),
 	}
 
 	existing, ok := c.ProviderCreateGateStatusRead(conditionType)
@@ -357,9 +395,12 @@ func (c *Server) LockedProviderCreateGate() (*ServerProviderCreateGateStatus, bo
 	return nil, false
 }
 
+// ProviderCreateGatesReset returns every configured gate to Closed for a
+// provider-create retry, clearing its outputs: the next satisfying report
+// sets them again, before the next create.
 func (c *Server) ProviderCreateGatesReset(actor, reason, message string) {
 	for _, gate := range c.Spec.ProviderCreateGates {
-		c.ProviderCreateGateStatusWrite(gate.ConditionType, ServerProviderCreateGateClosed, actor, reason, message)
+		c.ProviderCreateGateStatusWrite(gate.ConditionType, ServerProviderCreateGateClosed, actor, reason, message, nil)
 	}
 }
 
@@ -556,6 +597,28 @@ func (s *FileStorage) OrganizationAndProjectID() (identityids.OrganizationID, id
 	return organizationAndProjectIDFromLabels(s.Labels)
 }
 
+// OrganizationID returns the snapshot's owning organization ID as a typed identifier.
+func (s *FileStorageSnapshot) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(s.Labels)
+}
+
+// OrganizationAndProjectID returns the snapshot's owning organization and
+// project IDs as typed identifiers.
+func (s *FileStorageSnapshot) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(s.Labels)
+}
+
+// OrganizationID returns the directory quota's owning organization ID as a typed identifier.
+func (s *FileStorageDirectoryQuota) OrganizationID() (identityids.OrganizationID, error) {
+	return organizationIDFromLabels(s.Labels)
+}
+
+// OrganizationAndProjectID returns the directory quota's owning organization and
+// project IDs as typed identifiers.
+func (s *FileStorageDirectoryQuota) OrganizationAndProjectID() (identityids.OrganizationID, identityids.ProjectID, error) {
+	return organizationAndProjectIDFromLabels(s.Labels)
+}
+
 // OrganizationID returns the identity's owning organization ID as a typed identifier.
 func (c *Identity) OrganizationID() (identityids.OrganizationID, error) {
 	return organizationIDFromLabels(c.Labels)
@@ -578,6 +641,8 @@ var (
 	_ identityids.ProjectScopeReader = (*Volume)(nil)
 	_ identityids.ProjectScopeReader = (*SSHCertificateAuthority)(nil)
 	_ identityids.ProjectScopeReader = (*FileStorage)(nil)
+	_ identityids.ProjectScopeReader = (*FileStorageSnapshot)(nil)
+	_ identityids.ProjectScopeReader = (*FileStorageDirectoryQuota)(nil)
 	_ identityids.ProjectScopeReader = (*Identity)(nil)
 )
 
@@ -602,6 +667,48 @@ func (s *FileStorage) SetProvisioningCondition(status corev1.ConditionStatus, re
 	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
 }
 
+// Paused implements the ReconcilePauser interface.
+func (s *FileStorageSnapshot) Paused() bool {
+	return s.Spec.Pause
+}
+
+// StatusConditionRead returns a snapshot condition by type.
+func (s *FileStorageSnapshot) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
+	return unikornv1core.GetCondition(s.Status.Conditions, t)
+}
+
+// SetProvisioningCondition updates the snapshot's Available lifecycle condition.
+func (s *FileStorageSnapshot) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// ResourceLabels satisfies the managed resource interface.
+func (s *FileStorageSnapshot) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
+}
+
+// Paused implements the ReconcilePauser interface.
+func (s *FileStorageDirectoryQuota) Paused() bool {
+	return s.Spec.Pause
+}
+
+// StatusConditionRead returns a directory quota condition by type.
+func (s *FileStorageDirectoryQuota) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Condition, error) {
+	return unikornv1core.GetCondition(s.Status.Conditions, t)
+}
+
+// SetProvisioningCondition updates the directory quota's Available lifecycle condition.
+func (s *FileStorageDirectoryQuota) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	unikornv1core.UpdateCondition(&s.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+}
+
+// ResourceLabels satisfies the managed resource interface.
+func (s *FileStorageDirectoryQuota) ResourceLabels() (labels.Set, error) {
+	//nolint:nilnil
+	return nil, nil
+}
+
 // StatusConditionRead lets a snapshot policy status be read through the typed
 // condition accessors (GetAvailableCondition et al): it carries its own
 // conditions, so it satisfies StatusConditionReader even though it is a
@@ -623,6 +730,22 @@ func (r *Region) StaticName() string {
 	return string(r.Spec.Provider) + "." + r.Name
 }
 
+// BlockedNetworkPrefix returns the first blocked prefix that overlaps the
+// given network prefix, or nil if the network prefix may be used.
+// Overlap is either way round: inside a blocked prefix, or containing one.
+func (r *Region) BlockedNetworkPrefix(prefix *net.IPNet) *unikornv1core.IPv4Prefix {
+	for i := range r.Spec.BlockedNetworkPrefixes {
+		blocked := &r.Spec.BlockedNetworkPrefixes[i]
+
+		// Both are network aligned, so overlap means one contains the other's base.
+		if blocked.Contains(prefix.IP) || prefix.Contains(blocked.IP) {
+			return blocked
+		}
+	}
+
+	return nil
+}
+
 // VLANSpec returns allocatable VLANs for a region, if any are defined.
 func (r *Region) VLANSpec() *VLANSpec {
 	switch r.Spec.Provider {
@@ -637,4 +760,20 @@ func (r *Region) VLANSpec() *VLANSpec {
 	}
 
 	return nil
+}
+
+// SetDeletionHeldCondition marks the provider delete as held, or released once
+// it has been sent.
+func (c *Server) SetDeletionHeldCondition(held bool, reason DeletionHeldConditionReason, message string) {
+	status := corev1.ConditionFalse
+	if held {
+		status = corev1.ConditionTrue
+	}
+
+	unikornv1core.UpdateCondition(&c.Status.Conditions, ConditionDeletionHeld, status, string(reason), message)
+}
+
+// GetDeletionHeldCondition reads the DeletionHeld condition.
+func GetDeletionHeldCondition(r unikornv1core.StatusConditionReader) (*unikornv1core.TypedCondition[DeletionHeldConditionReason], error) {
+	return unikornv1core.GetTypedCondition[DeletionHeldConditionReason](r, ConditionDeletionHeld)
 }

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Stands in for systemctl and service: there is no systemd in the container.
+# Logs the call and which CA files exist at that moment.
+mkdir -p /tmp/ci
+{
+	printf '%s %s' "$(basename "$0")" "$*"
+	for f in /etc/ssh/trusted-user-ca-keys.pub /etc/ssh/sshd_config.d/90-unikorn-trusted-user-ca.conf; do
+		[ -e "$f" ] && printf ' +%s' "$f"
+	done
+	echo
+} >> /tmp/ci/shim.log

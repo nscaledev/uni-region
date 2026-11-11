@@ -82,6 +82,10 @@ const (
 	StateRegionHasFlavors              = "region has flavors"
 	StateRegionHasImages               = "region has images"
 
+	// Used by kubernetes provider tests for the nscale-environments consumer.
+	StateNetworkExistsInProject   = "a network exists in the project"
+	StateNoNetworkExistsInProject = "no network exists in the project"
+
 	// State parameter keys.
 	ParamOrganizationID = "organizationID"
 	ParamProjectID      = "projectID"
@@ -369,6 +373,27 @@ func (sm *StateManager) HandleNetworkIsProvisionedState(ctx context.Context, set
 		return sm.identityManager.setupProvisionedNetwork(ctx, networkID, identityID, projectID, regionID, organizationID)
 	}
 
+	return sm.cleanupAllResources(ctx)
+}
+
+// HandleNetworkExistsInProjectState seeds one v2 network in the project and region. Setup cleans first,
+// so a skipped teardown or a different interaction order can't make the create fail with AlreadyExists.
+func (sm *StateManager) HandleNetworkExistsInProjectState(ctx context.Context, setup bool, params map[string]interface{}) error {
+	if err := sm.cleanupAllResources(ctx); err != nil || !setup {
+		return err
+	}
+
+	actualParams := unwrapPactParams(params)
+
+	return sm.identityManager.setupNetworkV2(ctx,
+		getStringParam(actualParams, ParamNetworkID, "test-network-id"),
+		getStringParam(actualParams, ParamProjectID, TestProjectID),
+		getStringParam(actualParams, ParamRegionID, TestRegionID),
+		getStringParam(actualParams, ParamOrganizationID, TestOrganizationID))
+}
+
+// HandleNoNetworkExistsInProjectState leaves the project without networks.
+func (sm *StateManager) HandleNoNetworkExistsInProjectState(ctx context.Context, _ bool, _ map[string]interface{}) error {
 	return sm.cleanupAllResources(ctx)
 }
 

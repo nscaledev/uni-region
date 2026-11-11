@@ -31,6 +31,8 @@ descriptor/version string used by shared runtime layers.
   and tags should use these constants rather than open-coded strings.
 - `RegionLabel`, `IdentityLabel`, and `NetworkLabel` are part of the service's
   resource-linkage model. They are not optional decorative metadata.
+- `FileStorageLabel` (`regions.unikorn-cloud.org/file-storage-id`) indexes Manual
+  Snapshots under their File Storage parent.
 - `ResourceAPIVersionLabel` is the canonical stored discriminator used to
   distinguish old and new external API generations when the underlying CRD
   shape remains broadly stable and objects are migrated in place rather than

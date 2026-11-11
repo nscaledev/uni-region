@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/pflag"
 
@@ -265,7 +266,7 @@ func (p *Provisioner) eventRecorder(ctx context.Context) record.EventRecorder {
 	// and an action string on every call site, so it is a deployment change rather
 	// than a library bump.  Deprecated is not removed; controller-runtime suppresses
 	// the same warning internally.
-	return manager.FromContext(ctx).GetEventRecorderFor("server-controller") //nolint:staticcheck
+	return manager.FromContext(ctx).GetEventRecorderFor("server-controller") //nolint:staticcheck,nolintlint // legacy core/v1 event API.
 }
 
 func (p *Provisioner) recordProviderCreateRetryEvent(ctx context.Context, eventType, reason, logMessage, eventMessage string, attempt, maxAttempts int32) {
@@ -469,8 +470,14 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 			fmt.Sprintf("provider-create gate %q is locked: %s", gate.ConditionType, truncate(gate.Message, providerCreateGateMessageMax)))
 	}
 
-	if !p.server.ProviderCreateGatesReady() {
-		return fmt.Errorf("%w: provider create gates remaining %v", provisioners.ErrYield, p.server.RemainingProviderCreateGates())
+	// Typed rather than a bare ErrYield: the manager lifts a reason and message
+	// onto the Available condition only from a provisioners.Error, so a bare
+	// sentinel would leave this wait indistinguishable from every other one above.
+	// The gate is satisfied by a separate service and can be held for a long time,
+	// which makes naming the outstanding gate the useful part.
+	if remaining := p.server.RemainingProviderCreateGates(); len(remaining) > 0 {
+		return provisioners.Yield(unikornv1core.ConditionReasonDependencyNotReady,
+			fmt.Sprintf("waiting for provider create gate(s) to be satisfied: %s", strings.Join(remaining, ", ")))
 	}
 
 	return nil

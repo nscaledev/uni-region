@@ -1,0 +1,463 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: filestoragedirectoryquotas.region.unikorn-cloud.org
+spec:
+  group: region.unikorn-cloud.org
+  names:
+    categories:
+    - unikorn
+    kind: FileStorageDirectoryQuota
+    listKind: FileStorageDirectoryQuotaList
+    plural: filestoragedirectoryquotas
+    singular: filestoragedirectoryquota
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.labels['unikorn-cloud\.org/name']
+      name: display name
+      type: string
+    - jsonPath: .spec.fileStorageID
+      name: file storage
+      type: string
+    - jsonPath: .spec.path
+      name: path
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Available")].reason
+      name: status
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          FileStorageDirectoryQuota records customer intent and observed lifecycle state
+          for the hard limits of one directory of a File Storage.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: FileStorageDirectoryQuotaSpec is the desired set of hard
+              limits for a directory.
+            properties:
+              defaultGroupLimits:
+                description: DefaultGroupLimits applies to every group without an
+                  explicit rule.
+                properties:
+                  capacity:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: Capacity is the hard capacity limit in bytes. Its
+                      value is validated in code.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  inodes:
+                    description: Inodes is the hard limit on the number of files and
+                      directories.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                type: object
+                x-kubernetes-validations:
+                - message: capacity or inodes is required
+                  rule: has(self.capacity) || has(self.inodes)
+              defaultUserLimits:
+                description: DefaultUserLimits applies to every user without an explicit
+                  rule.
+                properties:
+                  capacity:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: Capacity is the hard capacity limit in bytes. Its
+                      value is validated in code.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  inodes:
+                    description: Inodes is the hard limit on the number of files and
+                      directories.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                type: object
+                x-kubernetes-validations:
+                - message: capacity or inodes is required
+                  rule: has(self.capacity) || has(self.inodes)
+              directoryLimits:
+                description: |-
+                  DirectoryLimits is the hard limit on the whole directory tree, whoever
+                  owns the data. Observed as Status.Usage.Directory.
+                properties:
+                  capacity:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: Capacity is the hard capacity limit in bytes. Its
+                      value is validated in code.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  inodes:
+                    description: Inodes is the hard limit on the number of files and
+                      directories.
+                    format: int64
+                    minimum: 1
+                    type: integer
+                type: object
+                x-kubernetes-validations:
+                - message: capacity or inodes is required
+                  rule: has(self.capacity) || has(self.inodes)
+              fileStorageID:
+                description: FileStorageID identifies the immutable parent File Storage.
+                format: uuid
+                type: string
+              path:
+                description: |-
+                  Path is the immutable directory path relative to the File Storage root.
+                  It cannot be empty, absolute or end in a slash, so the root cannot be targeted.
+                maxLength: 1024
+                pattern: ^([^/]+/)*[^/]+$
+                type: string
+                x-kubernetes-validations:
+                - message: path must not contain . or .. path components
+                  rule: self.split('/').all(component, component != '.' && component
+                    != '..')
+              pause:
+                description: Pause inhibits reconciliation.
+                type: boolean
+              rules:
+                description: |-
+                  Rules are per-user/group hard limits. The list is atomic because name and
+                  id are optional and cannot be map keys, and an update replaces the whole list.
+                items:
+                  description: FileStorageDirectoryQuotaRule is the hard limit of
+                    one user or group.
+                  properties:
+                    limits:
+                      description: FileStorageDirectoryQuotaLimits is a set of hard
+                        limits. At least one is required.
+                      properties:
+                        capacity:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: Capacity is the hard capacity limit in bytes.
+                            Its value is validated in code.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        inodes:
+                          description: Inodes is the hard limit on the number of files
+                            and directories.
+                          format: int64
+                          minimum: 1
+                          type: integer
+                      type: object
+                      x-kubernetes-validations:
+                      - message: capacity or inodes is required
+                        rule: has(self.capacity) || has(self.inodes)
+                    subject:
+                      description: FileStorageDirectoryQuotaSubject identifies a user
+                        or group by name or by uid/gid.
+                      properties:
+                        id:
+                          description: ID is the uid or gid.
+                          format: int64
+                          maximum: 4294967294
+                          minimum: 0
+                          type: integer
+                        kind:
+                          description: FileStorageDirectoryQuotaSubjectKind is the
+                            kind of subject a rule applies to.
+                          enum:
+                          - user
+                          - group
+                          type: string
+                        name:
+                          description: |-
+                            Name is the user or group name. It has no pattern because directory
+                            service names vary (DOMAIN\user, user@realm).
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                      required:
+                      - kind
+                      type: object
+                      x-kubernetes-validations:
+                      - message: exactly one of name or id is required
+                        rule: has(self.name) != has(self.id)
+                  required:
+                  - limits
+                  - subject
+                  type: object
+                maxItems: 20
+                type: array
+                x-kubernetes-list-type: atomic
+              tags:
+                description: Tags are arbitrary user-managed key/value metadata.
+                items:
+                  description: Tag is an arbirary key/value.
+                  properties:
+                    name:
+                      description: Name of the tag.
+                      type: string
+                    value:
+                      description: Value of the tag.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                type: array
+            required:
+            - fileStorageID
+            - path
+            type: object
+            x-kubernetes-validations:
+            - message: fileStorageID is immutable
+              rule: self.fileStorageID == oldSelf.fileStorageID
+            - message: path is immutable
+              rule: self.path == oldSelf.path
+            - message: at least one limit or rule is required
+              rule: has(self.directoryLimits) || has(self.defaultUserLimits) || has(self.defaultGroupLimits)
+                || (has(self.rules) && size(self.rules) > 0)
+            - message: rules must not repeat a subject
+              rule: '!has(self.rules) || self.rules.all(a, self.rules.exists_one(b,
+                a.subject == b.subject))'
+          status:
+            description: |-
+              FileStorageDirectoryQuotaStatus is the observed state. The controller owns
+              observedGeneration, the Available condition and rules; the usage monitor owns
+              usage and the Healthy condition. Both write conditions, and a JSON merge patch
+              replaces the whole list, so writers must patch with an optimistic lock or
+              server-side apply.
+            properties:
+              conditions:
+                description: |-
+                  Conditions are Available (lifecycle, written by the controller) and
+                  Healthy (limits reached or rule errors, written only by the usage monitor).
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              rules:
+                description: Rules reflects the provisioning state of each spec rule
+                  (controller-owned).
+                items:
+                  description: FileStorageDirectoryQuotaRuleStatus is the provisioning
+                    state of one spec rule.
+                  properties:
+                    message:
+                      type: string
+                    provisioningStatus:
+                      description: FileStorageDirectoryQuotaRuleProvisioningStatus
+                        is the backend state of one rule.
+                      enum:
+                      - Pending
+                      - Provisioned
+                      - Errored
+                      type: string
+                    subject:
+                      description: FileStorageDirectoryQuotaSubject identifies a user
+                        or group by name or by uid/gid.
+                      properties:
+                        id:
+                          description: ID is the uid or gid.
+                          format: int64
+                          maximum: 4294967294
+                          minimum: 0
+                          type: integer
+                        kind:
+                          description: FileStorageDirectoryQuotaSubjectKind is the
+                            kind of subject a rule applies to.
+                          enum:
+                          - user
+                          - group
+                          type: string
+                        name:
+                          description: |-
+                            Name is the user or group name. It has no pattern because directory
+                            service names vary (DOMAIN\user, user@realm).
+                          maxLength: 256
+                          minLength: 1
+                          type: string
+                      required:
+                      - kind
+                      type: object
+                      x-kubernetes-validations:
+                      - message: exactly one of name or id is required
+                        rule: has(self.name) != has(self.id)
+                  required:
+                  - provisioningStatus
+                  - subject
+                  type: object
+                maxItems: 20
+                type: array
+                x-kubernetes-list-type: atomic
+              usage:
+                description: Usage is the observed usage (usage monitor-owned).
+                properties:
+                  directory:
+                    description: |-
+                      Directory is the usage of the whole directory tree, the observed
+                      counterpart of Spec.DirectoryLimits.
+                    properties:
+                      usedCapacity:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                        x-kubernetes-int-or-string: true
+                      usedInodes:
+                        format: int64
+                        type: integer
+                    type: object
+                  rules:
+                    description: Rules is the usage of each explicitly ruled subject,
+                      keyed by subject.
+                    items:
+                      description: FileStorageDirectoryQuotaRuleUsage is the usage
+                        of one explicitly ruled subject.
+                      properties:
+                        subject:
+                          description: FileStorageDirectoryQuotaSubject identifies
+                            a user or group by name or by uid/gid.
+                          properties:
+                            id:
+                              description: ID is the uid or gid.
+                              format: int64
+                              maximum: 4294967294
+                              minimum: 0
+                              type: integer
+                            kind:
+                              description: FileStorageDirectoryQuotaSubjectKind is
+                                the kind of subject a rule applies to.
+                              enum:
+                              - user
+                              - group
+                              type: string
+                            name:
+                              description: |-
+                                Name is the user or group name. It has no pattern because directory
+                                service names vary (DOMAIN\user, user@realm).
+                              maxLength: 256
+                              minLength: 1
+                              type: string
+                          required:
+                          - kind
+                          type: object
+                          x-kubernetes-validations:
+                          - message: exactly one of name or id is required
+                            rule: has(self.name) != has(self.id)
+                        usage:
+                          description: FileStorageDirectoryQuotaUsedAmount is an amount
+                            of used capacity and inodes.
+                          properties:
+                            usedCapacity:
+                              anyOf:
+                              - type: integer
+                              - type: string
+                              pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                              x-kubernetes-int-or-string: true
+                            usedInodes:
+                              format: int64
+                              type: integer
+                          type: object
+                      required:
+                      - subject
+                      - usage
+                      type: object
+                    maxItems: 20
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  timestamp:
+                    description: Timestamp is when the usage was last refreshed.
+                    format: date-time
+                    type: string
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -50,6 +50,13 @@ func main() {
 
 	ctx := cr.SetupSignalHandler()
 
+	// The message queue runs a controller-runtime manager, which serves the
+	// metrics registry on :8080 itself.
+	if err := options.SetupMetrics(constants.Service); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
 	// The consumer will listen for project deletion events and propagate them to
 	// any root resources that have a corresponding project label.
 	cli, err := client.New(ctx, regionv1.AddToScheme)

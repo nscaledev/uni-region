@@ -99,6 +99,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     Required flavor traits are sent as positive Placement `required` entries;
     forbidden flavor traits are sent as `!TRAIT` entries. Empty trait inputs
     mean no trait filter. A miss yields and lets the controller retry.
+  - a miss splits the same way the image rows do: the host, resource class and
+    required traits go to the log, and the condition gets wording we choose.
+    None of that detail is on the API — the resource class and flavor traits are
+    Nova extra specs and `requiredTraits` is region config — so it would be
+    provider vocabulary on a surface the caller cannot act on. The yield is
+    typed `DependencyNotReady`, because a pinned host is a dependency and is not
+    the user's own server.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
   `none` omit Nova `key_name`. Image rebuild omits both `key_name` and
@@ -121,8 +128,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   every 10s until first boot, after which a pass submits the rebuild once the
   server is quiescent. A
   never-booted server Nova reports in `ERROR` is likewise deferred here — the
-  reconcile pass yields silently without writing a health stamp (the monitor
-  owns observed state) — and absorbed by the bounded provider-create
+  reconcile pass yields without writing a health stamp (the monitor owns observed
+  state), though the yield itself is named on the `Available` condition — and
+  absorbed by the bounded provider-create
   delete-and-retry flow, which recreates it from the already-updated spec
   image. That retry adoption keys off the `Healthy=Errored` stamp the
   monitor's poll writes, so it takes effect at worst one poll later. This
@@ -160,6 +168,26 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   | R4 | ref != desired, `launched_at` zero | yield |
   | R4′ | ref != desired, any task active | yield |
   | R4″ | ref != desired, quiescent | **submit** |
+
+  Every yielding row returns `provisioners.Yield` with a `Provisioning` reason
+  and a message naming the wait, so the row a server is parked on is readable
+  from its `Available` condition. That matters because the rows are not
+  equivalent — R3 is our own rebuild, R4 is a server that has never booted, R4′ is
+  someone else's operation — and a bare `ErrYield` renders them identical: the
+  manager only lifts a reason and message off a typed `provisioners.Error`, so a
+  bare sentinel leaves the generic default with no message at all. Provider
+  vocabulary (Nova status, `task_state`) stays in the log line; the condition
+  gets only user-safe wording.
+
+  The reason stays `Provisioning` here, and only the message varies. `reason` is
+  API surface — it projects to `provisioningStatusDetail.reason` and callers
+  script against it — so it has to describe the wait accurately. None of these
+  rows is a `DependencyNotReady`: that means a dependency exists but is not yet
+  provisioned, whereas every row above is waiting on the user's own server to
+  finish something. Naming them `DependencyNotReady` would send a user looking
+  through their networks and security groups for a fault that is not there. The
+  provider-create gate is the one wait in the server path that does use
+  `DependencyNotReady`, because another service genuinely satisfies it.
 
   R2 exists because every server this provider creates is image-booted, so an absent,
   empty or unparseable ref is abnormal: the pass must not report success over an image
@@ -202,8 +230,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   pass, so the woken pass walks to R3″ and reads `provisioned` again (the same
   measured path as a foreign recovery, below — within one monitor period). Or
   the provider server disappears entirely — deleted out-of-band — in which case
-  the monitor's `GetServer` returns not-found and `updateServerStateWithClients`
-  records an absent observation (errored cleared, generation stamped, image
+  the monitor's `Observe` finds no row for it and `projectServerState`'s absent
+  path records an observation (errored cleared, generation stamped, image
   sticky) before surfacing the not-found error — surfaced, not swallowed,
   because the create-retry provisioner's confirmed-gone gate depends on
   `UpdateServerState` returning `ErrResourceNotFound`. The monitor persists the
@@ -280,6 +308,41 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   attached data volumes, flavor, metadata, and placement, but recreates the
   root disk. It stays on the same compute host; evacuation is a separate
   operator workflow.
+- Server delete is held while Nova reports the server as `BUILD` with
+  `task_state` `spawning`, or `REBUILD` with `rebuild_spawning`. Ironic has no
+  teardown transition from `deploying`; Nova's Ironic driver asks for one
+  anyway, is refused, abandons the build and clears the instance's host, so the
+  node finishes deploying with no instance and a later delete never reaches
+  Ironic ([Nova bug 1477490](https://bugs.launchpad.net/nova/+bug/1477490)).
+  Nova claims the Ironic node only once the task state is `spawning`; a build
+  still queued in nova-compute (`scheduling`, `networking`,
+  `block_device_mapping`) aborts cleanly on delete without reaching Ironic, so
+  its delete is requested at once. Other states, including `deleting`, retry
+  DELETE so failed synchronous cleanup on a down compute host can recover;
+  Nova suppresses duplicate asynchronous deletions.
+  The hold is read from one `GetServer`, so a delete can land in
+  the instant after Nova saves `spawning`; that window is one API round trip.
+  A held pass sets the Server's `DeletionHeld` condition True with the Nova
+  state in its message, so its transition time is when the hold began, and logs
+  at Info on every pass so a live controller is distinguishable from a wedged
+  one. False with reason `Released` means the build hold ended, irrespective
+  of later cleanup success; never-held servers have no `DeletionHeld` condition.
+- Accepted Nova DELETE, including a concurrent-delete 404, yields until a fresh
+  lookup confirms absence. Only then are the floating IP and port deleted, in
+  that order. After the port is absent, another Nova lookup must confirm absence
+  before deletion succeeds. A create discovered during network cleanup yields;
+  later reconciles delete matching instances through the same path, including
+  separate instances from retried creates. Failed lookups retain ownership.
+  Neutron DELETE 404 is idempotent success; other provider errors retain cleanup
+  ownership. This assumes the microversion-2.90 name-filtered
+  lookup is complete and Nova keeps instances discoverable until network
+  teardown finishes. It requires `[api] list_records_by_skipping_down_cells = False`
+  on every Nova API replica and `reclaim_instance_interval = 0` on API and
+  compute services. Credential retention depends on the existing Server
+  ownership and reference chain. The final lookup catches creates that became
+  visible during network cleanup; it does not recover instances after the
+  Region Server is gone or establish a general fence for later Region creates
+  or rebuilds.
 - `OpenstackIdentity` is the remaining persisted provider-state anchor. It
   currently stores the secret-bearing user/project/application-credential and
   bootstrap state needed to operate on behalf of a region `Identity`.
@@ -288,13 +351,20 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - identity-scoped resources use fixed generated names
   - network lookups rely on deterministic names
   - Cinder volumes use `volume-{Region Volume UUID}` inside the service
-    principal's project; create, delete, attach, and detach rediscover that
-    exact name
+    principal's project; create, delete, observation, attach, and detach
+    rediscover that exact name
   - server metadata is written deliberately as both a control-plane lookup aid
     and an in-guest linkage surface exposed through the metadata service
   - legacy camelCase server metadata keys remain frozen for backwards
     compatibility while newer namespaced keys provide the upgrade path
-- Cinder Volume create/delete is a project-scoped lifecycle slice:
+  - satisfied provider-create gates' `outputs` are written as metadata named
+    as tags would be under the gate's `<service>.<domain>/` (`pkey` on
+    `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`), after
+    user tags and before system keys; gates are taken in spec order and a
+    later gate's key replaces an earlier one's, as a later tag's does, and an
+    output that maps to no key is logged rather than dropped silently
+- Cinder Volume create/delete and observation are project-scoped lifecycle
+  operations:
   - the Region Volume controller resolves the full cloud provider and drives
     its Volume capability after the service-principal Identity is ready
   - the native Region `Volume` CRD supplies the requested size and
@@ -302,6 +372,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   - create lists by the stable generated name and exact-matches the result
     before submitting a create, so controller retries adopt an existing volume
     rather than duplicating it
+  - a successful rediscovery stamps `VolumeStatus.ProvisionedAt` once; if a
+    later lookup confirms the backing volume is gone, the provider refuses to
+    recreate it under the same Region Volume ID
   - an accepted Cinder create is partial progress rather than success: the
     provider yields after submission and on subsequent rediscovery until the
     volume reports `available`; all unrecognized non-error states also yield so
@@ -321,13 +394,36 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     `OpenstackIdentity` as proof that no provider volume could have been
     created; this lets controller deletion delegate unconditionally before
     releasing any Identity allocation
-  - general observed size/status mapping and VolumeClass inventory are outside
-    this lifecycle slice; the narrow status classification above exists only to
-    determine create convergence, while Nova attach/detach is the separate
-    server-owned provider slice described below
+  - observation creates an ephemeral Cinder client in the identity's project,
+    exact-matches the stable name `volume-{Region Volume UUID}` after Cinder's
+    fuzzy name filter, and fails closed on duplicate exact matches
+  - observation uses the exact stable name and identity-scoped project lookup
+    to establish the backing resource. Cinder metadata is not revalidated during
+    observation, so mutable provider metadata drift does not block status updates
+  - Cinder's whole-GiB capacity becomes a binary `resource.Quantity` by
+    multiplying by one GiB. Negative capacity or a value that cannot be
+    represented in bytes as an `int64` is `ErrConsistency`, not a neutral
+    observation. Cinder lifecycle values map directly to the neutral Healthy
+    condition: recognized operational states are healthy, deleting and error
+    states are degraded, and empty or unrecognized values are unknown.
+  - no exact match returns `ErrResourceNotFound`, while Cinder request,
+    decoding, and client-construction failures remain errors. A recognized
+    Cinder error lifecycle and an unknown lifecycle are successful observations,
+    not Go errors.
+  - `UpdateVolumeState` mutates the supplied Region Volume with observed size
+    and health without exposing Cinder or Gophercloud types. It returns provider
+    read errors so the monitor can preserve the last observed status. It does
+    not introduce a mirrored provider-state CRD. The Volume controller owns the
+    durable `ProvisionedAt` marker, create/delete intent, and generic
+    `Available` provisioning condition.
+    VolumeClass inventory and Nova
+    attach/detach remain separate capabilities
 - Flavor export is a hybrid model: OpenStack discovers the flavor inventory, but
   region configuration can enrich or override user-facing flavor metadata such
-  as architecture, baremetal status, and GPU semantics. Architecture resolves
+  as architecture, baremetal status, and GPU semantics. Only public flavors
+  with UUID IDs are exported, because Region's FlavorID request and CRD
+  contracts are UUID-backed; configured selectors further restrict that set.
+  Architecture resolves
   from per-flavor `cpu.architecture`, then `openstack.defaultArchitecture`,
   then the legacy `x86_64` fallback for objects that bypass CRD defaulting. The
   baremetal flag is
@@ -343,9 +439,10 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   exports no VolumeClasses. Selected classes can be enriched with user-facing
   metadata such as optional minimum/maximum capacity bounds, a
   `supportedFlavors` selector, media, maximum performance caps, and encryption
-  signals. Omitted selectors and omitted or empty selector IDs mean unrestricted
-  compatibility; the provider resolves this operator-authored selector to the
-  neutral Flavor ID allowlist and does not infer it from Cinder volume types.
+  signals. Omitted selectors and omitted or empty selector IDs make the class
+  ineligible for Server attachment; the provider resolves this operator-authored
+  selector to the neutral Flavor ID allowlist and does not infer it from Cinder
+  volume types.
   Capacity bounds are
   operator-authored positive whole GiB values; either may be omitted, and when
   both are present the maximum must be at least the minimum. The provider
@@ -364,37 +461,63 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   compute and block-storage clients from the service principal, rediscovers the
   Nova server and detailed Cinder volume, and uses Cinder's attachment rows as
   the normal-path observation before calling Nova's volume-attachment
-  create/delete API. Cinder volume lifecycle observation is not part of this
-  slice. The Cinder name filter is treated as fuzzy and is post-filtered against
-  the exact stable name `volume-{Volume.Name}`; duplicate exact matches fail
-  closed with `ErrConsistency`. Only the optional guest device name crosses the
-  provider-neutral boundary; Nova and Cinder IDs and Gophercloud objects remain
-  internal.
+  create/delete API. Cinder volume lifecycle observation is a separate
+  capability from this attachment slice. The Cinder name filter is treated as
+  fuzzy and post-filtered against the exact stable name
+  `volume-{Volume.Name}`; duplicate
+  exact matches fail closed with `ErrConsistency`. Only the optional guest
+  device name crosses the provider-neutral boundary; Nova and Cinder IDs and
+  Gophercloud objects remain internal.
 
   Attachment behavior is deliberately asymmetric:
   - attach requires both the server and volume; either missing resource maps to
     `ErrResourceNotFound`
   - a Cinder attachment already present on the requested server is successful
-    and returns its observed device without a Nova read
+    only when Cinder reports the Volume `in-use`; it returns that row's observed
+    device without a Nova read. `reserved`, `attaching`, and other transitional
+    states yield for another observation; `error*` states return a terminal
+    provider error
   - an attachment to any other server maps to `ErrConflict`; Region does not
     support multi-attach even when the Cinder volume is multiattach-capable
-  - when Cinder reports no attachment, attach calls Nova create directly; a
-    create `409 Conflict` is followed by one Nova attachment read so concurrent
-    creation of the same desired attachment becomes success, while an
+  - when Cinder reports no attachment, attach requests Nova only after Cinder
+    observes the Volume `available`; transitional states yield. It yields after
+    Nova acceptance. A create `409 Conflict` is followed by one Nova attachment
+    read so a concurrent desired request yields for Cinder `in-use`; an
     unresolved conflict maps to `ErrConflict`
-  - detach calls Nova delete only when Cinder reports an attachment to the
-    requested server; a missing server, volume, requested-server attachment, or
-    Nova delete `404` is success because detached state already holds, including
-    when the volume remains attached only to another server
-  - a Nova delete `409 Conflict` maps to `ErrConflict`; other provider failures
-    are preserved
+  - detach resolves Nova and checks it directly, so an empty Cinder attachment
+    list cannot hide the claimed Nova attachment. Per-Volume finalizers block
+    Server deletion until attachments are removed, so deleting and live Servers
+    use the same active Nova detach path. A Cinder attachment row is a fallback
+    only when its Server ID matches the resolved claimed Nova Server. Foreign or
+    unowned rows are never detached; they conflict or yield until provider state
+    converges
+  - an accepted Nova delete yields immediately because detach is asynchronous.
+    A later reconcile succeeds only when Nova no longer reports the claimed
+    attachment and Cinder reports no attachment with status `available`; a
+    missing backing Volume is idempotent success
+  - a Nova delete `400 Bad Request` yields while the provider attachment state
+    converges; the claim is retained and Region does not reset Cinder state. A
+    `409 Conflict` maps to `ErrConflict`; other provider failures are preserved
   - detach also no-ops when the backing OpenStack identity was never realized,
     matching the provider's other teardown contracts
 
+  Region owns these resources through its API. Detach does not attempt
+  administrative repair of foreign attachments, multiattach, or resources
+  changed directly through Kubernetes or OpenStack.
+
   Attachment intent and observed rows remain on `Server.Spec.Volumes` and
   `Server.Status.Volumes`; this provider slice does not mirror attachments into
-  `Volume.Status`, claim volumes, or reconcile server controllers.
+  `Volume.Status`, claim volumes, or reconcile server controllers. Those
+  belong to the volume provisioner
+  ([../../../provisioners/managers/volume](../../../provisioners/managers/volume/README.md)),
+  which populates `Volume.Status.AttachedAt` and owns claim release.
 - Image handling is a first-class contract surface here:
+  - only Glance images with `public` visibility are listed unless
+    `openstack.image.includeCommunity` is set. That option is for development
+    environments only and must never be enabled in production. With it set,
+    `community` images are listed too, except any carrying an organization ID:
+    uni-region only publishes organization images as public, so such an image
+    is forged or was demoted by its owner
   - OpenStack image properties are validated against a schema
   - public images can additionally be signature-verified
   - image properties are translated into provider-neutral OS, package, GPU,
@@ -431,8 +554,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   is never destroyed and recreated). The image-rebuild gate does not read this
   latch: it authorizes from Nova `launched_at` read fresh each pass. Alongside it, `setServerMACAddress` records the other monitor-owned
   field, `status.macAddress`, from the Nova response once the server is `ACTIVE`
-  (the port MAC rides inline in `addresses`, reused from the same `GetServer` — no
-  extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
+  (the port MAC rides inline in `addresses`, reused from the read the caller
+  already took — no extra call). ACTIVE is required because baremetal Ironic rebinds the port to the
   real NIC MAC asynchronously; the value is only ever written, never cleared.
   `GetServer` resolves by name, which forces a list, and **the list response can omit
   `fault` entirely** on Nova up to 2025.2, so a listed errored server carries no
@@ -444,8 +567,9 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   without the detail rather than failing anything, because the fault is an
   enrichment and not the reason for the read; healthy servers, and servers
   already known to be errored, never pay the extra call.
-  `setServerObservedStatus` records the monitor's `status.observed` region from the
-  `GetServer` response: `generation` unconditionally, the image via `openstackServerImageID`
+  `setServerObservedStatus` records the monitor's `status.observed` region from
+  whichever read the caller took — `Observe`'s batch for the monitor, `GetServer`
+  for the create path: `generation` unconditionally, the image via `openstackServerImageID`
   (an unreadable ref preserves the previous value rather than clearing it), and
   the neutral `errored` marker when Nova reports `ERROR`. The marker is gated on
   `Status == "ERROR"` and not on `Fault` being populated, because Nova leaves a
@@ -471,8 +595,171 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     strict equality
   - this package therefore re-checks exact names after listing to avoid aliasing
     and false matches
+- Server port reconciliation compares the security groups and allowed address
+  pairs returned by Neutron with the desired values as unordered sets before
+  issuing an update. An omitted desired address-pair MAC is compared as the
+  port's current MAC, matching Neutron's materialized response. A converged
+  port is reused without a `PUT`, while private-IP status projection still runs.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
+- Subnet updates always send both the DNS nameserver and host route lists, so
+  the Neutron subnet matches the network spec and a spec with no routes clears
+  the subnet's host routes. gophercloud drops nil option pointers, so leaving
+  either unset makes Neutron keep the stale value.
+
+## Credential Sessions
+
+A credential's callers arrive in herds. Every `New*Client` used to be a full
+`AuthenticatedClient` — a Keystone password grant plus a service catalog fetch —
+and a reconcile builds two or three. Meanwhile a pinned server authenticates as
+the Region admin user scoped to the service principal's project rather than as the
+tenant service principal, so every server pinned to one identity shares one
+credential. A restart resync of an identity holding 1157 servers asked for that
+one credential a couple of thousand times inside a few minutes, and the health
+monitor asked for it again for every server, every minute.
+
+A `Session` is the per-credential state that outlives every service client built
+from it, keyed on the whole credential so a rotated secret can never be served a
+client authenticated with the old one. The key is a keyed digest under a
+process-lifetime random key rather than the credential verbatim or a bare hash of
+it: a credential's input space is small enough that an unkeyed digest is
+reversible by enumeration, and nothing should hold a secret in a map key that
+lives as long as the process.
+
+What the key really has to capture is everything determining where the derived
+service clients point. That is the credential today only because every
+`New*Client` passes a bare `gophercloud.EndpointOpts{}` and takes the first public
+catalog match. Should anything start selecting an endpoint by region, two
+OpenStack regions behind one Keystone reached with one admin credential would
+share both a pinned catalog and a session, and the region would have to join the
+key. It caches the authenticated
+`ProviderClient` and collapses concurrent cold-start logins into one, which is
+what a controller restart needs: no client is cached yet at the moment the herd
+arrives.
+
+Cache the `ProviderClient`, not the derived service clients. It holds the token,
+carries `ReauthFunc` and serialises its own reauth internally, so it refreshes in
+place. Caching derived clients would synchronise token expiry across a burst —
+everything built in one burst expiring in one burst — and reform the herd an hour
+later.
+
+Three things follow that are worth knowing.
+
+**The service catalog is pinned for the life of the process.** gophercloud's
+`v3auth` closes `EndpointLocator` over the catalog from the login that built the
+client, and `ReauthFunc` only copies the refreshed token back, not a new catalog.
+An operator who moves a service's public endpoint in Keystone needs this process
+restarted; previously each client construction re-fetched the catalog and
+self-healed within a reconcile. The same applies to a service *added* to the
+catalog after startup — enabling Octavia on a live region leaves load-balancer
+clients failing endpoint lookup until a restart. The operator-facing procedure is
+in [ADMIN.md](./ADMIN.md), because the symptom points away from the cause: calls
+fail against an endpoint that has already been changed while Keystone itself is
+healthy, and nothing logs the staleness.
+
+**The shared client carries a request timeout, and must.** Sharing a client shares
+gophercloud's reauth serialisation: `AuthenticatedHeaders` waits for an
+in-progress refresh on *every* request, on a channel receive that consults no
+context. One caller whose refresh hangs would otherwise park every other caller on
+that credential — reconciles, the monitor, and the synchronous reboot, start, stop
+and console handlers — below the level at which their own contexts could rescue
+them. A zero-value `http.Client` has no timeout, so the bound is set explicitly.
+
+It is set *before* authenticating, which is not interchangeable with setting it
+afterwards: gophercloud copies the client by value to build the one it
+reauthenticates with, so a timeout assigned after the login leaves both the login
+and every subsequent reauth unbounded — and the reauth is the request every other
+caller waits behind. Pinned by `TestSessionBoundsTheLoginItself`.
+
+The bound now applies to every OpenStack call made with a shared client, all of
+which were previously unbounded. Every call in this package is ordinary
+request/response and pagination pays the bound per page, so the value is
+defensible, but a call that legitimately took longer would now fail where it used
+to succeed.
+
+It bounds a *request*, not a call. One call can serialise a context-free wait on
+another caller's in-progress reauth, its own request, a reauth on a 401, and the
+retry, so the worst case a caller observes is several multiples of it. A cold
+login against a versionless Keystone endpoint is likewise two bounded requests,
+discovery and the grant. Do not size an upstream timeout off the single-request
+figure.
+
+The detaching covers the cold-start login only, because that is the one this
+package's code owns. gophercloud owns the reauth and runs it under whichever
+caller's request received the 401, sharing that one result with every caller
+refreshing at the same moment — so at token expiry a caller that hangs up
+mid-refresh can hand its cancellation to the others. They error and retry and it
+self-heals, so this is a spurious failure rather than a stuck credential, but it
+is a consequence of sharing that did not exist when every caller refreshed its
+own client.
+
+Callers waiting on someone else's login keep their own contexts and stop waiting
+when those are done. The login itself runs detached from whichever caller opened
+it, so a handler whose client hung up cannot fail the healthy reconciles that
+joined its flight, and a caller that gives up leaves the login to finish and
+populate the cache rather than wasting it.
+
+**Entries are never evicted**, and grow by two per `OpenstackIdentity` the process
+has ever seen — the service principal's own password and the Region admin scoped
+to that identity's project — rather than tracking the live identity count. An
+entry appears when a provider is constructed, whether or not it ever logs in, and
+rotating the Region admin secret re-keys every identity-scoped session and adds
+another entry per live identity. Each retains a decoded token response and the
+service catalog it closes over, which is tens of kilobytes, not nothing. For a
+long-lived controller against a churning estate that is worth bounding; the cost
+of an eviction is one login.
+
+### What this deliberately does not do
+
+It does not share provider *reads*. Collapsing `GetServer` was measured and
+rejected. Nova's name filter is a regular expression, so a filtered read scans the
+project and returns one row; dropping the filter would let concurrent callers
+share one list, but it returns every row in the project to every caller. A bulk
+create emitted three orders of magnitude more instance records because each
+create retires the sharing anyway, and sharing the reads would have needed a
+guard against a caller joining a read opened before its own create and building
+a second server.
+
+The figures that comparison rested on came from a model whose service times were
+plausible rather than measured, and a real deployment contradicted them by two
+orders of magnitude: over a representative estate of around 1500 servers a
+sequential cycle took tens of minutes, where the model put it at 35 seconds. The
+model counted requests and rows; it did not price what a loaded Nova charges for
+a regular expression scan over a project. Do not size anything off the 35s
+figure — neither read form ever fitted the one-minute poll period.
+
+The saving on the monitor's path was never a shared read but a single read, and
+`ObserveServers` is now that: one unfiltered, paginated list of the identity's
+project per cycle, indexed by name, replacing a read per server with a read per
+identity — two orders of magnitude fewer Nova calls against the same estate.
+Observation-only reads are allowed to do this; see the note on projected status in
+[the API package](../../../apis/unikorn/v1alpha1/README.md).
+
+It pages explicitly rather than using `AllPages`, which holds every page as a
+generic map tree and re-marshals the whole thing through JSON to decode it, so
+that overhead scales with the project rather than the page.
+
+Paging bounds the overhead, not the peak: the decoded slice is the whole project
+by construction, and `ObserveServers` retains it for the length of its caller's
+projection. For a project of around 1500 realistic Nova rows that is about 14MiB
+live, or 43MiB of heap arena once the per-page decode churn is counted — against
+roughly 15MiB for a project of 80. That retention is the dominant term. No page size changes that. It is bounded instead by the caller reading one
+project at a time, and by a project being bounded by the region's physical
+footprint. Trimming the retained row to the fields the projection actually uses
+would bound it properly, at the cost of changing a signature the create path also
+depends on.
+
+Because an unfiltered list is walked by marker, a server created between two
+pages can be missed and read as absent for that cycle. Harmless here — the absent
+path stamps an observation and touches no condition, and it self-heals on the next
+poll — but it is a way to reach that path which a filtered read of one name could
+not. Nothing destructive keys off it: the create-retry gate goes through
+`UpdateServerState`'s own fresh read, never the batch.
+
+`UpdateServerState` keeps its own per-server filtered read, and must. An
+observation may only refuse an action, never authorise one, so the create path's
+"is there already a server with exactly this name" question takes a fresh read at
+decision time rather than consulting a batch someone else took.
 
 ## Octavia Load Balancers
 

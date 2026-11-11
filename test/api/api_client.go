@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/onsi/ginkgo/v2"
 
@@ -543,27 +544,220 @@ func (c *APIClient) GetFileStorage(ctx context.Context, filestorageID string) (*
 	}
 }
 
+// ListFileStorageSnapshots lists Manual Snapshots of a file storage resource.
+func (c *APIClient) ListFileStorageSnapshots(ctx context.Context, parentID string, tags ...string) (regionopenapi.FileStorageSnapshotsV2Read, error) {
+	return coreclient.ListResource[regionopenapi.FileStorageSnapshotV2Read](
+		ctx,
+		c.regionClient,
+		c.endpoints.ListFileStorageSnapshots(parentID, tags...),
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "filestoragesnapshots",
+			ResourceID:     parentID,
+			ResourceIDType: "file storage",
+		},
+	)
+}
+
+// CreateFileStorageSnapshot creates durable Manual Snapshot intent and expects 202.
+func (c *APIClient) CreateFileStorageSnapshot(ctx context.Context, parentID string, request regionopenapi.FileStorageSnapshotV2Create) (*regionopenapi.FileStorageSnapshotV2Read, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling snapshot request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodPost, c.endpoints.CreateFileStorageSnapshot(parentID), bytes.NewReader(body), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("creating file storage snapshot: %w", err)
+	}
+
+	var snapshot regionopenapi.FileStorageSnapshotV2Read
+	if err := json.Unmarshal(response, &snapshot); err != nil {
+		return nil, fmt.Errorf("unmarshaling file storage snapshot: %w", err)
+	}
+
+	return &snapshot, nil
+}
+
+// DeleteFileStorageSnapshot records deletion intent. Missing or expired children
+// return ErrResourceNotFound; non-expired terminating children remain accepted.
+func (c *APIClient) DeleteFileStorageSnapshot(ctx context.Context, parentID, snapshotID string) error {
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	resp, _, err := c.DoRegionRequest(ctx, http.MethodDelete, c.endpoints.DeleteFileStorageSnapshot(parentID, snapshotID), nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting file storage snapshot: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("file storage snapshot '%s': %w", snapshotID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting file storage snapshot: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// CreateFileStorageSnapshotExpectError returns the canonical error body for a typed create request.
+func (c *APIClient) CreateFileStorageSnapshotExpectError(ctx context.Context, parentID string, request regionopenapi.FileStorageSnapshotV2Create, expectedStatus int) (*coreapi.Error, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling snapshot request: %w", err)
+	}
+
+	return c.CreateFileStorageSnapshotRawJSONExpectError(ctx, parentID, body, expectedStatus)
+}
+
+// CreateFileStorageSnapshotRawJSONExpectError sends deliberately malformed JSON
+// payloads for schema tests and returns the typed canonical error body.
+func (c *APIClient) CreateFileStorageSnapshotRawJSONExpectError(ctx context.Context, parentID string, request json.RawMessage, expectedStatus int) (*coreapi.Error, error) {
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodPost, c.endpoints.CreateFileStorageSnapshot(parentID), bytes.NewReader(request), expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("creating file storage snapshot: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(response, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
+// DeleteFileStorageSnapshotExpectError returns the standard error body for an expected rejection.
+func (c *APIClient) DeleteFileStorageSnapshotExpectError(ctx context.Context, parentID, snapshotID string, expectedStatus int) (*coreapi.Error, error) {
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, http.MethodDelete, c.endpoints.DeleteFileStorageSnapshot(parentID, snapshotID), nil, expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("deleting file storage snapshot: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(response, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
+// GetFileStorageSnapshot gets a Manual Snapshot by ID under its parent.
+// Returns ErrResourceNotFound if the snapshot is not visible under that parent.
+func (c *APIClient) GetFileStorageSnapshot(ctx context.Context, parentID, snapshotID string) (*regionopenapi.FileStorageSnapshotV2Read, error) {
+	path := c.endpoints.GetFileStorageSnapshot(parentID, snapshotID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally.
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting file storage snapshot: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var snapshot regionopenapi.FileStorageSnapshotV2Read
+		if err := json.Unmarshal(respBody, &snapshot); err != nil {
+			return nil, fmt.Errorf("unmarshaling file storage snapshot: %w", err)
+		}
+
+		return &snapshot, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("file storage snapshot '%s': %w", snapshotID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting file storage snapshot: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// ListFileStorageSnapshotsExpectError returns the standard error body for an expected rejection.
+func (c *APIClient) ListFileStorageSnapshotsExpectError(ctx context.Context, parentID string, expectedStatus int, tags ...string) (*coreapi.Error, error) {
+	path := c.endpoints.ListFileStorageSnapshots(parentID, tags...)
+
+	//nolint:bodyclose // DoRegionRequest handles response body closing internally.
+	_, respBody, err := c.DoRegionRequest(ctx, http.MethodGet, path, nil, expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("listing file storage snapshots: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(respBody, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
+// GetFileStorageSnapshotExpectError returns the standard error body for an expected rejection.
+func (c *APIClient) GetFileStorageSnapshotExpectError(ctx context.Context, parentID, snapshotID string, expectedStatus int) (*coreapi.Error, error) {
+	path := c.endpoints.GetFileStorageSnapshot(parentID, snapshotID)
+
+	//nolint:bodyclose // DoRegionRequest handles response body closing internally.
+	_, respBody, err := c.DoRegionRequest(ctx, http.MethodGet, path, nil, expectedStatus)
+	if err != nil {
+		return nil, fmt.Errorf("getting file storage snapshot: %w", err)
+	}
+
+	var apiError coreapi.Error
+	if err := json.Unmarshal(respBody, &apiError); err != nil {
+		return nil, fmt.Errorf("unmarshaling error response: %w", err)
+	}
+
+	return &apiError, nil
+}
+
 // UpdateFileStorage updates a file storage resource.
 func (c *APIClient) UpdateFileStorage(ctx context.Context, filestorageID string, request regionopenapi.StorageV2UpdateRequest) (*regionopenapi.StorageV2Read, error) {
-	path := c.endpoints.UpdateFileStorage(filestorageID)
-
 	reqBody, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling filestorage update request: %w", err)
 	}
 
+	// Update uses optimistic locking: a controller write landing between the
+	// handler's read and its patch surfaces as 409 Conflict, which the API
+	// contract documents as retryable (pkg/handler/storage/README.md). The PUT
+	// re-reads server-side, so retry on conflict until the write wins; ceiling 2m.
+	deadline := time.Now().Add(2 * time.Minute)
+
+	for {
+		storage, conflict, err := c.putFileStorage(ctx, filestorageID, reqBody)
+		if err != nil || !conflict {
+			return storage, err
+		}
+
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("updating filestorage: still conflicting after 2m: %w", coreclient.ErrUnexpectedStatus)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("updating filestorage: %w", ctx.Err())
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// putFileStorage sends one update PUT. It returns conflict=true when the server
+// responds 409 (an optimistic-lock conflict), which the caller retries.
+func (c *APIClient) putFileStorage(ctx context.Context, filestorageID string, reqBody []byte) (*regionopenapi.StorageV2Read, bool, error) {
+	path := c.endpoints.UpdateFileStorage(filestorageID)
+
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPut, path, bytes.NewReader(reqBody), 0)
 	if err != nil {
-		return nil, fmt.Errorf("updating filestorage: %w", err)
+		return nil, false, fmt.Errorf("updating filestorage: %w", err)
 	}
 
-	var storage regionopenapi.StorageV2Read
-	if err := json.Unmarshal(respBody, &storage); err != nil {
-		return nil, fmt.Errorf("unmarshaling filestorage: %w", err)
-	}
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		var storage regionopenapi.StorageV2Read
+		if err := json.Unmarshal(respBody, &storage); err != nil {
+			return nil, false, fmt.Errorf("unmarshaling filestorage: %w", err)
+		}
 
-	return &storage, nil
+		return &storage, false, nil
+	case http.StatusConflict:
+		return nil, true, nil
+	default:
+		return nil, false, fmt.Errorf("updating filestorage: status %d, body %q: %w", resp.StatusCode, respBody, coreclient.ErrUnexpectedStatus)
+	}
 }
 
 // DeleteFileStorage deletes a file storage resource.
@@ -603,6 +797,106 @@ func (c *APIClient) ListFileStorageClasses(ctx context.Context, regionID string)
 	)
 }
 
+// ListVolumeClasses lists block storage volume classes available in a region.
+func (c *APIClient) ListVolumeClasses(ctx context.Context, regionID string) (regionopenapi.VolumeClassListV2Read, error) {
+	path := c.endpoints.ListVolumeClasses(regionID)
+
+	return coreclient.ListResource[regionopenapi.VolumeClassV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "volumeclasses",
+			ResourceID:     regionID,
+			ResourceIDType: "region",
+		},
+	)
+}
+
+// ListVolumes lists block storage volumes for a project in a region.
+func (c *APIClient) ListVolumes(ctx context.Context, orgID, projectID, regionID, networkID string) (regionopenapi.VolumesV2Read, error) {
+	path := c.endpoints.ListVolumes(orgID, projectID, regionID, networkID)
+
+	return coreclient.ListResource[regionopenapi.VolumeV2Read](
+		ctx,
+		c.regionClient,
+		path,
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "volumes",
+			ResourceID:     projectID,
+			ResourceIDType: "project",
+		},
+	)
+}
+
+// CreateVolume creates a block storage volume.
+func (c *APIClient) CreateVolume(ctx context.Context, request regionopenapi.VolumeV2Create) (*regionopenapi.VolumeV2Read, error) {
+	path := c.endpoints.CreateVolume()
+
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling volume request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("creating volume: %w", err)
+	}
+
+	var volume regionopenapi.VolumeV2Read
+	if err := json.Unmarshal(respBody, &volume); err != nil {
+		return nil, fmt.Errorf("unmarshaling volume: %w", err)
+	}
+
+	return &volume, nil
+}
+
+// GetVolume gets a specific block storage volume by ID.
+func (c *APIClient) GetVolume(ctx context.Context, volumeID string) (*regionopenapi.VolumeV2Read, error) {
+	path := c.endpoints.GetVolume(volumeID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, path, nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting volume: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var volume regionopenapi.VolumeV2Read
+		if err := json.Unmarshal(respBody, &volume); err != nil {
+			return nil, fmt.Errorf("unmarshaling volume: %w", err)
+		}
+
+		return &volume, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("volume '%s': %w", volumeID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting volume: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// DeleteVolume deletes a block storage volume.
+func (c *APIClient) DeleteVolume(ctx context.Context, volumeID string) error {
+	path := c.endpoints.DeleteVolume(volumeID)
+
+	//nolint:bodyclose // DoRequest handles response body closing internally
+	resp, _, err := c.regionClient.DoRequest(ctx, http.MethodDelete, path, nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting volume: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("volume '%s': %w", volumeID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting volume: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
 // ListNetworks lists all networks for a project in a region.
 func (c *APIClient) ListNetworks(ctx context.Context, orgID, projectID, regionID string) (regionopenapi.NetworksV2Read, error) {
 	path := c.endpoints.ListNetworks(orgID, projectID, regionID)
@@ -629,8 +923,12 @@ func (c *APIClient) CreateNetwork(ctx context.Context, request regionopenapi.Net
 	}
 
 	//nolint:bodyclose // DoRequest handles response body closing internally
-	_, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodPost, path, bytes.NewReader(reqBody), http.StatusCreated)
 	if err != nil {
+		if resp != nil {
+			return nil, &StatusError{StatusCode: resp.StatusCode, Body: string(respBody), Err: err}
+		}
+
 		return nil, fmt.Errorf("creating network: %w", err)
 	}
 

@@ -281,6 +281,12 @@ func (b *NetworkPayloadBuilder) WithName(name string) *NetworkPayloadBuilder {
 	return b
 }
 
+// WithPrefix overrides the network's IPv4 prefix.
+func (b *NetworkPayloadBuilder) WithPrefix(prefix string) *NetworkPayloadBuilder {
+	b.network.Spec.Prefix = prefix
+	return b
+}
+
 // Build returns the typed NetworkV2Create struct.
 func (b *NetworkPayloadBuilder) Build() regionopenapi.NetworkV2Create {
 	return b.network
@@ -493,9 +499,54 @@ func (b *ServerPayloadBuilder) WithProviderCreateGate(conditionType string) *Ser
 	return b
 }
 
+// WithVolumes attaches existing block storage volumes to the server.
+func (b *ServerPayloadBuilder) WithVolumes(volumeIDs ...string) *ServerPayloadBuilder {
+	volumes := make(regionopenapi.ServerV2VolumeList, len(volumeIDs))
+	for i := range volumeIDs {
+		volumes[i] = idstest.MustParseVolumeID(volumeIDs[i])
+	}
+
+	b.server.Spec.Volumes = &volumes
+
+	return b
+}
+
+// WithSSHInjection selects how SSH access material is injected into the server.
+func (b *ServerPayloadBuilder) WithSSHInjection(injection regionopenapi.SshInjection) *ServerPayloadBuilder {
+	b.server.Spec.SshInjection = ptr.To(injection)
+
+	return b
+}
+
 // Build returns the typed ServerV2Create struct.
 func (b *ServerPayloadBuilder) Build() regionopenapi.ServerV2Create {
 	return b.server
+}
+
+// VolumePayloadBuilder builds VolumeV2Create payloads for testing.
+type VolumePayloadBuilder struct {
+	volume regionopenapi.VolumeV2Create
+}
+
+// NewVolumePayload creates a builder for a block storage volume anchored to a network.
+func NewVolumePayload(networkID, volumeClassID string) *VolumePayloadBuilder {
+	return &VolumePayloadBuilder{
+		volume: regionopenapi.VolumeV2Create{
+			Metadata: coreapi.ResourceWriteMetadata{
+				Name: UniqueName("volume"),
+			},
+			Spec: regionopenapi.VolumeV2Spec{
+				NetworkId:     idstest.MustParseNetworkID(networkID),
+				SizeGiB:       1,
+				VolumeClassId: volumeClassID,
+			},
+		},
+	}
+}
+
+// Build returns the typed VolumeV2Create struct.
+func (b *VolumePayloadBuilder) Build() regionopenapi.VolumeV2Create {
+	return b.volume
 }
 
 // ServerUpdatePayloadBuilder builds ServerV2Update payloads for testing.
@@ -651,21 +702,6 @@ func WaitForNetworkVisible(c *APIClient, ctx context.Context, networkID string) 
 		Should(Succeed(), "network should become visible at the API")
 }
 
-// WaitForNetworkProvisioned polls until the network reaches the provisioned state.
-func WaitForNetworkProvisioned(c *APIClient, ctx context.Context, networkID string) {
-	Eventually(func() coreapi.ResourceProvisioningStatus {
-		network, err := c.GetNetwork(ctx, networkID)
-		if err != nil {
-			GinkgoWriter.Printf("Error retrieving network %s: %v\n", networkID, err)
-			return ""
-		}
-
-		return network.Metadata.ProvisioningStatus
-	}).WithTimeout(5*time.Minute).
-		WithPolling(5*time.Second).
-		Should(Equal(coreapi.ResourceProvisioningStatusProvisioned), "network should be provisioned")
-}
-
 // errResourceStillExists signals a resource is still present during a deletion wait.
 var errResourceStillExists = errors.New("resource still exists")
 
@@ -703,6 +739,22 @@ func WaitForFileStorageGone(c *APIClient, ctx context.Context, filestorageID str
 	})
 }
 
+// WaitForVolumeGone polls until the volume has been deleted.
+func WaitForVolumeGone(c *APIClient, ctx context.Context, volumeID string) {
+	waitForResourceGone("volume", volumeID, func() error {
+		_, err := c.GetVolume(ctx, volumeID)
+		return err
+	})
+}
+
+// WaitForSecurityGroupGone polls until the security group has been deleted.
+func WaitForSecurityGroupGone(c *APIClient, ctx context.Context, securityGroupID string) {
+	waitForResourceGone("security group", securityGroupID, func() error {
+		_, err := c.GetSecurityGroup(ctx, securityGroupID)
+		return err
+	})
+}
+
 // WaitForNetworkGone polls until the network has been deleted.
 func WaitForNetworkGone(c *APIClient, ctx context.Context, networkID string) {
 	waitForResourceGone("network", networkID, func() error {
@@ -711,25 +763,27 @@ func WaitForNetworkGone(c *APIClient, ctx context.Context, networkID string) {
 	})
 }
 
-// SkipUnlessOpenStackRegion skips the spec unless the configured region is visible
-// and backed by OpenStack.
-func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+// IsOpenStackRegion reports whether the configured region is visible and backed by
+// OpenStack. It does not skip, so it is safe to call from suite setup.
+func IsOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) bool {
 	regions, err := c.ListRegions(ctx, config.OrgID)
 	Expect(err).NotTo(HaveOccurred(), "failed to resolve region provider")
 
-	for _, region := range regions {
-		if region.Metadata.Id != config.RegionID {
-			continue
+	for i := range regions {
+		if regions[i].Metadata.Id == config.RegionID {
+			return regions[i].Spec.Type == regionopenapi.RegionTypeOpenstack
 		}
-
-		if region.Spec.Type != regionopenapi.RegionTypeOpenstack {
-			Skip("tests require an OpenStack-backed region")
-		}
-
-		return
 	}
 
-	Skip("tests require TEST_REGION_ID to be visible")
+	return false
+}
+
+// SkipUnlessOpenStackRegion skips the spec unless the configured region is visible
+// and backed by OpenStack.
+func SkipUnlessOpenStackRegion(c *APIClient, ctx context.Context, config *TestConfig) {
+	if !IsOpenStackRegion(c, ctx, config) {
+		Skip("tests require an OpenStack-backed region visible as TEST_REGION_ID")
+	}
 }
 
 // SkipUnlessInternalAPIConfigured skips the spec unless internal API mTLS credentials
@@ -745,23 +799,6 @@ func SkipUnlessServerFixtureConfigured(config *TestConfig) {
 	if config.ServerFlavorID == "" || config.ServerImageID == "" {
 		Skip("tests require TEST_SERVER_FLAVOR_ID and TEST_SERVER_IMAGE_ID")
 	}
-}
-
-// MustProvisionNetwork creates a network from createReq, registers cleanup
-// immediately, and waits for it to become visible and provisioned.
-func MustProvisionNetwork(c *APIClient, ctx context.Context, createReq regionopenapi.NetworkV2Create) *regionopenapi.NetworkV2Read {
-	network, err := c.CreateNetwork(ctx, createReq)
-	Expect(err).NotTo(HaveOccurred(), "failed to create network fixture")
-	Expect(network).NotTo(BeNil())
-
-	DeferCleanup(func() {
-		MustDeleteNetwork(c, ctx, network.Metadata.Id)
-	})
-
-	WaitForNetworkVisible(c, ctx, network.Metadata.Id)
-	WaitForNetworkProvisioned(c, ctx, network.Metadata.Id)
-
-	return network
 }
 
 // MustDeleteNetwork deletes the network and waits for it to disappear. A missing network
@@ -803,6 +840,10 @@ func MustCreateServer(c *APIClient, ctx context.Context, createReq regionopenapi
 // MustDeleteServer deletes the server and waits for it to disappear. A missing server is
 // treated as already deleted.
 func MustDeleteServer(c *APIClient, ctx context.Context, serverID string) {
+	if serverID == "" {
+		return
+	}
+
 	err := c.DeleteServer(ctx, serverID)
 
 	switch {
@@ -812,5 +853,39 @@ func MustDeleteServer(c *APIClient, ctx context.Context, serverID string) {
 		// Already gone; nothing to wait for.
 	default:
 		Expect(err).NotTo(HaveOccurred(), "cleanup delete server %s", serverID)
+	}
+}
+
+// MustCreateVolume creates a volume and returns it with a cleanup function the caller
+// should register immediately. It does not wait for provider provisioning.
+func MustCreateVolume(c *APIClient, ctx context.Context, createReq regionopenapi.VolumeV2Create) (*regionopenapi.VolumeV2Read, func()) {
+	created, err := c.CreateVolume(ctx, createReq)
+	Expect(err).NotTo(HaveOccurred(), "failed to create volume")
+	Expect(created).NotTo(BeNil())
+	Expect(created.Metadata.Id).NotTo(BeEmpty())
+
+	cleanup := func() {
+		MustDeleteVolume(c, ctx, created.Metadata.Id)
+	}
+
+	return created, cleanup
+}
+
+// MustDeleteVolume deletes the volume and waits for it to disappear. A missing volume
+// is treated as already deleted.
+func MustDeleteVolume(c *APIClient, ctx context.Context, volumeID string) {
+	if volumeID == "" {
+		return
+	}
+
+	err := c.DeleteVolume(ctx, volumeID)
+
+	switch {
+	case err == nil:
+		WaitForVolumeGone(c, ctx, volumeID)
+	case errors.Is(err, coreclient.ErrResourceNotFound):
+		// Already gone; nothing to wait for.
+	default:
+		Expect(err).NotTo(HaveOccurred(), "cleanup delete volume %s", volumeID)
 	}
 }

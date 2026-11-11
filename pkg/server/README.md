@@ -33,14 +33,17 @@ The raw router is wrapped in this order:
 
 1. OpenTelemetry
 2. logging
-3. route resolver
-4. CORS
+3. request metrics
+4. route resolver
+5. CORS
 
 The ordering has the same rationale as identity:
 
 - OpenTelemetry runs first so trace context exists before anything else
 - logging runs early so failures before deep handler logic are still captured
   with correlation context
+- request metrics run before route resolution, because the resolver answers
+  unresolved requests without calling the next handler
 - route resolution must happen before middleware that depends on OpenAPI
   operation/schema metadata
 - CORS comes after route resolution because its schema-driven behaviour depends
@@ -56,7 +59,25 @@ server wrapper:
 
 As with identity, those are applied in reverse by the generated wrapper, so the
 validator/authorizer stage runs before audit and both run before the handler
-implementation.
+implementation. A request the validator rejects, such as a bad body or a failed
+ACL lookup, never reaches audit and leaves no record.
+
+### Audit Delivery
+
+Audit always writes one structured log line per authenticated write. When
+`--audit-host` is set, records also go to the collector over mutual TLS, signed,
+with an optional bearer token. The chart sets these flags from `audit` or
+`global.audit` values (unikorn-common's `unikorn.audit.flags`).
+
+- A configured collector whose credentials cannot be read stops the server at
+  startup, rather than letting it run without delivering records.
+- The secrets are read with the server's uncached client, which its existing
+  cluster-wide `get` on secrets covers.
+- With audit values set, the chart and the image must roll back together: an
+  older image does not know the `--audit-*` flags and will not start with them.
+
+See identity's
+[audit README](https://github.com/nscaledev/uni-identity/blob/main/pkg/middleware/audit/README.md).
 
 ## The Big Difference From Identity
 
@@ -93,7 +114,7 @@ At a high level, server construction is:
 2. create the raw router
 3. install the shared pre-routing middleware stack
 4. create the remote identity-backed authorizer
-5. build validator and audit middleware
+5. build validator and audit middleware, with the collector sink if configured
 6. construct the outbound identity API client
 7. construct the provider registry, including image-cache warmup
 8. assemble [`handler/common.ClientArgs`](../handler/common/README.md)
@@ -109,6 +130,10 @@ identity-authority bootstrap.
 
 The most important constructed runtime dependencies are:
 
+- a direct Kubernetes client, used for every handler read and write; a list
+  is one API-server round trip, served from the API server's watch cache
+  where ConsistentListFromCache is enabled, the default since Kubernetes 1.31
+  and GA in 1.34
 - an identity API client for remote authorization and handler-side identity
   operations
 - a provider registry from [`pkg/providers`](../providers/README.md)
@@ -122,6 +147,8 @@ provider layer before the handler is built.
 ## Distinctive Operational Behaviour
 
 - `pprof` is started on a separate listener at `:6060`
+- metrics are served for scraping at `/metrics` on `:8080`, labelled
+  `service="unikorn-region"`; nothing is pushed over OTLP
 - provider startup currently requests image-cache warmup
 - the server relies on a remote trust boundary with identity rather than being
   a self-contained identity authority

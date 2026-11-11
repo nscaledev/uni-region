@@ -11,7 +11,7 @@ The package contains three broad kinds of object:
 
 - user-meaningful region resources such as `Region`, `Identity`, `Network`,
   `SecurityGroup`, `LoadBalancer`, `SSHCertificateAuthority`, `Server`, and
-  `Volume`, and `FileStorage`
+  `Volume`, `FileStorage`, `FileStorageSnapshot`, and `FileStorageDirectoryQuota`
 - service-internal provider state, primarily `OpenstackIdentity`
 - operational support objects such as `VLANAllocation`, `FileStorageClass`, and
   `FileStorageProvisioner`
@@ -39,11 +39,19 @@ stored objects rely on for linkage, migration, and operational coordination.
   region. It carries provider type, provider-specific configuration, stored
   visibility inputs, flavor/image/network/volume-class selection rules, and
   helper methods that downstream code actively depends on.
+- `Region.Spec.BlockedNetworkPrefixes` is provider-agnostic, Region-scoped
+  policy: tenant network prefixes that overlap any entry are rejected on
+  create. Empty means no restriction. `Region.BlockedNetworkPrefix` owns the
+  overlap test (either way round, so supernets of an entry are blocked too).
 - `Region.Spec.Openstack.DefaultArchitecture` controls the Region-scoped
   fallback used when OpenStack flavor or image inventory lacks explicit
   architecture metadata. CRD admission defaults omission to `x86_64` and
   accepts only `x86_64` or `aarch64`; per-flavor `cpu.architecture` and the
   Glance `architecture` property remain authoritative when present.
+- `Region.Spec.Openstack.Image.IncludeCommunity` additionally lists Glance
+  images with `community` visibility, so development environments can share
+  images without admin rights. It is off by default, must never be enabled in
+  production, and ignores community images that claim an organization.
 - OpenStack `VolumeClass` configuration is Region-scoped inventory metadata. It
   records which provider volume classes are eligible for export and how that
   inventory should be enriched; it does not create a project-owned
@@ -57,8 +65,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   `maximumSizeGiB` as positive whole GiB values. When both are present, the
   maximum must be greater than or equal to the minimum. Metadata may also carry
   a `supportedFlavors` selector whose `ids` are a unique typed Region Flavor
-  allowlist. An omitted selector or omitted/empty IDs means the VolumeClass is
-  compatible with every Flavor. Flavor IDs must use canonical lowercase,
+  allowlist for Server attachment. An omitted selector or omitted/empty IDs
+  means Volumes of that class cannot be attached to Servers; it does not prevent
+  standalone Volume creation. Flavor IDs must use canonical lowercase,
   hyphenated UUID spelling. CRD admission enforces that static UUID shape,
   uniqueness, and the capacity invariants without provider lookups.
 - Namespaced Kubernetes storage scope and platform tenancy scope are separate
@@ -80,7 +89,8 @@ stored objects rely on for linkage, migration, and operational coordination.
 - `Server.Spec.ProviderCreateGates` is immutable create-time desired state used
   by the server controller to pause before provider create. Matching
   `Server.Status.ProviderCreateGates` entries record the gate `state`, actor,
-  reason, message, and transition time for operator diagnostics. Each gate is a
+  reason, message, and transition time for operator diagnostics, and any
+  `outputs` the satisfier published for instance metadata. Each gate is a
   three-state machine — `Closed`, `Open`, `Locked` — where `Closed` is the
   default resting state reached without any report (a gate with no status entry
   is treated as `Closed`). A satisfier reports a gate via
@@ -114,6 +124,15 @@ stored objects rely on for linkage, migration, and operational coordination.
   server. The generic `Server.Status.Conditions` list remains reserved for
   Region-owned lifecycle conditions.
 
+  Outputs come only with the report that opens a gate (a `Closed` or `Locked`
+  report carrying outputs is refused) and are frozen while it is `Open`.
+  `ProviderCreateGateStatusWrite` replaces the whole entry, so outputs are an
+  explicit argument; `ProviderCreateGatesReset` clears them. Both gate lists
+  hold at most 16 entries. That bound is load-bearing: the CEL rule on
+  `outputs` runs once per list entry, and the apiserver estimates a rule's
+  cost from the most entries a list may hold, so on an unbounded list it
+  refuses the CRD as over its cost budget.
+
   The read API mirrors the write model: `Status.RemainingProviderCreateGates`
   lists every not-yet-`Open` gate with its resolved `state` (and reason), so a
   consumer can tell `Closed` (still being worked) from `Locked` (will never
@@ -132,6 +151,72 @@ stored objects rely on for linkage, migration, and operational coordination.
   resource types. Attachment-level provisioning state, observed size, usage
   reporting, and per-policy snapshot status are part of the stored
   reconciliation contract.
+- `FileStorageSnapshot` is a namespaced CRD for Manual Snapshot intent and
+  observed state.
+- Snapshot `spec.name`, `spec.fileStorageID`, `spec.expirationTime`, and
+  `spec.protectedPath` are immutable. Name admission rejects `.` and `..` and
+  permits letters, digits, underscores, periods, and hyphens up to 63 characters.
+  Protected paths are optional relative paths; omission selects the
+  File Storage root. Pause and tags remain mutable.
+- Snapshot status stores conditions, provider capture time, and absolute
+  protected path. The resource has no phase field or internal observation latch.
+- The [storage handler](../../../handler/storage/README.md#manual-snapshot-reads)
+  documents the public Manual Snapshot read contract. Its
+  [lifecycle contract](../../../handler/storage/README.md#manual-snapshot-lifecycle)
+  describes creation-time blocking owner references, foreground parent cascade,
+  deterministic ID reuse, and customer expiration visibility.
+- `FileStorageDirectoryQuota` is a namespaced child of `FileStorage` (status
+  subresource) holding hard capacity and inode limits for one directory. It is
+  a separate resource, not inline in `FileStorage.spec`, because per-rule usage
+  changes every few minutes and one bad quota must not degrade the File Storage.
+  Only the CRD exists today: there is no handler, OpenAPI, or controller yet.
+  Contract: `uni-storage/docs/directory-quotas/api-crd-design.md`.
+- Quota `spec.fileStorageID` and `spec.path` are immutable. `path` is required
+  and reuses the snapshot `protectedPath` pattern, length, and `.`/`..` rule;
+  the pattern rejects empty, absolute, and trailing-slash values, so the File
+  Storage root cannot be targeted. Pause, limits, rules, and tags are mutable.
+- One shared limits type (`capacity`, `inodes`; at least one required) is used
+  in four places. A rule overrides the matching default for its subject, and
+  the directory limit always wins because the backend blocks writes once the
+  directory is full:
+
+  | Field | Applies to | Backend mapping | Notes |
+  |---|---|---|---|
+  | `directoryLimits` | The whole directory tree, whoever owns the data | The quota's own hard limits | Optional ceiling for the rest. Observed as `status.usage.directory`. |
+  | `defaultUserLimits` | Each user without an explicit rule | `default_user_quota` | Per user, not shared. Usage is not tracked (known gap). |
+  | `defaultGroupLimits` | Each group without an explicit rule | `default_group_quota` | Per group, not shared. Same gap. |
+  | `rules[].limits` | One user or group, by name or uid/gid | An entry in `user_quotas` / `group_quotas` | Usage is reported. |
+
+- `capacity` is a plain `resource.Quantity` with no CEL rule, like the other
+  quantities in this package: a CEL cost estimate on an int-or-string field
+  cannot be bounded, and the rule exceeded the API server's budget inside
+  `rules[]`. Code must check that it is a positive whole number of bytes.
+  Rule subjects set `kind` plus exactly one of `name` or `id`.
+- `spec.rules` (max 20) is `listType=atomic`: `name` and `id` are optional so
+  neither can be a map key, and an update replaces the whole list. CEL rejects
+  duplicate subjects.
+- Path uniqueness, nested ancestor/descendant limits, and the File Storage size
+  bound are business logic enforced outside the CRD.
+- Quota status has two writers: the controller owns `observedGeneration`, the
+  `Available` condition, and `rules` (`Pending`, `Provisioned`, `Errored`, with
+  `message` only on error); the usage monitor owns `usage` and the `Healthy`
+  condition, which also folds in rule errors, so a rule error can surface one
+  poll late. Both write `status.conditions`, and a CRD merge patch replaces the
+  whole list despite `listType=map`, so both writers must patch with
+  `MergeFromWithOptimisticLock` (retrying on conflict) or server-side apply.
+  The public read model joins `status.rules` and `status.usage.rules` by subject.
+  The backend quota id is not recorded; the controller finds it by exact path.
+- Creators should use a deterministic name (`NewDeterministicObjectMetadata`,
+  File Storage UUID as namespace, `path` as invariant, as for snapshots) so
+  path uniqueness is atomic, including while a previous quota is terminating.
+- `FileStorage.Spec.Source` optionally records where a File Storage's initial
+  data comes from; omission means the File Storage starts empty. It is a
+  single-member union: exactly one member must be set, and `snapshot.id` names
+  the source `FileStorageSnapshot`. New source kinds are added as further union
+  members under the same exactly-one rule. The source is create-time intent: the
+  CRD rejects adding, removing, or changing it after creation. The presence rule
+  sits on `FileStorageSpec` because a transition rule on an optional field only
+  runs when both old and new values exist.
 - `FileStorage.Spec.NFS` stores POSIX ACL and atime update interval desired state
   as required, defaulted values. The CRD defaults missing values to `false` and
   `0` before validation. An atime value of `0` means read-driven updates are
@@ -142,26 +227,47 @@ stored objects rely on for linkage, migration, and operational coordination.
   `Volume` does not define a per-network name uniqueness key; its resource ID
   follows the platform's normal UUID v4 identity pattern, while mutable display
   names live in standard metadata labels. `Volume.Spec.ClaimRef` is internal
-  handler-owned state that records the exclusive Server reservation; a nil claim
-  means the volume is available for claiming. `Server` is the current supported
-  claim kind. `Server.Status.Volumes` is the sole persisted projection of
-  attachment progress, optional provider device, and a safe message. Future
-  attachment reconciliation will
-  advance `ObservedGeneration` only after both backing volume and requested
-  attachment state converge, and will report attachment errors through the generic
-  `Available` condition. The Volume controller drives provider create/delete,
+  coordination state that records the exclusive Server reservation. The Server
+  handler creates and compensates claims, while the Volume controller releases
+  them after provider teardown. Its ID must be non-empty, and a nil claim means
+  the Volume is available for claiming. `Server` is the current supported claim
+  kind. `Server.Status.Volumes` projects
+  attachment progress, optional provider device, and a safe message.
+  `Volume.Status.AttachedAt` records when the current attachment was first
+  confirmed; omission means no current attachment is recorded. The attachment
+  finalizer `volumes.region.unikorn-cloud.org/<volume-id>` is stored on the
+  claimed Server. It blocks Server deletion until the Volume controller confirms
+  provider detachment and removes that finalizer. The Volume controller creates
+  this canonical resource reference before provider attachment and removes it
+  before releasing the claim. References for removed intent remain until
+  controller teardown completes. The Volume
+  controller advances
+  `ObservedGeneration`
+  only after both backing Volume and requested attachment state converge,
+  reports attachment errors through the generic `Available` condition, and
+  discovers provider attachments from the Volume before detaching them. The
+  controller drives provider create/delete,
   but provider-side volume identity is rediscovered by stable provider lookup
   rather than mirrored into status.
+  The Volume controller exclusively owns the generic `Available` provisioning
+  condition. The controller stamps `VolumeStatus.ProvisionedAt` after its
+  successful provider rediscovery; the monitor projects `Volume.Status.Size`
+  and coarse `Healthy`. Confirmed provider absence clears observed size and degrades health;
+  a marked Volume is never recreated under the same Region Volume ID. Provider
+  request errors preserve observed size and health. Provider-side volume
+  identity is rediscovered by stable provider lookup rather than mirrored into
+  status.
 - `Server.Spec.Volumes` is the attach-existing-only desired state for block
   storage. Each row names an existing Region `Volume` by ID; inline
   server-created volume templates are deliberately excluded from the first
   implementation. `Server.Status.Volumes` is keyed by the same Volume ID and
   reports per-volume attachment reconciliation state and the observed guest
-  device name for later controller and monitor work. The provider layer now
-  supplies a server-owned attach/detach boundary and the OpenStack provider
-  realizes it with Nova, but this package still only owns the persisted shape;
-  reference placement, claim/locking behavior, and controller reconciliation live
-  in later layers/tickets. The v2 Server read projects stored attachment status.
+  device name. The Server handler owns attachment intent and claim
+  creation/compensation. The Volume controller owns reference placement,
+  provider attachment and detachment, status projection, and claim release
+  after teardown. The OpenStack provider realizes the attachment lifecycle
+  through Nova and Cinder. The v2 Server read projects both desired Volume
+  intent and stored attachment status.
 - The `Network -> Volume` graph edge is declared as containment for future
   behavior: Network scope propagates to Volume; co-location is implicit; Volume
   holds a reverse deletion-blocking relationship to Network for its lifetime;
@@ -178,7 +284,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   schema therefore bounds the stored list to five entries — four user-managed
   policies plus the optional hidden `system-default` baseline — caps policy names
   at 19 characters, and validates the schedule/retention shape so direct CRD
-  writes cannot persist unsupported policy combinations.
+  writes cannot persist unsupported policy combinations. A policy may optionally
+  define `protectedPath`, a canonical relative path within the file storage data
+  hierarchy;
+  the CRD rejects empty, absolute, non-canonical, and traversal-component paths.
+  Provider-specific controllers resolve this path against their backing storage
+  hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
   authoritative for live state.
   A rebuild failure is not attributable: an unrelated host failure on the desired
@@ -239,6 +350,12 @@ stored objects rely on for linkage, migration, and operational coordination.
   liveness is a separate axis needing a signal from inside the guest; treating
   convergence here as proof of a working workload is a misreading this region
   cannot protect against.
+- `Server.SetProvisioningCondition` stamps `metadata.generation` into the
+  `Available` condition's `observedGeneration` on every outcome, distinct from
+  `Status.Observed.Generation`. A zero or mismatched stamp means the result
+  belongs to a previous spec: `Server.ProvisioningConditionCurrent` returns
+  false, and the REST read projects it as `provisioning`. Enforced at the REST
+  boundary only; internal readers still key off the reason.
 
 ## Caveats
 
@@ -256,10 +373,8 @@ stored objects rely on for linkage, migration, and operational coordination.
 - Where possible, OpenStack itself is now the intended source of truth for
   cloud-side state, with local code preferring deterministic lookup over
   mirrored persistence.
-- `ResourceLabels()` exists on several resources to satisfy shared controller
-  interfaces, but currently returns `nil, nil`. That is an implementation
-  contract for generic integration, not proof that these resources already have
-  a meaningful label-tuple identity model defined here.
+- `FileStorage.ResourceLabels()`, `FileStorageSnapshot.ResourceLabels()`, and
+  `FileStorageDirectoryQuota.ResourceLabels()` currently return `nil, nil` to satisfy shared controller interfaces.
 - `SSHCertificateAuthority` is structurally much lighter than the other major
   resource types. It has no status and behaves more like a stored project-scoped
   OpenSSH user CA record than a long-running provisioned object.

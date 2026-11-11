@@ -17,6 +17,8 @@ limitations under the License.
 package network_test
 
 import (
+	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"testing"
@@ -37,17 +39,21 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
+	"github.com/unikorn-cloud/region/pkg/handler/handlertest"
 	"github.com/unikorn-cloud/region/pkg/handler/network"
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -197,6 +203,75 @@ func TestCreateV2RBACNoPermissions(t *testing.T) {
 	require.True(t, coreerrors.IsForbidden(err), "expected forbidden, got: %v", err)
 }
 
+// TestCreateV2BlockedPrefix verifies that a network prefix overlapping one of
+// the region's blocked prefixes is rejected before anything is created.
+func TestCreateV2BlockedPrefix(t *testing.T) {
+	t.Parallel()
+
+	const regionID = "55555555-5555-4555-a555-555555555555"
+
+	region := &regionv1.Region{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      regionID,
+		},
+		Spec: regionv1.RegionSpec{
+			Provider: regionv1.ProviderSimulated,
+			BlockedNetworkPrefixes: []corev1alpha1.IPv4Prefix{
+				{IPNet: net.IPNet{IP: net.IPv4(10, 0, 0, 0).To4(), Mask: net.CIDRMask(8, 32)}},
+			},
+		},
+	}
+
+	cli := newNetworkFakeClient(t, region)
+
+	ctrl := gomock.NewController(t)
+
+	// No EXPECT calls, the identity API must not be contacted.
+	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
+
+	c := network.New(common.ClientArgs{
+		Client:    cli,
+		Namespace: namespace,
+		Identity:  mockIdentity,
+	})
+
+	ctx := rbac.NewContext(t.Context(), &identityapi.Acl{
+		Organizations: &identityapi.AclOrganizationList{
+			{
+				Id: organizationID,
+				Projects: &identityapi.AclProjectList{
+					{
+						Id: projectID,
+						Endpoints: identityapi.AclEndpoints{
+							{
+								Name:       "region:networks:v2",
+								Operations: identityapi.AclOperations{identityapi.Create},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	request := minimalNetworkV2CreateRequest(organizationID, projectID)
+	request.Spec.RegionId = idstest.MustParseRegionID(regionID)
+	request.Spec.Prefix = "10.0.0.0/24"
+
+	_, err := c.CreateV2(ctx, request)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsUnprocessableContent(err), "expected 422, got: %v", err)
+
+	identities := &regionv1.IdentityList{}
+	require.NoError(t, cli.List(t.Context(), identities))
+	require.Empty(t, identities.Items)
+
+	networks := &regionv1.NetworkList{}
+	require.NoError(t, cli.List(t.Context(), networks))
+	require.Empty(t, networks.Items)
+}
+
 func TestUpdateV2PreservesReservations(t *testing.T) {
 	t.Parallel()
 
@@ -298,6 +373,186 @@ func TestUpdateV2PreservesReservations(t *testing.T) {
 			require.Equal(t, "1.1.1.1", persisted.Spec.DNSNameservers[0].String())
 		})
 	}
+}
+
+// TestUpdateV2Routes verifies that an update omitting routes keeps the stored
+// ones, while an explicit list, even an empty one, replaces them. Requests are
+// decoded from JSON, as the handler does, so omission and an empty list arrive
+// as distinct values.
+func TestUpdateV2Routes(t *testing.T) {
+	t.Parallel()
+
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+
+	_, routePrefix, err := net.ParseCIDR("10.0.0.0/8")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		spec     string
+		expected openapi.Routes
+	}{
+		{
+			name:     "OmittedKeepsStored",
+			spec:     `{"dnsNameservers": ["8.8.8.8"]}`,
+			expected: openapi.Routes{{Prefix: "10.0.0.0/8", Nexthop: "10.0.0.10"}},
+		},
+		{
+			name: "EmptyClears",
+			spec: `{"dnsNameservers": ["8.8.8.8"], "routes": []}`,
+		},
+		{
+			name:     "ListReplaces",
+			spec:     `{"dnsNameservers": ["8.8.8.8"], "routes": [{"prefix": "192.168.53.0/24", "nexthop": "10.0.0.18"}]}`,
+			expected: openapi.Routes{{Prefix: "192.168.53.0/24", Nexthop: "10.0.0.18"}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			current := &regionv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "55555555-5555-4555-a555-555555555555",
+					Namespace:       testNamespace,
+					ResourceVersion: "1",
+					Labels: map[string]string{
+						coreconstants.OrganizationLabel:   organizationID,
+						coreconstants.ProjectLabel:        projectID,
+						constants.RegionLabel:             "region-1",
+						constants.IdentityLabel:           "identity-1",
+						constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+					},
+					Annotations: map[string]string{
+						coreconstants.AllocationAnnotation: "allocation-1",
+					},
+				},
+				Spec: regionv1.NetworkSpec{
+					Prefix: &corev1alpha1.IPv4Prefix{
+						IPNet: *prefix,
+					},
+					DNSNameservers: []corev1alpha1.IPv4Address{
+						{IP: net.ParseIP("8.8.8.8")},
+					},
+					Routes: []regionv1.Route{
+						{
+							Prefix:  corev1alpha1.IPv4Prefix{IPNet: *routePrefix},
+							NextHop: corev1alpha1.IPv4Address{IP: net.ParseIP("10.0.0.10")},
+						},
+					},
+				},
+			}
+
+			k8sClient := newNetworkFakeClient(t, current)
+			c := network.New(common.ClientArgs{
+				Client:    k8sClient,
+				Namespace: testNamespace,
+			})
+
+			ctx := rbac.NewContext(t.Context(), networkUpdateContext())
+			ctx = identityauth.NewContext(ctx, &identityauth.Info{
+				Userinfo: &identityapi.Userinfo{Sub: "user-1"},
+			})
+			ctx = principal.NewContext(ctx, &principal.Principal{
+				Actor:          "actor@example.com",
+				OrganizationID: organizationID,
+				ProjectID:      projectID,
+			})
+
+			request := &openapi.NetworkV2Update{}
+			require.NoError(t, json.Unmarshal([]byte(`{"metadata": {"name": "test-network"}, "spec": `+test.spec+`}`), request))
+
+			updated, err := c.Update(ctx, idstest.MustParseNetworkID(current.Name), request)
+			require.NoError(t, err)
+			require.Equal(t, test.expected, ptr.Deref(updated.Spec.Routes, nil))
+
+			persisted := &regionv1.Network{}
+			require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Name: current.Name, Namespace: testNamespace}, persisted))
+
+			var routes openapi.Routes
+			for _, route := range persisted.Spec.Routes {
+				routes = append(routes, openapi.Route{Prefix: route.Prefix.String(), Nexthop: route.NextHop.String()})
+			}
+
+			require.Equal(t, test.expected, routes)
+		})
+	}
+}
+
+// TestUpdateV2ConflictReturns409 verifies that Update maps a Kubernetes
+// optimistic-lock conflict from the underlying patch to an HTTP 409, rather
+// than letting it surface as an unhandled 500. The region controller actively
+// reconciles a freshly provisioned network, so the resourceVersion can move
+// between the read and the patch.
+func TestUpdateV2ConflictReturns409(t *testing.T) {
+	t.Parallel()
+
+	_, prefix, err := net.ParseCIDR("10.0.0.0/24")
+	require.NoError(t, err)
+
+	current := &regionv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "55555555-5555-4555-a555-555555555555",
+			Namespace:       testNamespace,
+			ResourceVersion: "1",
+			Labels: map[string]string{
+				coreconstants.OrganizationLabel:   organizationID,
+				coreconstants.ProjectLabel:        projectID,
+				constants.RegionLabel:             "region-1",
+				constants.IdentityLabel:           "identity-1",
+				constants.ResourceAPIVersionLabel: constants.MarshalAPIVersion(2),
+			},
+			Annotations: map[string]string{
+				coreconstants.AllocationAnnotation: "allocation-1",
+			},
+		},
+		Spec: regionv1.NetworkSpec{
+			Prefix: &corev1alpha1.IPv4Prefix{
+				IPNet: *prefix,
+			},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(current).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Patch: func(_ context.Context, _ client.WithWatch, _ client.Object, _ client.Patch, _ ...client.PatchOption) error {
+				return apierrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "networks"}, current.Name, nil)
+			},
+		}).
+		Build()
+
+	c := network.New(common.ClientArgs{
+		Client:    k8sClient,
+		Namespace: testNamespace,
+	})
+
+	ctx := rbac.NewContext(t.Context(), networkUpdateContext())
+	ctx = identityauth.NewContext(ctx, &identityauth.Info{
+		Userinfo: &identityapi.Userinfo{Sub: "user-1"},
+	})
+	ctx = principal.NewContext(ctx, &principal.Principal{
+		Actor:          "actor@example.com",
+		OrganizationID: organizationID,
+		ProjectID:      projectID,
+	})
+
+	_, err = c.Update(ctx, idstest.MustParseNetworkID(current.Name), &openapi.NetworkV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{
+			Name: "test-network",
+		},
+		Spec: openapi.NetworkV2Spec{
+			DnsNameservers: []string{"1.1.1.1"},
+		},
+	})
+	require.Error(t, err)
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
 }
 
 func TestGetV2ReturnsEffectiveReservationsForImplicitNetworks(t *testing.T) {
@@ -411,4 +666,136 @@ func TestReferences(t *testing.T) {
 
 	resource = getNetwork(t, cli)
 	require.Empty(t, resource.Finalizers)
+}
+
+func referencesContext(t *testing.T) context.Context {
+	t.Helper()
+
+	return rbac.NewContext(t.Context(), &identityapi.Acl{
+		Global: &identityapi.AclEndpoints{
+			{
+				Name:       "region:networks:v2",
+				Operations: identityapi.AclOperations{identityapi.Read, identityapi.Delete},
+			},
+			{
+				Name:       "region:networks:v2/references",
+				Operations: identityapi.AclOperations{identityapi.Create, identityapi.Delete},
+			},
+		},
+	})
+}
+
+// staleNetworkClients applies before to the stored network, snapshots it as
+// the copy a guard read would see, then applies after, so the read lags the
+// store by one write.
+func staleNetworkClients(t *testing.T, before, after func(*regionv1.Network)) (client.WithWatch, *regionv1.Network) {
+	t.Helper()
+
+	store, ok := setupFixtures(t).(client.WithWatch)
+	require.True(t, ok)
+
+	update := func(mutate func(*regionv1.Network)) {
+		n := getNetwork(t, store)
+		mutate(n)
+		require.NoError(t, store.Update(t.Context(), n))
+	}
+
+	update(before)
+
+	stale := getNetwork(t, store)
+
+	update(after)
+
+	return store, stale
+}
+
+func addReference(n *regionv1.Network) { controllerutil.AddFinalizer(n, reference) }
+
+func removeReference(n *regionv1.Network) { controllerutil.RemoveFinalizer(n, reference) }
+
+func noChange(*regionv1.Network) {}
+
+// TestReferenceCreateV2StaleReadStillAdds covers a remove followed by an add
+// where the add's read still saw the reference present.
+func TestReferenceCreateV2StaleReadStillAdds(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, addReference, removeReference)
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	require.NoError(t, c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+	require.True(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceDeleteV2StaleReadStillRemoves covers an add followed by a
+// remove where the remove's read had not yet seen the add.
+func TestReferenceDeleteV2StaleReadStillRemoves(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, noChange, addReference)
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	require.NoError(t, c.ReferenceDeleteV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+	require.False(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceCreateV2StaleReadDeletingNetwork covers an add whose read
+// missed the deletion starting: the retry sees the live copy and refuses, and
+// no reference is added.
+func TestReferenceCreateV2StaleReadDeletingNetwork(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, noChange, func(n *regionv1.Network) {
+		controllerutil.AddFinalizer(n, "blocker")
+	})
+
+	// Deleting a network that still has finalizers sets its deletion
+	// timestamp, and the object stays until they clear.
+	require.NoError(t, store.Delete(t.Context(), getNetwork(t, store)))
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	err := c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsBadRequest(err), "expected 400 invalid request, got: %v", err)
+	require.False(t, controllerutil.ContainsFinalizer(getNetwork(t, store), reference))
+}
+
+// TestReferenceDeleteV2AfterNetworkGoneReturnsNil covers a remove racing the
+// network's deletion: the patch misses the network, and the remove still
+// succeeds so repeated removal stays idempotent.
+func TestReferenceDeleteV2AfterNetworkGoneReturnsNil(t *testing.T) {
+	t.Parallel()
+
+	store, stale := staleNetworkClients(t, noChange, noChange)
+
+	// The network carries no finalizers, so deleting it removes it outright.
+	require.NoError(t, store.Delete(t.Context(), getNetwork(t, store)))
+
+	c := network.New(common.ClientArgs{Client: handlertest.StaleRead(store, stale), Namespace: namespace})
+
+	require.NoError(t, c.ReferenceDeleteV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference))
+}
+
+// TestReferenceCreateV2RepeatedConflictReturns409 verifies a conflict that
+// survives the retried read is reported as 409.
+func TestReferenceCreateV2RepeatedConflictReturns409(t *testing.T) {
+	t.Parallel()
+
+	store, ok := setupFixtures(t).(client.WithWatch)
+	require.True(t, ok)
+
+	conflicting := interceptor.NewClient(store, interceptor.Funcs{
+		Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			return apierrors.NewConflict(schema.GroupResource{Group: regionv1.GroupName, Resource: "networks"}, obj.GetName(), nil)
+		},
+	})
+
+	c := network.New(common.ClientArgs{Client: conflicting, Namespace: namespace})
+
+	err := c.ReferenceCreateV2(referencesContext(t), idstest.MustParseNetworkID(networkID), reference)
+	require.Error(t, err)
+	require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
 }

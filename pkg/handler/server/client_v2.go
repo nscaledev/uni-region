@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	goerrors "errors"
 	"fmt"
+	"maps"
 	"net"
 	"reflect"
 	"slices"
@@ -36,7 +37,9 @@ import (
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/conversion"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
+	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	"github.com/unikorn-cloud/identity/pkg/middleware/authorization"
@@ -48,7 +51,6 @@ import (
 	"github.com/unikorn-cloud/region/pkg/constants"
 	"github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
-	"github.com/unikorn-cloud/region/pkg/handler/network"
 	"github.com/unikorn-cloud/region/pkg/handler/securitygroup"
 	"github.com/unikorn-cloud/region/pkg/handler/sshcertificateauthority"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
@@ -66,6 +68,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// endpoint is the permission that governs servers, v1 and v2 alike.
+const endpoint = "region:servers"
 
 const providerCreateGatesEndpoint = "region:servers:v2/provider-create-gates"
 
@@ -129,8 +134,8 @@ func (c *ClientV2) validateCreateImage(ctx context.Context, network *regionv1.Ne
 }
 
 // userDataChanged reports whether an update request would change the persisted
-// user-data. An omitted field (nil) matches only an absent stored value;
-// byte-identical payloads are unchanged.
+// user-data after resolving omission. An empty value matches an empty stored
+// value; byte-identical payloads are unchanged.
 func userDataChanged(current []byte, request *[]byte) bool {
 	if request == nil {
 		return len(current) != 0
@@ -296,6 +301,39 @@ func appendVolumeStatuses(in *regionv1.Server, out *openapi.ServerV2VolumeStatus
 	return nil
 }
 
+func convertVolumes(in []regionv1.ServerVolumeSpec) (*openapi.ServerV2VolumeList, error) {
+	if len(in) == 0 {
+		//nolint:nilnil // An empty desired set is represented by nil in the API.
+		return nil, nil
+	}
+
+	out := make(openapi.ServerV2VolumeList, len(in))
+
+	for i := range in {
+		id, err := regionids.ParseVolumeID(in[i].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		out[i] = id
+	}
+
+	return &out, nil
+}
+
+func generateVolumes(in *openapi.ServerV2VolumeList) []regionv1.ServerVolumeSpec {
+	if in == nil {
+		return nil
+	}
+
+	out := make([]regionv1.ServerVolumeSpec, len(*in))
+	for i := range *in {
+		out[i].ID = (*in)[i].String()
+	}
+
+	return out
+}
+
 func convertVolumeProvisioningStatus(in regionv1.AttachmentProvisioningStatus) coreopenapi.ResourceProvisioningStatus {
 	switch in {
 	case regionv1.AttachmentProvisioning:
@@ -327,7 +365,12 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 		return nil, err
 	}
 
-	metadata := conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags)
+	desiredVolumes, err := convertVolumes(in.Spec.Volumes)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata := serverReadMetadata(in)
 
 	out := &openapi.ServerV2Read{
 		Metadata: metadata,
@@ -336,6 +379,7 @@ func convertV2(in *regionv1.Server) (*openapi.ServerV2Read, error) {
 			ImageId:    imageID,
 			Networking: convertNetworkingV2(in),
 			UserData:   convertUserData(in.Spec.UserData),
+			Volumes:    desiredVolumes,
 		},
 		Status: openapi.ServerV2Status{
 			RegionId:                     regionID,
@@ -626,6 +670,7 @@ func (c *ClientV2) generateV2(ctx context.Context, organizationID identityids.Or
 			InfrastructureRef:         infrastructureRef,
 			ProviderCreateGates:       providerCreateGates,
 			UserData:                  generateUserData(in.Spec.UserData),
+			Volumes:                   generateVolumes(in.Spec.Volumes),
 		},
 	}
 
@@ -696,7 +741,7 @@ func (c *ClientV2) ListV2(ctx context.Context, params openapi.GetApiV2ServersPar
 			return true
 		}
 
-		return rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Read, &resource) != nil
+		return !rbac.PermitsProjectScopeReader(ctx, endpoint, identityapi.Read, &resource)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Server) int {
@@ -743,75 +788,38 @@ func (c *ClientV2) validateCreateV2Request(ctx context.Context, request *openapi
 }
 
 func (c *ClientV2) CreateV2(ctx context.Context, request *openapi.ServerV2Create) (*openapi.ServerV2Read, error) {
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
-	if err != nil {
+	s := &createV2Saga{
+		client:  c,
+		request: request,
+		target: authz.Target{
+			Endpoint:   endpoint,
+			Operation:  authz.Create,
+			Kind:       authz.Primary,
+			ObjectName: request.Metadata.Name,
+		},
+	}
+
+	authz.Declare(ctx, s.target)
+
+	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
 
-	organizationID, projectID, err := network.OrganizationAndProjectID()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:servers", identityapi.Create, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	if err := c.validateCreateV2Request(ctx, request, network); err != nil {
-		return nil, err
-	}
-
-	commonRequest, err := convertCreateToUpdateRequest(request)
-	if err != nil {
-		return nil, err
-	}
-
-	sshInjection := resolveSSHInjection(request.Spec.SshInjection, request.Spec.SshCertificateAuthorityId)
-
-	resource, err := c.generateV2(ctx, organizationID, projectID, commonRequest, network, request.Spec.SshCertificateAuthorityId, request.Spec.InfrastructureRef, sshInjection, generateProviderCreateGates(request.Spec.ProviderCreateGates))
-	if err != nil {
-		return nil, err
-	}
-
-	if err := c.Client.Client.Create(ctx, resource); err != nil {
-		if kerrors.IsAlreadyExists(err) {
-			return nil, errors.HTTPConflict()
-		}
-
-		return nil, fmt.Errorf("%w: unable to create server", err)
-	}
-
-	return convertV2(resource)
+	return convertV2(s.server)
 }
 
+// GetV2Raw loads a server the caller may read.
 func (c *ClientV2) GetV2Raw(ctx context.Context, serverID string) (*regionv1.Server, error) {
+	return c.getV2(ctx, serverID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
+}
+
+// getV2 loads a server and authorizes the target on it.  See
+// common.GetV2.
+func (c *ClientV2) getV2(ctx context.Context, serverID string, target authz.Target) (*regionv1.Server, error) {
 	result := &regionv1.Server{}
 
-	if err := c.Client.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: serverID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup server", err)
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Read, result); err != nil {
+	if err := common.GetV2(ctx, c.Client.Client, c.Namespace, serverID, target, result); err != nil {
 		return nil, err
-	}
-
-	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound().WithValues("serverID", serverID)
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse API version", coreerrors.ErrConsistency)
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
 	}
 
 	return result, nil
@@ -843,70 +851,18 @@ func validateServerUpdate(current *regionv1.Server, request *openapi.ServerV2Upd
 }
 
 func (c *ClientV2) UpdateV2(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerV2Update) (*openapi.ServerV2Read, error) {
-	current, err := c.GetV2Raw(ctx, serverID.String())
-	if err != nil {
+	s := &updateV2Saga{client: c, serverID: serverID, request: request}
+
+	if err := saga.Run(ctx, s); err != nil {
 		return nil, err
 	}
 
-	organizationID, projectID, err := current.OrganizationAndProjectID()
-	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, "region:servers", identityapi.Update, organizationID, projectID); err != nil {
-		return nil, err
-	}
-
-	if err := validateServerUpdate(current, request); err != nil {
-		return nil, err
-	}
-
-	// Security groups are mutable, so re-validate that every referenced group still
-	// belongs to the server's network. The SSH certificate authority and
-	// infrastructure reference are immutable, so they keep the scope validated at
-	// create time.
-	if err := c.validateSecurityGroupReferences(ctx, current.Labels[constants.NetworkLabel], request.Spec.Networking); err != nil {
-		return nil, err
-	}
-
-	// Get the network, required for generation.
-	network, err := network.New(c.Client.ClientArgs).GetV2Raw(ctx, current.Spec.Networks[0].ID.String())
-	if err != nil {
-		return nil, err
-	}
-
-	// Updates replace the persisted user-data wholesale: an omitted field clears
-	// the stored value. The value is not applied to the running guest — it is
-	// consumed by the next rebuild (image change) or recreate. Changed user-data
-	// is re-validated at the boundary; identical payloads are not.
-	if err := c.validateUpdateV2Request(ctx, network, current, request); err != nil {
-		return nil, err
-	}
-
-	required, err := c.generateV2(ctx, organizationID, projectID, request, network, current.Spec.SSHCertificateAuthorityID, current.Spec.InfrastructureRef, current.ResolvedSSHInjection(), current.Spec.ProviderCreateGates)
-	if err != nil {
-		return nil, err
-	}
-
-	updated := current.DeepCopy()
-	updated.Labels = required.Labels
-	updated.Annotations = required.Annotations
-	updated.Spec = required.Spec
-
-	if err := c.Client.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
-		return nil, fmt.Errorf("%w: unable to update server", err)
-	}
-
-	return convertV2(updated)
+	return convertV2(s.updated)
 }
 
 func (c *ClientV2) DeleteV2(ctx context.Context, serverID regionids.ServerID) error {
-	resource, err := c.GetV2Raw(ctx, serverID.String())
+	resource, err := c.getV2(ctx, serverID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Delete, Kind: authz.Primary})
 	if err != nil {
-		return err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:servers", identityapi.Delete, resource); err != nil {
 		return err
 	}
 
@@ -949,30 +905,50 @@ func providerCreateGateActor(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("%w: provider-create gate actor is not defined", coreerrors.ErrInvalidContext)
 }
 
+// providerCreateGateActionChanged reports whether a report changes the gate.
+// Its outputs need no comparison: on a gate already Open they are frozen, so a
+// report either matches the stored ones or is refused before this.
 func providerCreateGateActionChanged(current *regionv1.Server, conditionType string, state regionv1.ServerProviderCreateGateState, actor, reason, message string) bool {
-	existing, ok := current.ProviderCreateGateStatusRead(conditionType)
+	status, ok := current.ProviderCreateGateStatusRead(conditionType)
 	if !ok {
 		return true
 	}
 
-	return existing.State != state ||
-		existing.Actor != actor ||
-		existing.Reason != reason ||
-		existing.Message != message
+	return status.State != state ||
+		status.Actor != actor ||
+		status.Reason != reason ||
+		status.Message != message
 }
 
-// validateProviderCreateGateAction checks the required request fields.
-func validateProviderCreateGateAction(request *openapi.ServerProviderCreateGateAction) error {
-	switch {
-	case request.ConditionType == "":
-		return errors.OAuth2InvalidRequest("conditionType must be specified")
-	case request.Reason == "":
-		return errors.OAuth2InvalidRequest("reason must be specified")
-	case request.Message == "":
-		return errors.OAuth2InvalidRequest("message must be specified")
+// validateProviderCreateGateAction checks a gate report's fields and returns
+// its outputs. Every output must map to an instance metadata key, by the same
+// rule the provider publishes it with; one that would not is a bad request,
+// not a 422, which satisfiers read as "gate not configured here".
+func validateProviderCreateGateAction(request *openapi.ServerProviderCreateGateAction) (map[string]string, error) {
+	if request.ConditionType == "" {
+		return nil, errors.OAuth2InvalidRequest("conditionType must be specified")
 	}
 
-	return nil
+	if request.Reason == "" {
+		return nil, errors.OAuth2InvalidRequest("reason must be specified")
+	}
+
+	if request.Message == "" {
+		return nil, errors.OAuth2InvalidRequest("message must be specified")
+	}
+
+	if request.Outputs == nil || len(*request.Outputs) == 0 {
+		//nolint:nilnil // no outputs is not an error
+		return nil, nil
+	}
+
+	for key := range *request.Outputs {
+		if _, ok := regionv1.ProviderCreateGateOutputKey(request.ConditionType, key); !ok {
+			return nil, errors.OAuth2InvalidRequest(fmt.Sprintf("output %q on %q maps to no metadata key: the condition type needs a <service>.<domain>/ prefix, and the key must be a tag's local name", key, request.ConditionType))
+		}
+	}
+
+	return *request.Outputs, nil
 }
 
 // providerCreateGateActionState resolves the reported gate state, defaulting to
@@ -1011,17 +987,67 @@ func providerCreateGateOpenDowngrade(current *regionv1.Server, conditionType str
 		state != regionv1.ServerProviderCreateGateOpen
 }
 
-func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
-	if err := validateProviderCreateGateAction(request); err != nil {
-		return err
+// providerCreateGateReport validates a gate report and returns the state and
+// outputs it reports. The state defaults to Open (satisfy). Locked tells the
+// provisioner the gate will never be satisfied, so provider-create fails
+// instead of holding; Closed reports transient progress without resolving the
+// gate. Outputs are published by the report that opens the gate: a Closed or
+// Locked gate never reaches provider create, so outputs on one would be
+// dropped silently, and are refused instead.
+func providerCreateGateReport(request *openapi.ServerProviderCreateGateAction) (regionv1.ServerProviderCreateGateState, map[string]string, error) {
+	requested, err := validateProviderCreateGateAction(request)
+	if err != nil {
+		return "", nil, err
 	}
 
-	current, err := c.GetV2Raw(ctx, serverID.String())
+	state, err := providerCreateGateActionState(request)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if requested != nil && state != regionv1.ServerProviderCreateGateOpen {
+		return "", nil, errors.OAuth2InvalidRequest("outputs may only be sent with an Open report")
+	}
+
+	return state, requested, nil
+}
+
+// providerCreateGateResolveOutputs returns the outputs a report leaves on the
+// gate. They come with the report that satisfies it and are frozen once it is
+// Open: the controller may already be in provider create with the metadata
+// they made, which is written only then, so a value added or changed later
+// would never reach the host. A report without outputs keeps the stored ones.
+func providerCreateGateResolveOutputs(current *regionv1.Server, conditionType string, requested map[string]string) (map[string]string, error) {
+	status, ok := current.ProviderCreateGateStatusRead(conditionType)
+	if !ok || status.State != regionv1.ServerProviderCreateGateOpen {
+		return requested, nil
+	}
+
+	if requested != nil && !maps.Equal(status.Outputs, requested) {
+		return nil, errors.HTTPConflict().WithValues("conditionType", conditionType, "stored", status.Outputs, "requested", requested)
+	}
+
+	return status.Outputs, nil
+}
+
+func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateAction) error {
+	target := authz.Target{
+		Endpoint:  providerCreateGatesEndpoint,
+		Operation: authz.Action(identityapi.Update, "satisfy-create-gate"),
+		Kind:      authz.Primary,
+		ObjectID:  uuid.UUID(serverID),
+	}
+
+	// Declared before the request is validated, so a refused one is recorded.
+	authz.Declare(ctx, target)
+
+	state, requested, err := providerCreateGateReport(request)
 	if err != nil {
 		return err
 	}
 
-	if err := rbac.AllowProjectScopeReader(ctx, providerCreateGatesEndpoint, identityapi.Update, current); err != nil {
+	current, err := c.getV2(ctx, serverID.String(), target)
+	if err != nil {
 		return err
 	}
 
@@ -1035,23 +1061,20 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
 	}
 
-	// state defaults to Open (satisfy). Locked tells the provisioner the gate
-	// will never be satisfied, so provider-create fails instead of holding;
-	// Closed reports transient progress without resolving the gate.
-	state, err := providerCreateGateActionState(request)
-	if err != nil {
-		return err
-	}
-
 	if providerCreateGateOpenDowngrade(current, conditionType, state) {
 		return errors.HTTPConflict()
+	}
+
+	outputs, err := providerCreateGateResolveOutputs(current, conditionType, requested)
+	if err != nil {
+		return err
 	}
 
 	changed := providerCreateGateActionChanged(current, conditionType, state, actor, request.Reason, request.Message)
 
 	if changed {
 		updated := current.DeepCopy()
-		updated.ProviderCreateGateStatusWrite(conditionType, state, actor, request.Reason, request.Message)
+		updated.ProviderCreateGateStatusWrite(conditionType, state, actor, request.Reason, request.Message, outputs)
 
 		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
 			return fmt.Errorf("%w: unable to report provider-create gate", err)
@@ -1064,13 +1087,16 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		"state", state,
 		"actor", actor,
 		"reason", request.Reason,
+		"outputs", outputs,
 		"changed", changed)
 
 	return nil
 }
 
-func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID regionids.ServerID) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
-	server, err := c.GetV2Raw(ctx, serverID.String())
+// getServerIdentityAndProviderV2 loads a server, authorizing the operation on
+// it, with what is needed to act on it in the cloud.
+func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID regionids.ServerID, target authz.Target) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {
+	server, err := c.getV2(ctx, serverID.String(), target)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -1134,8 +1160,18 @@ func (c *ClientV2) SSHKey(ctx context.Context, serverID regionids.ServerID) (*op
 	return out, nil
 }
 
+// actionTarget is the request's own operation for an action on a server.
+// Actions change the server, so they need update.
+func actionTarget(action string) authz.Target {
+	return authz.Target{
+		Endpoint:  endpoint,
+		Operation: authz.Action(identityapi.Update, action),
+		Kind:      authz.Primary,
+	}
+}
+
 func (c *ClientV2) StartV2(ctx context.Context, serverID regionids.ServerID) error {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, actionTarget("start"))
 	if err != nil {
 		return err
 	}
@@ -1144,7 +1180,7 @@ func (c *ClientV2) StartV2(ctx context.Context, serverID regionids.ServerID) err
 }
 
 func (c *ClientV2) StopV2(ctx context.Context, serverID regionids.ServerID) error {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, actionTarget("stop"))
 	if err != nil {
 		return err
 	}
@@ -1153,7 +1189,12 @@ func (c *ClientV2) StopV2(ctx context.Context, serverID regionids.ServerID) erro
 }
 
 func (c *ClientV2) RebootV2(ctx context.Context, serverID regionids.ServerID, hard bool) error {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	action := "softreboot"
+	if hard {
+		action = "hardreboot"
+	}
+
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, actionTarget(action))
 	if err != nil {
 		return err
 	}
@@ -1162,7 +1203,7 @@ func (c *ClientV2) RebootV2(ctx context.Context, serverID regionids.ServerID, ha
 }
 
 func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID regionids.ServerID, params openapi.GetApiV2ServersServerIDConsoleoutputParams) (*openapi.ConsoleOutputResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
 	if err != nil {
 		return nil, err
 	}
@@ -1171,7 +1212,7 @@ func (c *ClientV2) ConsoleOutputV2(ctx context.Context, serverID regionids.Serve
 }
 
 func (c *ClientV2) ConsoleSessionV2(ctx context.Context, serverID regionids.ServerID) (*openapi.ConsoleSessionResponse, error) {
-	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID)
+	server, identity, provider, err := c.getServerIdentityAndProviderV2(ctx, serverID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
 	if err != nil {
 		return nil, err
 	}

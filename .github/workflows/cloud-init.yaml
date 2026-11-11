@@ -1,0 +1,29 @@
+name: Cloud-init
+on:
+  pull_request:
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - ready_for_review
+    paths:
+    - pkg/provisioners/managers/server/**
+    - pkg/userdata/**
+    - Makefile
+    - go.mod
+    - go.sum
+    - .github/workflows/cloud-init.yaml
+permissions:
+  contents: read
+jobs:
+  CloudInit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    - name: Setup Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+    - name: Cloud-init Test
+      run: make test-cloud-init

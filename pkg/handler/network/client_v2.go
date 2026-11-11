@@ -31,6 +31,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	"github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -38,6 +39,7 @@ import (
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
+	handlercommon "github.com/unikorn-cloud/region/pkg/handler/common"
 	"github.com/unikorn-cloud/region/pkg/handler/identity"
 	"github.com/unikorn-cloud/region/pkg/handler/region"
 	"github.com/unikorn-cloud/region/pkg/handler/util"
@@ -152,7 +154,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 			return true
 		}
 
-		return rbac.AllowProjectScopeReader(ctx, "region:networks:v2", identityapi.Read, &resource) != nil
+		return !rbac.PermitsProjectScopeReader(ctx, endpointV2, identityapi.Read, &resource)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Network) int {
@@ -162,37 +164,44 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2NetworksPara
 	return convertV2List(result), nil
 }
 
+// endpointV2 is the permission that governs v2 networks.
+const endpointV2 = "region:networks:v2"
+
+// referencesEndpointV2 is the permission that governs references to a network,
+// which services hold to block its deletion.
+const referencesEndpointV2 = "region:networks:v2/references"
+
+// GetV2Raw loads a network the caller may read.  Other resources use it to
+// look up the network they depend on.
 func (c *Client) GetV2Raw(ctx context.Context, networkID string) (*regionv1.Network, error) {
+	return c.getV2(ctx, networkID, authz.Target{Endpoint: endpointV2, Operation: authz.Read})
+}
+
+// getV2 loads a network and authorizes the target on it.  See
+// handlercommon.GetV2.
+func (c *Client) getV2(ctx context.Context, networkID string, target authz.Target) (*regionv1.Network, error) {
 	result := &regionv1.Network{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: networkID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup network", err)
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2", identityapi.Read, result); err != nil {
+	if err := handlercommon.GetV2(ctx, c.Client, c.Namespace, networkID, target, result); err != nil {
 		return nil, err
 	}
 
-	// Only allow access to resources created by this API (temporarily).
-	v, ok := result.Labels[constants.ResourceAPIVersionLabel]
-	if !ok {
-		return nil, errors.HTTPNotFound()
-	}
-
-	version, err := constants.UnmarshalAPIVersion(v)
-	if err != nil {
-		return nil, fmt.Errorf("%w: unable to parse API version", err)
-	}
-
-	if version != 2 {
-		return nil, errors.HTTPNotFound()
-	}
-
 	return result, nil
+}
+
+// Scope returns the project a network belongs to, without authorizing the
+// caller.  A create scoped by a network checks itself in that scope before
+// the network is read, so a caller refused the network is still recorded as
+// attempting the create in that project.  See the handler README's
+// Authorization section.
+func (c *Client) Scope(ctx context.Context, networkID string) (identityids.OrganizationID, identityids.ProjectID, error) {
+	result := &regionv1.Network{}
+
+	if err := handlercommon.FetchV2(ctx, c.Client, c.Namespace, networkID, result); err != nil {
+		return identityids.OrganizationID{}, identityids.ProjectID{}, err
+	}
+
+	return result.OrganizationAndProjectID()
 }
 
 func (c *Client) GetV2(ctx context.Context, networkID regionids.NetworkID) (*openapi.NetworkV2Read, error) {
@@ -337,30 +346,30 @@ func newCreateSaga(client *Client, request *openapi.NetworkV2Create) (*createSag
 	}, nil
 }
 
-// validateRequest performs any parsing of input data that JSON schema cannot handle,
-// then generated the network.
-func (s *createSaga) validateRequest(ctx context.Context) error {
-	prefix, err := parseIPV4Prefix(s.request.Spec.Prefix)
+// validateCreateRequest performs any parsing of input data that JSON schema
+// cannot handle.  It runs before the saga so a rejected request creates nothing.
+func validateCreateRequest(r *regionv1.Region, request *openapi.NetworkV2Create) (*net.IPNet, *regionv1.NetworkReservations, error) {
+	prefix, err := parseIPV4Prefix(request.Spec.Prefix)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-
-	s.prefix = prefix
 
 	ones, _ := prefix.Mask.Size()
 
 	if ones > 24 {
-		return errors.OAuth2InvalidRequest("minimum network prefix size is /24")
+		return nil, nil, errors.OAuth2InvalidRequest("minimum network prefix size is /24")
 	}
 
-	reservations, err := generateReservations(prefix, s.request.Spec.Reservations)
+	if blocked := r.BlockedNetworkPrefix(prefix); blocked != nil {
+		return nil, nil, errors.HTTPUnprocessableContent(fmt.Sprintf("network prefix %s overlaps %s, which is reserved in this region", prefix, blocked))
+	}
+
+	reservations, err := generateReservations(prefix, request.Spec.Reservations)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	s.reservations = reservations
-
-	return nil
+	return prefix, reservations, nil
 }
 
 // createServicePricipal creates the service principal that will own all the infrastructure
@@ -448,7 +457,6 @@ func (s *createSaga) createNetwork(ctx context.Context) error {
 
 func (s *createSaga) Actions() []saga.Action {
 	return []saga.Action{
-		saga.NewAction("validate request", s.validateRequest, nil),
 		saga.NewAction("create service principal", s.createServicePricipal, s.deleteServicePricipal),
 		saga.NewAction("generate network", s.generateNetwork, nil),
 		saga.NewAction("create quota allocation", s.createAllocation, s.deleteAllocation),
@@ -457,16 +465,30 @@ func (s *createSaga) Actions() []saga.Action {
 }
 
 func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create) (*openapi.NetworkV2Read, error) {
+	target := authz.Target{
+		Endpoint:   endpointV2,
+		Operation:  authz.Create,
+		Kind:       authz.Primary,
+		ObjectName: request.Metadata.Name,
+	}
+
+	authz.Declare(ctx, target)
+
 	s, err := newCreateSaga(c, request)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, "region:networks:v2", identityapi.Create, s.organizationID, s.projectID); err != nil {
+	if err := rbac.AllowProjectScopeCreateOn(ctx, c.Identity, target, s.organizationID, s.projectID); err != nil {
 		return nil, err
 	}
 
-	if err := region.NewClient(c.ClientArgs).CheckAccess(ctx, request.Spec.RegionId); err != nil {
+	r, err := region.NewClient(c.ClientArgs).Get(ctx, s.organizationID, request.Spec.RegionId)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.prefix, s.reservations, err = validateCreateRequest(r, request); err != nil {
 		return nil, err
 	}
 
@@ -478,17 +500,13 @@ func (c *Client) CreateV2(ctx context.Context, request *openapi.NetworkV2Create)
 }
 
 func (c *Client) Update(ctx context.Context, networkID regionids.NetworkID, request *openapi.NetworkV2Update) (*openapi.NetworkV2Read, error) {
-	current, err := c.GetV2Raw(ctx, networkID.String())
+	current, err := c.getV2(ctx, networkID.String(), authz.Target{Endpoint: endpointV2, Operation: authz.Update, Kind: authz.Primary})
 	if err != nil {
 		return nil, err
 	}
 
 	organizationID, projectID, err := current.OrganizationAndProjectID()
 	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, "region:networks:v2", identityapi.Update, organizationID, projectID); err != nil {
 		return nil, err
 	}
 
@@ -509,6 +527,11 @@ func (c *Client) Update(ctx context.Context, networkID regionids.NetworkID, requ
 		return nil, err
 	}
 
+	// An omitted list keeps the stored routes; an explicit empty list clears them.
+	if request.Spec.Routes == nil {
+		required.Spec.Routes = current.Spec.Routes
+	}
+
 	if required.Annotations == nil {
 		required.Annotations = map[string]string{}
 	}
@@ -521,6 +544,10 @@ func (c *Client) Update(ctx context.Context, networkID regionids.NetworkID, requ
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
+		if kerrors.IsConflict(err) {
+			return nil, errors.HTTPConflict().WithError(err)
+		}
+
 		return nil, fmt.Errorf("%w: unable to update network", err)
 	}
 
@@ -528,17 +555,13 @@ func (c *Client) Update(ctx context.Context, networkID regionids.NetworkID, requ
 }
 
 func (c *Client) DeleteV2(ctx context.Context, networkID regionids.NetworkID) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
+	resource, err := c.getV2(ctx, networkID.String(), authz.Target{Endpoint: endpointV2, Operation: authz.Delete, Kind: authz.Primary})
 	if err != nil {
 		return err
 	}
 
 	organizationID, projectID, err := resource.OrganizationAndProjectID()
 	if err != nil {
-		return err
-	}
-
-	if err := rbac.AllowProjectScopeID(ctx, "region:networks:v2", identityapi.Delete, organizationID, projectID); err != nil {
 		return err
 	}
 
@@ -564,48 +587,72 @@ func (c *Client) DeleteV2(ctx context.Context, networkID regionids.NetworkID) er
 // ReferenceCreateV2 adds a external reference to the resource that blocks deletion
 // until it has been removed.
 func (c *Client) ReferenceCreateV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
-	if err != nil {
-		return err
-	}
+	return c.updateReference(ctx, networkID, authz.Action(identityapi.Create, "reference"), func(resource *regionv1.Network) error {
+		if resource.DeletionTimestamp != nil {
+			return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
+		}
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Create, resource); err != nil {
-		return err
-	}
+		controllerutil.AddFinalizer(resource, reference)
 
-	if resource.DeletionTimestamp != nil {
-		return errors.OAuth2InvalidRequest("unable to add reference, resource is being deleted")
-	}
-
-	if ok := controllerutil.AddFinalizer(resource, reference); !ok {
 		return nil
-	}
-
-	if err := c.Client.Update(ctx, resource); err != nil {
-		return fmt.Errorf("%w: failed to update network", err)
-	}
-
-	return nil
+	})
 }
 
 // ReferenceDeleteV2 removes an external reference from the resource.
 func (c *Client) ReferenceDeleteV2(ctx context.Context, networkID regionids.NetworkID, reference string) error {
-	resource, err := c.GetV2Raw(ctx, networkID.String())
-	if err != nil {
-		return err
-	}
+	return c.updateReference(ctx, networkID, authz.Action(identityapi.Delete, "unreference"), func(resource *regionv1.Network) error {
+		controllerutil.RemoveFinalizer(resource, reference)
 
-	if err := rbac.AllowProjectScopeReader(ctx, "region:networks:v2/references", identityapi.Delete, resource); err != nil {
-		return err
-	}
-
-	if ok := controllerutil.RemoveFinalizer(resource, reference); !ok {
 		return nil
+	})
+}
+
+// updateReference reads the network, applies mutate and writes an
+// optimistic-lock patch. The patch is always sent, even when the copy read
+// already looks right, so a write that landed between the read and the patch
+// surfaces as a conflict instead of a silent no-op. A conflict is retried
+// once against a fresh read, and a second conflict is returned as 409. A
+// network deleted under an add is a 404; a remove whose network was deleted
+// succeeds, so removal stays idempotent once deletion has started.
+//
+// A retry checks again, which the audit record counts as the same request.
+func (c *Client) updateReference(ctx context.Context, networkID regionids.NetworkID, operation authz.Operation, mutate func(*regionv1.Network) error) error {
+	target := authz.Target{
+		Endpoint:  referencesEndpointV2,
+		Operation: operation,
+		Kind:      authz.Primary,
 	}
 
-	if err := c.Client.Update(ctx, resource); err != nil {
-		return fmt.Errorf("%w: failed to update project", err)
-	}
+	return c.RetryConflictOnce(func() error {
+		current, err := c.getV2(ctx, networkID.String(), target)
+		if err != nil {
+			return err
+		}
 
-	return nil
+		updated := current.DeepCopy()
+
+		if err := mutate(updated); err != nil {
+			return err
+		}
+
+		patch := client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})
+
+		if err := c.Client.Patch(ctx, updated, patch); err != nil {
+			if kerrors.IsConflict(err) {
+				return err
+			}
+
+			if kerrors.IsNotFound(err) {
+				if operation.Access == identityapi.Delete {
+					return nil
+				}
+
+				return errors.HTTPNotFound().WithError(err)
+			}
+
+			return fmt.Errorf("%w: failed to update network", err)
+		}
+
+		return nil
+	})
 }

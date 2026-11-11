@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/rbac"
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
@@ -49,10 +50,10 @@ const (
 	// regionDoesNotExist is a valid-but-unused UUID for negative/not-found cases.
 	regionDoesNotExist = "99999999-9999-4999-a999-999999999999"
 
-	organizationID1 = "foo"
-	organizationID2 = "bar"
-	organizationID3 = "baz"
-	organizationID4 = "none"
+	organizationID1 = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa"
+	organizationID2 = "bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb"
+	organizationID3 = "cccccccc-cccc-4ccc-accc-cccccccccccc"
+	organizationID4 = "dddddddd-dddd-4ddd-addd-dddddddddddd"
 
 	testNamespace = "test"
 )
@@ -132,6 +133,10 @@ func aclFixture(t *testing.T, organizationIDs ...string) context.Context {
 	return rbac.NewContext(t.Context(), acl)
 }
 
+func oid(id string) identityids.OrganizationID {
+	return identityids.MustParseOrganizationID(id)
+}
+
 // globalACLFixture builds an ACL context for a platform admin or service with global scope.
 func globalACLFixture(t *testing.T) context.Context {
 	t.Helper()
@@ -153,7 +158,7 @@ func TestRegionFilteringSinglePrivate(t *testing.T) {
 	ctx := aclFixture(t, organizationID1)
 	regions := regionsFixture()
 
-	region.FilterRegions(ctx, regions)
+	region.FilterRegions(ctx, oid(organizationID1), regions)
 	require.Len(t, regions.Items, 2)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 	require.Equal(t, privateRegionName1, regions.Items[1].Name)
@@ -167,7 +172,7 @@ func TestRegionFilteringMultiplePrivate(t *testing.T) {
 	ctx := aclFixture(t, organizationID2)
 	regions := regionsFixture()
 
-	region.FilterRegions(ctx, regions)
+	region.FilterRegions(ctx, oid(organizationID2), regions)
 	require.Len(t, regions.Items, 3)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 	require.Equal(t, privateRegionName1, regions.Items[1].Name)
@@ -182,7 +187,7 @@ func TestRegionFilteringNoPrivate(t *testing.T) {
 	ctx := aclFixture(t, organizationID4)
 	regions := regionsFixture()
 
-	region.FilterRegions(ctx, regions)
+	region.FilterRegions(ctx, oid(organizationID4), regions)
 	require.Len(t, regions.Items, 1)
 	require.Equal(t, globalRegionName, regions.Items[0].Name)
 }
@@ -203,7 +208,7 @@ func TestRegionFilteringEmptyOrganizationAllowlist(t *testing.T) {
 		},
 	}
 
-	region.FilterRegions(ctx, regions)
+	region.FilterRegions(ctx, oid(organizationID1), regions)
 
 	require.Empty(t, regions.Items)
 }
@@ -216,7 +221,7 @@ func TestRegionFilteringGlobalScope(t *testing.T) {
 	ctx := globalACLFixture(t)
 	regions := regionsFixture()
 
-	region.FilterRegions(ctx, regions)
+	region.FilterRegions(ctx, oid(organizationID4), regions)
 	require.Len(t, regions.Items, 4)
 }
 
@@ -257,7 +262,7 @@ func TestCheckAccessGlobalRegion(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: globalRegionName},
 	})
 
-	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID4), idstest.MustParseRegionID(globalRegionName)))
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID4), oid(organizationID4), idstest.MustParseRegionID(globalRegionName)))
 }
 
 // TestCheckAccessAllowedOrg verifies an organization in the allowed list can access
@@ -277,7 +282,7 @@ func TestCheckAccessAllowedOrg(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID1), idstest.MustParseRegionID(privateRegionName1)))
+	require.NoError(t, c.CheckAccess(aclFixture(t, organizationID1), oid(organizationID1), idstest.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessDeniedOrg verifies an organization not in the allowed list receives
@@ -296,7 +301,7 @@ func TestCheckAccessDeniedOrg(t *testing.T) {
 		},
 	})
 
-	require.Error(t, c.CheckAccess(aclFixture(t, organizationID4), idstest.MustParseRegionID(privateRegionName1)))
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID4), oid(organizationID4), idstest.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessGlobalScope verifies platform admins and services with global scope
@@ -315,7 +320,7 @@ func TestCheckAccessGlobalScope(t *testing.T) {
 		},
 	})
 
-	require.NoError(t, c.CheckAccess(globalACLFixture(t), idstest.MustParseRegionID(privateRegionName1)))
+	require.NoError(t, c.CheckAccess(globalACLFixture(t), oid(organizationID4), idstest.MustParseRegionID(privateRegionName1)))
 }
 
 // TestCheckAccessMissingRegion verifies a non-existent region ID returns an error.
@@ -324,7 +329,7 @@ func TestCheckAccessMissingRegion(t *testing.T) {
 
 	c := regionClientFixture(t)
 
-	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), idstest.MustParseRegionID("44444444-4444-4444-a444-444444444444")))
+	require.Error(t, c.CheckAccess(aclFixture(t, organizationID1), oid(organizationID1), idstest.MustParseRegionID("44444444-4444-4444-a444-444444444444")))
 }
 
 // regionClientWithObjects creates a region.Client backed by a fake Kubernetes client
@@ -389,7 +394,7 @@ func TestListIncludesAccessiblePrivate(t *testing.T) {
 		simulatedRegion(privateRegionName3, organizationID3),
 	)
 
-	result, err := c.List(aclFixture(t, organizationID1))
+	result, err := c.List(aclFixture(t, organizationID1), oid(organizationID1))
 
 	require.NoError(t, err)
 	require.Len(t, result, 2)
@@ -406,7 +411,7 @@ func TestListExcludesInaccessiblePrivate(t *testing.T) {
 		simulatedRegion(privateRegionName1, organizationID1),
 	)
 
-	result, err := c.List(aclFixture(t, organizationID4))
+	result, err := c.List(aclFixture(t, organizationID4), oid(organizationID4))
 
 	require.NoError(t, err)
 	require.Len(t, result, 1)
@@ -425,7 +430,7 @@ func TestListGlobalScope(t *testing.T) {
 		simulatedRegion(privateRegionName2, organizationID2),
 	)
 
-	result, err := c.List(globalACLFixture(t))
+	result, err := c.List(globalACLFixture(t), oid(organizationID4))
 
 	require.NoError(t, err)
 	require.Len(t, result, 3)
@@ -438,7 +443,7 @@ func TestGetDetailSimulated(t *testing.T) {
 
 	c := regionClientFixture(t, simulatedRegion(globalRegionName))
 
-	result, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(globalRegionName))
+	result, err := c.GetDetail(aclFixture(t, organizationID1), oid(organizationID1), idstest.MustParseRegionID(globalRegionName))
 
 	require.NoError(t, err)
 	require.Equal(t, globalRegionName, result.Metadata.Id)
@@ -479,7 +484,7 @@ func TestGetDetailKubernetesEmbedsKubeconfig(t *testing.T) {
 
 	c := regionClientWithObjects(t, &resource, secret)
 
-	result, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(regionName))
+	result, err := c.GetDetail(aclFixture(t, organizationID1), oid(organizationID1), idstest.MustParseRegionID(regionName))
 
 	require.NoError(t, err)
 	require.Equal(t, openapi.RegionTypeKubernetes, result.Spec.Type)
@@ -519,7 +524,7 @@ func TestGetDetailKubernetesMissingKubeconfigKey(t *testing.T) {
 
 	c := regionClientWithObjects(t, &resource, secret)
 
-	_, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(regionName))
+	_, err := c.GetDetail(aclFixture(t, organizationID1), oid(organizationID1), idstest.MustParseRegionID(regionName))
 
 	require.Error(t, err)
 }
@@ -531,7 +536,7 @@ func TestGetDetailNotFound(t *testing.T) {
 
 	c := regionClientFixture(t)
 
-	_, err := c.GetDetail(aclFixture(t, organizationID1), idstest.MustParseRegionID(regionDoesNotExist))
+	_, err := c.GetDetail(aclFixture(t, organizationID1), oid(organizationID1), idstest.MustParseRegionID(regionDoesNotExist))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
@@ -545,8 +550,92 @@ func TestGetDetailAccessDenied(t *testing.T) {
 
 	c := regionClientFixture(t, simulatedRegion(privateRegionName1, organizationID1))
 
-	_, err := c.GetDetail(aclFixture(t, organizationID4), idstest.MustParseRegionID(privateRegionName1))
+	_, err := c.GetDetail(aclFixture(t, organizationID4), oid(organizationID4), idstest.MustParseRegionID(privateRegionName1))
 
 	require.Error(t, err)
 	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+}
+
+// multiOrganizationFixture is a caller in organizations 1 and 2 with a region
+// allowed only for organization 1.
+func multiOrganizationFixture(t *testing.T) (context.Context, *region.Client) {
+	t.Helper()
+
+	c := regionClientFixture(t,
+		simulatedRegion(globalRegionName),
+		simulatedRegion(privateRegionName1, organizationID1),
+	)
+
+	return aclFixture(t, organizationID1, organizationID2), c
+}
+
+// TestListScopedToRequestOrganization verifies a region allowed for one of the
+// caller's organizations is not listed under another of them.
+func TestListScopedToRequestOrganization(t *testing.T) {
+	t.Parallel()
+
+	ctx, c := multiOrganizationFixture(t)
+
+	result, err := c.List(ctx, oid(organizationID2))
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{globalRegionName}, regionIDs(result))
+
+	result, err = c.List(ctx, oid(organizationID1))
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{globalRegionName, privateRegionName1}, regionIDs(result))
+}
+
+// TestCheckAccessScopedToRequestOrganization verifies direct region access is
+// granted only via the request organization, and is a not-found otherwise.
+func TestCheckAccessScopedToRequestOrganization(t *testing.T) {
+	t.Parallel()
+
+	ctx, c := multiOrganizationFixture(t)
+	regionID := idstest.MustParseRegionID(privateRegionName1)
+
+	err := c.CheckAccess(ctx, oid(organizationID2), regionID)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+
+	_, err = c.GetDetail(ctx, oid(organizationID2), regionID)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+
+	require.NoError(t, c.CheckAccess(ctx, oid(organizationID1), regionID))
+}
+
+// TestCheckAccessAnyOrganization verifies APIs with no organization in scope
+// allow access via any of the caller's organizations.
+func TestCheckAccessAnyOrganization(t *testing.T) {
+	t.Parallel()
+
+	ctx, c := multiOrganizationFixture(t)
+
+	require.NoError(t, c.CheckAccessAnyOrganization(ctx, idstest.MustParseRegionID(privateRegionName1)))
+	require.Error(t, c.CheckAccessAnyOrganization(aclFixture(t, organizationID4), idstest.MustParseRegionID(privateRegionName1)))
+}
+
+// TestAllowedOrganizations verifies organizations that may not use a region are
+// dropped, and a region none of them may use is not found.
+func TestAllowedOrganizations(t *testing.T) {
+	t.Parallel()
+
+	ctx, c := multiOrganizationFixture(t)
+	both := []identityids.OrganizationID{oid(organizationID1), oid(organizationID2)}
+
+	result, err := c.AllowedOrganizations(ctx, idstest.MustParseRegionID(privateRegionName1), both)
+	require.NoError(t, err)
+	require.Equal(t, []identityids.OrganizationID{oid(organizationID1)}, result)
+
+	_, err = c.AllowedOrganizations(ctx, idstest.MustParseRegionID(privateRegionName1), []identityids.OrganizationID{oid(organizationID2)})
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+
+	_, err = c.AllowedOrganizations(ctx, idstest.MustParseRegionID(privateRegionName1), nil)
+	require.True(t, coreerrors.IsHTTPNotFound(err), "expected 404 not found, got: %v", err)
+
+	result, err = c.AllowedOrganizations(ctx, idstest.MustParseRegionID(globalRegionName), both)
+	require.NoError(t, err)
+	require.Equal(t, both, result)
+
+	result, err = c.AllowedOrganizations(globalACLFixture(t), idstest.MustParseRegionID(privateRegionName1), both)
+	require.NoError(t, err)
+	require.Equal(t, both, result)
 }

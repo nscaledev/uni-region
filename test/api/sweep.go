@@ -34,32 +34,23 @@ import (
 // ever removes orphans left behind by a previously killed runner.
 const StaleTestResourceTTL = 6 * time.Hour
 
-// SweepStaleTestResources deletes test-prefixed servers, file storage, and
-// networks in the configured org/project/region that are older than
-// StaleTestResourceTTL.
+// SweepStaleTestResources deletes test-prefixed servers, volumes, file storage,
+// load balancers, and networks in the configured org/project/region that are
+// older than StaleTestResourceTTL.
 //
 // A killed CI runner (timeout/OOM/SIGKILL) never runs in-process cleanup, so the
 // resources it created — and their scarce VLANs — leak until reclaimed by hand.
 // Running this before the suite means each run reclaims the previous run's
 // orphans, which is the only mechanism that survives a hard process kill.
 //
-// Servers are deleted before file storage, and file storage before networks,
-// because both dependents can block network deletion. Cleanup failures
+// Servers are deleted before file storage, and file storage and load balancers
+// before networks, because those dependents can block network deletion. Cleanup
+// failures
 // intentionally fail BeforeSuite: starting a new run while stale resources still
 // hold VLANs would compound the leak.
 func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConfig) {
-	if c.InternalAPIConfigured() {
-		servers, err := c.ListServers(ctx, config.OrgID, config.ProjectID, config.RegionID, "")
-		Expect(err).NotTo(HaveOccurred(), "sweep should list servers")
-
-		for i := range servers {
-			server := &servers[i]
-			sweepStaleTestResource("server", server.Metadata.Id, server.Metadata.Name,
-				server.Metadata.CreationTime, server.Metadata.DeletionTime,
-				func() error { return c.DeleteServer(ctx, server.Metadata.Id) },
-				func() { WaitForServerGone(c, ctx, server.Metadata.Id) })
-		}
-	}
+	sweepStaleServers(c, ctx, config, config.RegionID)
+	sweepStaleVolumes(c, ctx, config, config.RegionID)
 
 	fileStorage, err := c.ListFileStorage(ctx, config.OrgID, config.ProjectID, config.RegionID)
 	Expect(err).NotTo(HaveOccurred(), "sweep should list file storage")
@@ -72,7 +63,79 @@ func SweepStaleTestResources(c *APIClient, ctx context.Context, config *TestConf
 			func() { WaitForFileStorageGone(c, ctx, storage.Metadata.Id) })
 	}
 
-	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, config.RegionID)
+	sweepStaleLoadBalancers(c, ctx, config, config.RegionID)
+	sweepStaleNetworks(c, ctx, config, config.RegionID)
+}
+
+// SweepStaleFakeDataCenterResources removes stale Fake DC server, volume,
+// security group, and network fixtures in dependency order.
+func SweepStaleFakeDataCenterResources(c *APIClient, ctx context.Context, config *TestConfig) {
+	if config.FakeRegionID == "" {
+		return
+	}
+
+	sweepStaleServers(c, ctx, config, config.FakeRegionID)
+	sweepStaleVolumes(c, ctx, config, config.FakeRegionID)
+
+	securityGroups, err := c.ListSecurityGroups(ctx, config.OrgID, config.ProjectID, config.FakeRegionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list Fake DC security groups")
+
+	for i := range securityGroups {
+		securityGroup := &securityGroups[i]
+		sweepStaleTestResource("security group", securityGroup.Metadata.Id, securityGroup.Metadata.Name,
+			securityGroup.Metadata.CreationTime, securityGroup.Metadata.DeletionTime,
+			func() error { return c.DeleteSecurityGroup(ctx, securityGroup.Metadata.Id) },
+			func() { WaitForSecurityGroupGone(c, ctx, securityGroup.Metadata.Id) })
+	}
+
+	sweepStaleNetworks(c, ctx, config, config.FakeRegionID)
+}
+
+func sweepStaleServers(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	if !c.InternalAPIConfigured() {
+		return
+	}
+
+	servers, err := c.ListServers(ctx, config.OrgID, config.ProjectID, regionID, "")
+	Expect(err).NotTo(HaveOccurred(), "sweep should list servers")
+
+	for i := range servers {
+		server := &servers[i]
+		sweepStaleTestResource("server", server.Metadata.Id, server.Metadata.Name,
+			server.Metadata.CreationTime, server.Metadata.DeletionTime,
+			func() error { return c.DeleteServer(ctx, server.Metadata.Id) },
+			func() { WaitForServerGone(c, ctx, server.Metadata.Id) })
+	}
+}
+
+func sweepStaleVolumes(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	volumes, err := c.ListVolumes(ctx, config.OrgID, config.ProjectID, regionID, "")
+	Expect(err).NotTo(HaveOccurred(), "sweep should list volumes")
+
+	for i := range volumes {
+		volume := &volumes[i]
+		sweepStaleTestResource("volume", volume.Metadata.Id, volume.Metadata.Name,
+			volume.Metadata.CreationTime, volume.Metadata.DeletionTime,
+			func() error { return c.DeleteVolume(ctx, volume.Metadata.Id) },
+			func() { WaitForVolumeGone(c, ctx, volume.Metadata.Id) })
+	}
+}
+
+func sweepStaleLoadBalancers(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	loadBalancers, err := c.ListLoadBalancers(ctx, config.OrgID, config.ProjectID, regionID)
+	Expect(err).NotTo(HaveOccurred(), "sweep should list load balancers")
+
+	for i := range loadBalancers {
+		loadBalancer := &loadBalancers[i]
+		sweepStaleTestResource("load balancer", loadBalancer.Metadata.Id, loadBalancer.Metadata.Name,
+			loadBalancer.Metadata.CreationTime, loadBalancer.Metadata.DeletionTime,
+			func() error { return c.DeleteLoadBalancer(ctx, loadBalancer.Metadata.Id) },
+			func() { WaitForLoadBalancerGone(c, ctx, loadBalancer.Metadata.Id) })
+	}
+}
+
+func sweepStaleNetworks(c *APIClient, ctx context.Context, config *TestConfig, regionID string) {
+	networks, err := c.ListNetworks(ctx, config.OrgID, config.ProjectID, regionID)
 	Expect(err).NotTo(HaveOccurred(), "sweep should list networks")
 
 	for i := range networks {

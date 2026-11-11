@@ -85,7 +85,7 @@ func withProviderCreateGate(state regionv1.ServerProviderCreateGateState) func(*
 		}
 
 		if state != "" {
-			server.ProviderCreateGateStatusWrite(testProviderGate, state, testProviderActor, testProviderReason, testProviderMessage)
+			server.ProviderCreateGateStatusWrite(testProviderGate, state, testProviderActor, testProviderReason, testProviderMessage, nil)
 		}
 	}
 }
@@ -95,7 +95,7 @@ func withLockedProviderCreateGate() func(*regionv1.Server) {
 		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
 			{ConditionType: testProviderGate},
 		}
-		server.ProviderCreateGateStatusWrite(testProviderGate, regionv1.ServerProviderCreateGateLocked, testProviderActor, "NoPKeyAvailable", "p_key pool exhausted")
+		server.ProviderCreateGateStatusWrite(testProviderGate, regionv1.ServerProviderCreateGateLocked, testProviderActor, "NoPKeyAvailable", "p_key pool exhausted", nil)
 	}
 }
 

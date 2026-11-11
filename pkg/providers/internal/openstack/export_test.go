@@ -114,9 +114,6 @@ var ImageTags = imageTags
 var CreateImageMetadata = createImageMetadata
 
 //nolint:gochecknoglobals
-var MetadataKey = metadataKey
-
-//nolint:gochecknoglobals
 var ServerForCreate = serverForCreate
 
 func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) (*servers.Server, error) {
@@ -156,11 +153,16 @@ func NewTestServerCreatePlacementPreflight(config *unikornv1.PlacementPreflightS
 }
 
 func NewTestComputeClient(endpoint string) *ComputeClient {
+	return NewTestComputeClientWithOptions(endpoint, nil)
+}
+
+func NewTestComputeClientWithOptions(endpoint string, options *unikornv1.RegionOpenstackComputeSpec) *ComputeClient {
 	return &ComputeClient{
 		client: &gophercloud.ServiceClient{
 			ProviderClient: &gophercloud.ProviderClient{},
 			Endpoint:       endpoint,
 		},
+		options:     options,
 		flavorCache: cache.New[[]flavors.Flavor](time.Hour),
 	}
 }
@@ -173,6 +175,25 @@ func NewTestBlockStorageClient(endpoint string, options *unikornv1.RegionOpensta
 		},
 		options:         options,
 		volumeTypeCache: cache.New[[]volumetypes.VolumeType](time.Hour),
+	}
+}
+
+func NewTestImageClient(endpoint string, options *unikornv1.RegionOpenstackImageSpec) *ImageClient {
+	return &ImageClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
+		options: options,
+	}
+}
+
+func NewTestNetworkClient(endpoint string) *NetworkClient {
+	return &NetworkClient{
+		client: &gophercloud.ServiceClient{
+			ProviderClient: &gophercloud.ProviderClient{},
+			Endpoint:       endpoint,
+		},
 	}
 }
 
@@ -263,6 +284,10 @@ func ReconcileVolume(ctx context.Context, client VolumeInterface, identity *unik
 	return reconcileVolume(ctx, client, identity, volume)
 }
 
+func UpdateVolumeStateWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
+	return updateVolumeState(ctx, client, volume)
+}
+
 func DeleteVolumeWithClient(ctx context.Context, client VolumeInterface, volume *unikornv1.Volume) error {
 	return deleteVolume(ctx, client, volume)
 }
@@ -324,6 +349,18 @@ func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInt
 // copy-back — pinning the production interleaving of those steps.
 func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerInterface, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) error {
 	return p.createServer(ctx, networking, compute, server, options, keyName, nil)
+}
+
+func ServerDeleteHeld(openstackServer *servers.Server) bool {
+	return serverDeleteHeld(openstackServer)
+}
+
+func HoldServerDelete(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server) error {
+	return holdServerDelete(ctx, server, openstackServer)
+}
+
+func ReleaseServerDelete(server *unikornv1.Server) {
+	releaseServerDelete(server)
 }
 
 func AttachVolumeWithClients(ctx context.Context, compute ComputeInterface, blockStorage VolumeInterface, server *unikornv1.Server, volume *unikornv1.Volume) (*types.ServerVolumeAttachment, error) {

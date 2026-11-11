@@ -116,6 +116,46 @@ So `v2` handlers often recover org/project context from:
 - or a dependent resource that already carries the binding, such as
   `server -> network`
 
+## Authorization
+
+Every write authorizes its own operation once, and that decision is also its
+audit record: identity's audit middleware builds a write's record from the
+decision marked primary, and never from the URL. See identity's
+[audit README](https://github.com/nscaledev/uni-identity/blob/main/pkg/middleware/audit/README.md).
+
+- `common.GetV2` is how a `v2` resource is loaded. It takes an `authz.Target`
+  (permission endpoint, operation, primary or not), fetches the resource, checks
+  it is a `v2` resource, then authorizes the target against the scope in its
+  labels, naming its ID and name. A primary target is declared before the fetch,
+  so a `404` is still recorded as what was attempted. Each package wraps it as
+  `getV2`; `GetV2Raw` is the read used for reads and dependency lookups. File
+  storage has no API version label, so it has its own copy.
+- A write checks only its own operation. Writes no longer also need read.
+  `v2` security group update and `v1` server update need update; they checked
+  delete and create.
+- Actions on a server (start, stop, soft reboot, hard reboot, snapshot) need
+  update, with the action as the record's verb. Snapshot also needs
+  `region:images` create in the server's organization, as a supporting check.
+- Network references and provider-create gates keep their own permission
+  endpoints (`region:networks:v2/references`,
+  `region:servers:v2/provider-create-gates`) and are recorded under them. They
+  no longer also need read on the network or server.
+- A create declares itself first, so a request that fails before its check,
+  such as on a bad organization ID, a missing network or a missing parent, is
+  still recorded as a create. A create scoped
+  by a network (server, security group, load balancer, volume) reads the
+  network's project without a check (`network.Client.Scope`), checks the create
+  there, and only then reads the network. A caller refused the network is so
+  recorded as attempting the create in that project.
+- File storage snapshot create and delete answer a refusal with `404`, as for
+  a parent the caller cannot see, so their records say `404` too.
+- A check repeated by `RetryConflictOnce` is the same request; the record is
+  one.
+- `v1` handlers check before anything is fetched, so the record names the
+  object by its path ID; a create's name comes from the response.
+- List filters and the region ACL use the `Permits*` predicates, which record
+  nothing.
+
 ### Selector-Prefiltered Lists
 
 `v2` list handlers typically:
@@ -238,7 +278,8 @@ but we do not have transactions.”
 - [`sshcertificateauthority`](./sshcertificateauthority/README.md): project-scoped
   SSH CA records with explicit reference-blocked deletion
 - [`storage`](./storage/README.md): quota-heavy stateful resource with saga-backed
-  create/update and attachment validation
+  create/update and attachment validation, plus nested Manual Snapshot creation,
+  deletion, and reads
 - [`volume`](./volume/README.md): Network-scoped block Volume CRUD with immutable
   class/size, observed-size projection, and attached-delete blocking
 - `VolumeClass`: read-only Region-scoped provider inventory. The v2 list handler
@@ -259,6 +300,15 @@ but we do not have transactions.”
   - API-version gating
 - Because most resources live in one namespace, label discipline is critical.
   Scope, visibility, ancestry, and migration state all depend on it.
+- Reads go straight to the API server, so a read cannot miss a write that has
+  been acknowledged. A write can still land in the window between a guard's
+  read and the write it guards, so guarded writes must not trust the copy they
+  read: `v2` Security Group, Volume and SSH CA deletes carry UID and
+  resource-version preconditions, and a conflict re-runs the guard against a
+  fresh read and retries once, returning `409` only if that conflicts too.
+  Network reference updates always write an optimistic-lock patch, so a
+  concurrent change surfaces as a conflict instead of a silent no-op, and retry
+  the same way.
 - Cross-object invariants are only best-effort. Owner references, finalizers,
   allocation records, and saga compensation improve consistency, but they do not
   turn the system into an ACID store.
@@ -276,8 +326,7 @@ but we do not have transactions.”
   status or older API/storage shapes as those compatibility bridges disappear.
 - Revisit places where the current `v2` model still hides an implicit resource
   or service-principal concept that would be cleaner as an explicit API object.
-- Audit `v2` mutation RBAC verbs for copy/paste drift. Some update paths appear
-  to check `Delete` where `Update` is more likely to be the intended action.
+
 
 ## Related Documentation
 

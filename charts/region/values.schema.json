@@ -179,6 +179,12 @@
               "simulated"
             ]
           },
+          "blockedNetworkPrefixes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "kubernetes": {
             "type": "object",
             "required": [
@@ -426,6 +432,9 @@
                         "type": "string"
                       }
                     }
+                  },
+                  "includeCommunity": {
+                    "type": "boolean"
                   }
                 }
               },

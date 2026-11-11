@@ -23,6 +23,7 @@ import (
 	goerrors "errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
@@ -39,6 +40,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
@@ -59,23 +61,21 @@ func NewClient(clientArgs common.ClientArgs) *Client {
 	}
 }
 
-// checkAccess applies the region ACL to an already-fetched region object.
-// It returns HTTPNotFound rather than HTTPForbidden to avoid leaking information
-// about the existence of regions the caller cannot see.
-func checkAccess(ctx context.Context, resource *unikornv1.Region) error {
+// checkAccess applies the region ACL to an already-fetched region object on
+// behalf of the given organizations, which MUST be ones the caller acts for: the
+// RBAC-checked request organization, or the caller's own organizations where no
+// organization is in scope. It returns HTTPNotFound rather than HTTPForbidden to avoid leaking
+// information about the existence of regions the caller cannot see.
+func checkAccess(ctx context.Context, resource *unikornv1.Region, organizationIDs []string) error {
 	// Regions without security constraints are free to use.
 	if resource.Spec.Security == nil || resource.Spec.Security.Organizations == nil {
 		return nil
 	}
 
 	// Anyone with super cow powers can access everything (platform admin, services).
-	if rbac.AllowGlobalScope(ctx, "region:regions", identityapi.Read) == nil {
+	if rbac.PermitsGlobalScope(ctx, "region:regions", identityapi.Read) {
 		return nil
 	}
-
-	// Under impersonation the ACL is scoped to the user's organizations, so
-	// OrganizationIDs returns only what the user can see.
-	organizationIDs := rbac.OrganizationIDs(ctx)
 
 	for _, organization := range resource.Spec.Security.Organizations {
 		if slices.Contains(organizationIDs, organization.ID) {
@@ -100,40 +100,78 @@ func (c *Client) getRegion(ctx context.Context, regionID regionids.RegionID) (*u
 	return resource, nil
 }
 
-// CheckAccess fetches the region by ID and verifies the caller's organization is
-// allowed to use it.  Returns HTTPNotFound for both missing and inaccessible regions
-// to avoid confirming region existence to unauthorized callers.
-func (c *Client) CheckAccess(ctx context.Context, regionID regionids.RegionID) error {
+// checkRegionAccess fetches the region and applies checkAccess to it.
+func (c *Client) checkRegionAccess(ctx context.Context, regionID regionids.RegionID, organizationIDs []string) (*unikornv1.Region, error) {
 	resource, err := c.getRegion(ctx, regionID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return checkAccess(ctx, resource)
+	if err := checkAccess(ctx, resource, organizationIDs); err != nil {
+		return nil, err
+	}
+
+	return resource, nil
 }
 
-func FilterRegions(ctx context.Context, regions *unikornv1.RegionList) {
+// CheckAccess fetches the region by ID and verifies the organization is allowed
+// to use it. Returns HTTPNotFound for both missing and inaccessible regions
+// to avoid confirming region existence to unauthorized callers.
+func (c *Client) CheckAccess(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) error {
+	_, err := c.Get(ctx, organizationID, regionID)
+
+	return err
+}
+
+// Get is CheckAccess for callers that also need the region's configuration.
+func (c *Client) Get(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) (*unikornv1.Region, error) {
+	return c.checkRegionAccess(ctx, regionID, []string{organizationID.String()})
+}
+
+// CheckAccessAnyOrganization is CheckAccess for APIs with no organization in
+// scope, allowing access via any organization the caller belongs to.
+func (c *Client) CheckAccessAnyOrganization(ctx context.Context, regionID regionids.RegionID) error {
+	_, err := c.checkRegionAccess(ctx, regionID, rbac.OrganizationIDs(ctx))
+
+	return err
+}
+
+// AllowedOrganizations returns those of the organizations, which the caller MUST
+// already be authorized for, that may use the region. Returns HTTPNotFound if
+// the region is missing or none of them may use it.
+func (c *Client) AllowedOrganizations(ctx context.Context, regionID regionids.RegionID, organizationIDs []identityids.OrganizationID) ([]identityids.OrganizationID, error) {
+	resource, err := c.checkRegionAccess(ctx, regionID, types.OrganizationIDStrings(organizationIDs))
+	if err != nil {
+		return nil, err
+	}
+
+	return slices.DeleteFunc(slices.Clone(organizationIDs), func(organizationID identityids.OrganizationID) bool {
+		return checkAccess(ctx, resource, []string{organizationID.String()}) != nil
+	}), nil
+}
+
+func filterRegions(ctx context.Context, regions *unikornv1.RegionList, organizationIDs []string) {
 	regions.Items = slices.DeleteFunc(regions.Items, func(region unikornv1.Region) bool {
-		return checkAccess(ctx, &region) != nil
+		return checkAccess(ctx, &region, organizationIDs) != nil
 	})
 }
 
 // listRegions returns Regions in the configured namespace that are visible to
-// the caller.
-func (c *Client) listRegions(ctx context.Context) (*unikornv1.RegionList, error) {
+// the given organizations.
+func (c *Client) listRegions(ctx context.Context, organizationIDs []string) (*unikornv1.RegionList, error) {
 	regions := &unikornv1.RegionList{}
 
 	if err := c.Client.List(ctx, regions, &client.ListOptions{Namespace: c.Namespace}); err != nil {
 		return nil, err
 	}
 
-	FilterRegions(ctx, regions)
+	filterRegions(ctx, regions, organizationIDs)
 
 	return regions, nil
 }
 
-func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
-	regions, err := c.listRegions(ctx)
+func (c *Client) List(ctx context.Context, organizationID identityids.OrganizationID) (openapi.Regions, error) {
+	regions, err := c.listRegions(ctx, []string{organizationID.String()})
 	if err != nil {
 		return nil, err
 	}
@@ -141,18 +179,9 @@ func (c *Client) List(ctx context.Context) (openapi.Regions, error) {
 	return convertList(regions), nil
 }
 
-func (c *Client) GetDetail(ctx context.Context, regionID regionids.RegionID) (*openapi.RegionDetailRead, error) {
-	result := &unikornv1.Region{}
-
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: regionID.String()}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup region", err)
-	}
-
-	if err := checkAccess(ctx, result); err != nil {
+func (c *Client) GetDetail(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) (*openapi.RegionDetailRead, error) {
+	result, err := c.Get(ctx, organizationID, regionID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -160,7 +189,7 @@ func (c *Client) GetDetail(ctx context.Context, regionID regionids.RegionID) (*o
 }
 
 func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) (openapi.Flavors, error) {
-	if err := c.CheckAccess(ctx, regionID); err != nil {
+	if err := c.CheckAccess(ctx, organizationID, regionID); err != nil {
 		return nil, err
 	}
 
@@ -191,10 +220,25 @@ func (c *Client) ListFlavors(ctx context.Context, organizationID identityids.Org
 	return conversion.ConvertFlavors(result), nil
 }
 
-const volumeClassReadEndpoint = "region:volumeclasses:v2"
+const (
+	volumeClassReadEndpoint     = "region:volumeclasses:v2"
+	volumeClassDiscoveryTimeout = 5 * time.Second
+)
+
+type volumeClassDiscoveryOptions struct {
+	timeout time.Duration
+}
+
+type volumeClassDiscoveryOption func(*volumeClassDiscoveryOptions)
+
+func withTimeout(timeout time.Duration) volumeClassDiscoveryOption {
+	return func(options *volumeClassDiscoveryOptions) {
+		options.timeout = timeout
+	}
+}
 
 func hasVolumeClassReadAccess(ctx context.Context) bool {
-	if rbac.AllowGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) == nil {
+	if rbac.PermitsGlobalScope(ctx, volumeClassReadEndpoint, identityapi.Read) {
 		return true
 	}
 
@@ -204,7 +248,7 @@ func hasVolumeClassReadAccess(ctx context.Context) bool {
 			continue
 		}
 
-		if rbac.AllowOrganizationScopeID(ctx, volumeClassReadEndpoint, identityapi.Read, organizationID) == nil {
+		if rbac.PermitsOrganizationScopeID(ctx, volumeClassReadEndpoint, identityapi.Read, organizationID) {
 			return true
 		}
 	}
@@ -212,8 +256,34 @@ func hasVolumeClassReadAccess(ctx context.Context) bool {
 	return false
 }
 
+func (c *Client) listRegionVolumeClasses(ctx context.Context, regionID string, options ...volumeClassDiscoveryOption) (types.VolumeClassList, error) {
+	config := volumeClassDiscoveryOptions{timeout: volumeClassDiscoveryTimeout}
+	for _, option := range options {
+		option(&config)
+	}
+
+	discoveryCtx, cancel := context.WithTimeout(ctx, config.timeout)
+	defer cancel()
+
+	provider, err := c.Providers.LookupCommon(regionID)
+	if err != nil {
+		return nil, providers.ProviderToServerError(err)
+	}
+
+	volumeClasses, err := provider.VolumeClasses(discoveryCtx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to list volume classes", err)
+	}
+
+	return volumeClasses, nil
+}
+
 func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2VolumeclassesParams) (openapi.VolumeClassListV2Read, error) {
-	regions, err := c.listRegions(ctx)
+	return c.listVolumeClasses(ctx, params)
+}
+
+func (c *Client) listVolumeClasses(ctx context.Context, params openapi.GetApiV2VolumeclassesParams, options ...volumeClassDiscoveryOption) (openapi.VolumeClassListV2Read, error) {
+	regions, err := c.listRegions(ctx, rbac.OrganizationIDs(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -232,14 +302,20 @@ func (c *Client) ListVolumeClasses(ctx context.Context, params openapi.GetApiV2V
 			continue
 		}
 
-		provider, err := c.Providers.LookupCommon(region.Name)
-		if err != nil {
-			return nil, providers.ProviderToServerError(err)
-		}
+		volumeClasses, err := c.listRegionVolumeClasses(ctx, region.Name, options...)
 
-		volumeClasses, err := provider.VolumeClasses(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%w: failed to list volume classes", err)
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+
+			if params.RegionID == nil {
+				log.FromContext(ctx).Error(err, "volume class discovery failed, skipping region", "region", region.Name)
+
+				continue
+			}
+
+			return nil, err
 		}
 
 		regionID, err := regionids.ParseRegionID(region.Name)
@@ -280,8 +356,8 @@ func convertExternalNetworks(in types.ExternalNetworks) openapi.ExternalNetworks
 	return out
 }
 
-func (c *Client) ListExternalNetworks(ctx context.Context, regionID regionids.RegionID) (openapi.ExternalNetworks, error) {
-	if err := c.CheckAccess(ctx, regionID); err != nil {
+func (c *Client) ListExternalNetworks(ctx context.Context, organizationID identityids.OrganizationID, regionID regionids.RegionID) (openapi.ExternalNetworks, error) {
+	if err := c.CheckAccess(ctx, organizationID, regionID); err != nil {
 		return nil, err
 	}
 

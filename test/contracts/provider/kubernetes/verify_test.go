@@ -156,40 +156,8 @@ var _ = Describe("Region Provider Verification", func() {
 	})
 
 	Describe("Verifying pacts from Pact Broker", func() {
-		It("should verify all consumer contracts", func() {
-			// Configure the verifier to fetch pacts from the broker
-			verifier := provider.NewVerifier()
-
-			// Create state handlers map
-			// we create the state handlers map here so we can use it in the verifier tests.
-			stateHandlers := createStateHandlers(ctx, stateManager)
-
-			// Build base selectors for normal CI verification
-			selectors := []provider.Selector{
-				&provider.ConsumerVersionSelector{
-					Consumer:   "uni-kubernetes",
-					MainBranch: true,
-				},
-				&provider.ConsumerVersionSelector{
-					Consumer:       "uni-kubernetes",
-					MatchingBranch: true,
-				},
-			}
-
-			// Add explicit branch selector only for webhook-triggered verification
-			consumerBranch := strings.TrimSpace(os.Getenv("CONSUMER_BRANCH"))
-			if consumerBranch != "" {
-				selectors = append(selectors, &provider.ConsumerVersionSelector{
-					Consumer: "uni-kubernetes",
-					Branch:   consumerBranch,
-				})
-				fmt.Printf("Webhook mode: Including explicit branch selector for consumer branch '%s'\n", consumerBranch)
-			} else {
-				fmt.Printf("Normal mode: Using MainBranch and MatchingBranch selectors only\n")
-			}
-
-			// Run verification
-			err := verifier.VerifyProvider(testingT, provider.VerifyRequest{
+		verifyBroker := func(selectors []provider.Selector, enablePending bool) error {
+			return provider.NewVerifier().VerifyProvider(testingT, provider.VerifyRequest{
 				ProviderBaseURL: serverURL,
 				Provider:        "uni-region",
 				BrokerURL:       pactBrokerURL,
@@ -200,11 +168,64 @@ var _ = Describe("Region Provider Verification", func() {
 				ProviderVersion:            getProviderVersion(),
 				ProviderBranch:             getProviderBranch(),
 				ConsumerVersionSelectors:   selectors,
-				EnablePending:              true,
-				StateHandlers:              stateHandlers,
+				EnablePending:              enablePending,
+				StateHandlers:              createStateHandlers(ctx, stateManager),
 			})
+		}
 
-			Expect(err).NotTo(HaveOccurred(), "Provider verification should succeed")
+		It("should verify all consumer contracts", func() {
+			// Build base selectors for normal CI verification
+			selectors := []provider.Selector{
+				&provider.ConsumerVersionSelector{
+					Consumer:   "uni-kubernetes",
+					MainBranch: true,
+				},
+				&provider.ConsumerVersionSelector{
+					Consumer:       "uni-kubernetes",
+					MatchingBranch: true,
+				},
+				// Envir's main stays pending: Envir's can-i-deploy runs after its CI (workflow_run) and
+				// doesn't gate Envir merges, so a strict main would let an Envir merge turn this CI red.
+				&provider.ConsumerVersionSelector{
+					Consumer:   "nscale-environments",
+					MainBranch: true,
+				},
+				&provider.ConsumerVersionSelector{
+					Consumer:       "nscale-environments",
+					MatchingBranch: true,
+				},
+			}
+
+			// Add explicit branch selector only for webhook-triggered verification
+			consumerBranch := strings.TrimSpace(os.Getenv("CONSUMER_BRANCH"))
+			if consumerBranch != "" {
+				for _, consumer := range []string{"uni-kubernetes", "nscale-environments"} {
+					selectors = append(selectors, &provider.ConsumerVersionSelector{
+						Consumer: consumer,
+						Branch:   consumerBranch,
+					})
+				}
+				fmt.Printf("Webhook mode: Including explicit branch selector for consumer branch '%s'\n", consumerBranch)
+			} else {
+				fmt.Printf("Normal mode: Using MainBranch and MatchingBranch selectors only\n")
+			}
+
+			Expect(verifyBroker(selectors, true)).To(Succeed(), "Provider verification should succeed")
+		})
+
+		// Pending pacts never fail the build, so a broken interaction would stay green. Envir's released pacts
+		// are what customers run, so they are verified without pending: a failure here means this uni-region
+		// change breaks a supported Envir release. Envir's main and branches stay in the pending run above.
+		// FailIfNoPactsFound stays off: until AIPLAT-903 records releases there is nothing to select.
+		It("should verify Envir's released contracts without pending", func() {
+			Expect(verifyBroker([]provider.Selector{
+				// Envir releases recorded in the broker and still supported (N, N-1, N-2 once AIPLAT-903
+				// records them).
+				&provider.ConsumerVersionSelector{
+					Consumer:           "nscale-environments",
+					DeployedOrReleased: true,
+				},
+			}, false)).To(Succeed(), "Envir's contracts must verify")
 		})
 	})
 
@@ -234,7 +255,7 @@ var _ = Describe("Region Provider Verification", func() {
 })
 
 // createStateHandlers creates the state handlers map for pact verification.
-// Registers state handlers for uni-kubernetes consumer contract tests.
+// Registers state handlers for the uni-kubernetes and nscale-environments consumer contract tests.
 func createStateHandlers(ctx context.Context, stateManager *commonstate.StateManager) models.StateHandlers {
 	return models.StateHandlers{
 		// State handler for "region exists"
@@ -297,6 +318,21 @@ func createStateHandlers(ctx context.Context, stateManager *commonstate.StateMan
 		commonstate.StateRegionHasExternalNetworks: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
 			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
 			err := stateManager.HandleRegionHasExternalNetworksState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		// State handlers for the nscale-environments network reads
+		commonstate.StateNetworkExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleNetworkExistsInProjectState(ctx, setup, state.Parameters)
+
+			return nil, err
+		},
+
+		commonstate.StateNoNetworkExistsInProject: func(setup bool, state models.ProviderState) (models.ProviderStateResponse, error) {
+			fmt.Printf("State: %s, Parameters: %+v\n", state.Name, state.Parameters)
+			err := stateManager.HandleNoNetworkExistsInProjectState(ctx, setup, state.Parameters)
 
 			return nil, err
 		},

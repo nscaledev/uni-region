@@ -23,9 +23,6 @@ spec:
         {{- range $i, $arg := .Values.serverController.extraFlags }}
         - {{ $arg }}
         {{- end }}
-        env:
-        - name: OTEL_SERVICE_NAME
-          value: {{ .Release.Name }}-server-controller
         ports:
         - name: http
           containerPort: 6080

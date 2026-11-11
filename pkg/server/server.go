@@ -26,12 +26,14 @@ import (
 
 	chi "github.com/go-chi/chi/v5"
 	"github.com/spf13/pflag"
+	"go.opentelemetry.io/otel"
 
 	coreclient "github.com/unikorn-cloud/core/pkg/client"
 	"github.com/unikorn-cloud/core/pkg/openapi/helpers"
 	"github.com/unikorn-cloud/core/pkg/options"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/cors"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/logging"
+	metricsmiddleware "github.com/unikorn-cloud/core/pkg/server/middleware/metrics"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/opentelemetry"
 	"github.com/unikorn-cloud/core/pkg/server/middleware/routeresolver"
 	identityclient "github.com/unikorn-cloud/identity/pkg/client"
@@ -68,11 +70,19 @@ type Server struct {
 
 	// OpenAPIOptions are for OpenAPI processing.
 	OpenAPIOptions openapimiddleware.Options
+
+	// AuditOptions optionally ship audit records to an external collector,
+	// in addition to the structured log, which is always emitted.
+	AuditOptions *audit.Options
 }
 
 func (s *Server) AddFlags(flags *pflag.FlagSet) {
 	if s.IdentityOptions == nil {
 		s.IdentityOptions = identityclient.NewOptions()
+	}
+
+	if s.AuditOptions == nil {
+		s.AuditOptions = audit.NewOptions()
 	}
 
 	s.CoreOptions.AddFlags(flags)
@@ -82,17 +92,22 @@ func (s *Server) AddFlags(flags *pflag.FlagSet) {
 	s.IdentityOptions.AddFlags(flags)
 	s.CORSOptions.AddFlags(flags)
 	s.OpenAPIOptions.AddFlags(flags)
+	s.AuditOptions.AddFlags(flags)
 }
 
 func (s *Server) SetupLogging() {
 	s.CoreOptions.SetupLogging()
 }
 
-// SetupOpenTelemetry adds a span processor that will print root spans to the
-// logs by default, and optionally ship the spans to an OTLP listener.
+// SetupOpenTelemetry optionally ships spans to an OTLP listener, and exports
+// metrics for scraping.
 // TODO: move config into an otel specific options struct.
 func (s *Server) SetupOpenTelemetry(ctx context.Context) error {
-	return s.CoreOptions.SetupOpenTelemetry(ctx)
+	if err := s.CoreOptions.SetupTracing(ctx, constants.Service); err != nil {
+		return err
+	}
+
+	return s.CoreOptions.SetupMetrics(constants.Service)
 }
 
 func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Server, error) {
@@ -117,6 +132,12 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 		}
 	}()
 
+	go func() {
+		if err := s.CoreOptions.ServeMetrics(ctx, ":8080"); err != nil {
+			fmt.Println(err)
+		}
+	}()
+
 	schema, err := helpers.NewSchema(openapi.GetSwagger)
 	if err != nil {
 		return nil, err
@@ -130,15 +151,24 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 	//   establishes a trace ID that is used to correlate logs with user issues.
 	// * Logging ensures at least all errors are captured by logging telemetry and we
 	//   can trigger alerts based on them.
+	// * Request metrics must precede the route resolver, which answers unresolved
+	//   requests without calling the next handler.
 	// * Route resolver provides routing and OpenAPI information to child middlewares.
 	// * CORS emulates OPTIONS endpoints based on OpenAPI (requires route resolver).
 	opentelemetry := opentelemetry.New(constants.Application, constants.Version)
 	logging := logging.New()
+
+	requestMetrics, err := metricsmiddleware.New(otel.Meter(constants.Application))
+	if err != nil {
+		return nil, err
+	}
+
 	routeresolver := routeresolver.New(schema)
 	cors := cors.New(&s.CORSOptions)
 
 	router.Use(opentelemetry.Middleware)
 	router.Use(logging.Middleware)
+	router.Use(requestMetrics.Middleware)
 	router.Use(routeresolver.Middleware)
 	router.Use(cors.Middleware)
 	router.NotFound(http.HandlerFunc(handler.NotFound))
@@ -150,7 +180,15 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 	}
 
 	validator := openapimiddleware.NewValidator(&s.OpenAPIOptions, authorizer)
-	audit := audit.New(constants.Application, constants.Version)
+
+	// A configured collector whose credentials cannot be read at startup fails
+	// the process rather than silently dropping audit records for its lifetime.
+	auditSinks, err := auditSinks(ctx, client, s.AuditOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	audit := audit.New(constants.Application, constants.Version, auditSinks...)
 
 	// Middleware specified here is applied to all requests post-routing.
 	// NOTE: these are applied in reverse order!!
@@ -196,4 +234,20 @@ func (s *Server) GetServer(ctx context.Context, client client.Client) (*http.Ser
 	}
 
 	return server, nil
+}
+
+// auditSinks builds the optional audit sinks.  Nothing configured means no
+// sinks, which is the default and leaves the structured log as the only audit
+// output.
+func auditSinks(ctx context.Context, client client.Client, options *audit.Options) ([]audit.Sink, error) {
+	if options == nil || !options.Enabled() {
+		return nil, nil
+	}
+
+	sink, err := audit.NewHTTPSink(ctx, client, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return []audit.Sink{sink}, nil
 }

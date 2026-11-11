@@ -29,6 +29,7 @@ import (
 	"github.com/unikorn-cloud/core/pkg/server/errors"
 	"github.com/unikorn-cloud/core/pkg/server/saga"
 	coreutil "github.com/unikorn-cloud/core/pkg/server/util"
+	"github.com/unikorn-cloud/identity/pkg/authz"
 	identitycommon "github.com/unikorn-cloud/identity/pkg/handler/common"
 	identityids "github.com/unikorn-cloud/identity/pkg/ids"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
@@ -95,6 +96,10 @@ func convertV2(in *regionv1.Volume) (*openapi.VolumeV2Read, error) {
 		out.Status.SizeGiB = ptr.To(sizeGiB(*in.Status.Size))
 	}
 
+	if in.Status.AttachedAt != nil {
+		out.Status.AttachedAt = &in.Status.AttachedAt.Time
+	}
+
 	return out, nil
 }
 
@@ -151,7 +156,7 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2VolumesParam
 	}
 
 	result.Items = slices.DeleteFunc(result.Items, func(resource regionv1.Volume) bool {
-		return !resource.Spec.Tags.ContainsAll(tagSelector) || rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Read, &resource) != nil
+		return !resource.Spec.Tags.ContainsAll(tagSelector) || !rbac.PermitsProjectScopeReader(ctx, endpoint, identityapi.Read, &resource)
 	})
 
 	slices.SortStableFunc(result.Items, func(a, b regionv1.Volume) int {
@@ -164,25 +169,19 @@ func (c *Client) ListV2(ctx context.Context, params openapi.GetApiV2VolumesParam
 	return convertV2List(result)
 }
 
-// GetV2Raw retrieves and authorizes a v2 Volume.
+// GetV2Raw loads a v2 Volume the caller may read.  Servers use it to look up
+// the volumes they attach.
 func (c *Client) GetV2Raw(ctx context.Context, volumeID string) (*regionv1.Volume, error) {
+	return c.getV2(ctx, volumeID, authz.Target{Endpoint: endpoint, Operation: authz.Read})
+}
+
+// getV2 loads a v2 Volume and authorizes the target on it.  See
+// common.GetV2.
+func (c *Client) getV2(ctx context.Context, volumeID string, target authz.Target) (*regionv1.Volume, error) {
 	result := &regionv1.Volume{}
 
-	if err := c.Client.Get(ctx, client.ObjectKey{Namespace: c.Namespace, Name: volumeID}, result); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup volume", err)
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Read, result); err != nil {
+	if err := common.GetV2(ctx, c.Client, c.Namespace, volumeID, target, result); err != nil {
 		return nil, err
-	}
-
-	version, err := constants.UnmarshalAPIVersion(result.Labels[constants.ResourceAPIVersionLabel])
-	if err != nil || version != 2 {
-		return nil, errors.HTTPNotFound()
 	}
 
 	return result, nil
@@ -271,8 +270,8 @@ type createSaga struct {
 
 func (s *createSaga) createAllocation(ctx context.Context) error {
 	return s.client.CreateAllocation(ctx, s.volume, identityapi.ResourceAllocationList{{
-		Kind:      "volumes",
-		Committed: int(s.volume.Spec.Size.Value()),
+		Kind:      "volume",
+		Committed: int(sizeGiB(s.volume.Spec.Size)),
 	}})
 }
 
@@ -297,22 +296,35 @@ func (s *createSaga) Actions() []saga.Action {
 
 // CreateV2 creates a v2 Volume from Network-derived scope.
 func (c *Client) CreateV2(ctx context.Context, request *openapi.VolumeV2Create) (*openapi.VolumeV2Read, error) {
-	network, err := network.New(c.ClientArgs).GetV2Raw(ctx, request.Spec.NetworkId.String())
+	target := authz.Target{
+		Endpoint:   endpoint,
+		Operation:  authz.Create,
+		Kind:       authz.Primary,
+		ObjectName: request.Metadata.Name,
+	}
+
+	authz.Declare(ctx, target)
+
+	networks := network.New(c.ClientArgs)
+
+	// The create is checked in the network's project before the network is
+	// read, so a caller refused the network is recorded in that project.
+	organizationID, projectID, err := networks.Scope(ctx, request.Spec.NetworkId.String())
 	if err != nil {
 		return nil, err
 	}
 
-	organizationID, projectID, err := network.OrganizationAndProjectID()
+	if err := rbac.AllowProjectScopeCreateOn(ctx, c.Identity, target, organizationID, projectID); err != nil {
+		return nil, err
+	}
+
+	network, err := networks.GetV2Raw(ctx, request.Spec.NetworkId.String())
 	if err != nil {
 		return nil, err
 	}
 
 	if err := principal.EnrichUserPrincipalProjectScopeReader(ctx, network); err != nil {
 		return nil, fmt.Errorf("%w: unable to set principal information", err)
-	}
-
-	if err := rbac.AllowProjectScopeCreateID(ctx, c.Identity, endpoint, identityapi.Create, organizationID, projectID); err != nil {
-		return nil, err
 	}
 
 	regionID := network.Labels[constants.RegionLabel]
@@ -378,12 +390,8 @@ func (c *Client) generateUpdate(ctx context.Context, current *regionv1.Volume, r
 
 // UpdateV2 updates only Volume metadata and tags.
 func (c *Client) UpdateV2(ctx context.Context, volumeID regionids.VolumeID, request *openapi.VolumeV2Update) (*openapi.VolumeV2Read, error) {
-	current, err := c.GetV2Raw(ctx, volumeID.String())
+	current, err := c.getV2(ctx, volumeID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Update, Kind: authz.Primary})
 	if err != nil {
-		return nil, err
-	}
-
-	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Update, current); err != nil {
 		return nil, err
 	}
 
@@ -409,12 +417,14 @@ func (c *Client) UpdateV2(ctx context.Context, volumeID regionids.VolumeID, requ
 
 // DeleteV2 deletes an unattached v2 Volume.
 func (c *Client) DeleteV2(ctx context.Context, volumeID regionids.VolumeID) error {
-	resource, err := c.GetV2Raw(ctx, volumeID.String())
-	if err != nil {
-		return err
-	}
+	return c.RetryConflictOnce(func() error {
+		return c.deleteV2(ctx, volumeID)
+	})
+}
 
-	if err := rbac.AllowProjectScopeReader(ctx, endpoint, identityapi.Delete, resource); err != nil {
+func (c *Client) deleteV2(ctx context.Context, volumeID regionids.VolumeID) error {
+	resource, err := c.getV2(ctx, volumeID.String(), authz.Target{Endpoint: endpoint, Operation: authz.Delete, Kind: authz.Primary})
+	if err != nil {
 		return err
 	}
 
@@ -426,9 +436,20 @@ func (c *Client) DeleteV2(ctx context.Context, volumeID regionids.VolumeID) erro
 		return errors.HTTPForbidden("volume is attached and must be detached before deletion")
 	}
 
-	if err := c.Client.Delete(ctx, resource); err != nil {
+	// Preconditions turn a write landing between the read and the delete into
+	// a conflict, so the guard above is re-run against a fresh copy.
+	preconditions := client.Preconditions{
+		UID:             ptr.To(resource.UID),
+		ResourceVersion: ptr.To(resource.ResourceVersion),
+	}
+
+	if err := c.Client.Delete(ctx, resource, preconditions); err != nil {
 		if kerrors.IsNotFound(err) {
 			return errors.HTTPNotFound().WithError(err)
+		}
+
+		if kerrors.IsConflict(err) {
+			return err
 		}
 
 		return fmt.Errorf("%w: unable to delete volume", err)

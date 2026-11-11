@@ -161,6 +161,31 @@ func (v FileStorageID) String() string                { return uuid.UUID(v).Stri
 func (v FileStorageID) MarshalText() ([]byte, error)  { return uuid.UUID(v).MarshalText() }
 func (v *FileStorageID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UUID)(v), b) }
 
+// DeepCopy returns a value copy for generated CRD deep-copy code.
+func (v FileStorageID) DeepCopy() FileStorageID { return v }
+
+// DeepCopyInto copies the ID for generated CRD deep-copy code.
+func (v FileStorageID) DeepCopyInto(out *FileStorageID) {
+	*out = v
+}
+
+// FileStorageSnapshotID identifies the immutable parent/name slot occupied by a
+// manual File Storage snapshot.
+//
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
+//nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
+type FileStorageSnapshotID uuid.UUID
+
+func (v FileStorageSnapshotID) String() string { return uuid.UUID(v).String() }
+func (v FileStorageSnapshotID) MarshalText() ([]byte, error) {
+	return uuid.UUID(v).MarshalText()
+}
+func (v *FileStorageSnapshotID) UnmarshalText(b []byte) error {
+	return unmarshalUUID((*uuid.UUID)(v), b)
+}
+
 // ImageID is a UUID-backed identifier for images. The platform addresses images by
 // their provider-assigned UUID; it is a distinct named type so the compiler prevents
 // accidental interchange with any other ID type. UnmarshalText delegates to uuid.UUID,
@@ -180,8 +205,7 @@ func (v *ImageID) UnmarshalText(b []byte) error { return unmarshalUUID((*uuid.UU
 // DeepCopyInto exists because deepcopy-gen cannot synthesise a copy for a pointer
 // to a named array type from another package, and fails the whole generation run
 // when a CRD field is one. ImageID is the only ID type used as a CRD pointer field
-// (Server's status.observed.image), so it alone carries the hooks — the other ID
-// types never appear on CRDs, and adding hooks for symmetry would be dead code.
+// (Server's status.observed.image), so it carries pointer-copy hooks.
 // The value is a byte array, so assignment copies it.
 func (v *ImageID) DeepCopyInto(out *ImageID) { *out = *v }
 
@@ -327,6 +351,17 @@ func ParseFileStorageID(s string) (FileStorageID, error) {
 	return FileStorageID(id), nil
 }
 
+// ParseFileStorageSnapshotID parses s as a UUID into a FileStorageSnapshotID,
+// returning an error if s is not a valid UUID.
+func ParseFileStorageSnapshotID(s string) (FileStorageSnapshotID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return FileStorageSnapshotID{}, err
+	}
+
+	return FileStorageSnapshotID(id), nil
+}
+
 // ParseImageID parses s as a UUID into an ImageID, returning
 // an error if s is not a valid UUID.
 func ParseImageID(s string) (ImageID, error) {
@@ -368,6 +403,7 @@ var _ = []value.UnstructuredConverter{
 	ServerID{},
 	SSHCertificateAuthorityID{},
 	FileStorageID{},
+	FileStorageSnapshotID{},
 	ImageID{},
 	FlavorID{},
 }
@@ -400,6 +436,11 @@ func (v SSHCertificateAuthorityID) ToUnstructured() any { return uuid.UUID(v).St
 
 func (v FileStorageID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
 func (v FileStorageID) ToUnstructured() any          { return uuid.UUID(v).String() }
+
+func (v FileStorageSnapshotID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(uuid.UUID(v).String())
+}
+func (v FileStorageSnapshotID) ToUnstructured() any { return uuid.UUID(v).String() }
 
 func (v ImageID) MarshalJSON() ([]byte, error) { return json.Marshal(uuid.UUID(v).String()) }
 func (v ImageID) ToUnstructured() any          { return uuid.UUID(v).String() }

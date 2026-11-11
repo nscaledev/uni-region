@@ -61,10 +61,6 @@ func TestValidateUserDataAcceptsSupportedPayloads(t *testing.T) {
 			userData: []byte("#cloud-config-archive\n- type: text/cloud-config\n  content: |\n    users: []\n"),
 		},
 		{
-			name:     "PartHandler",
-			userData: []byte("#part-handler\ndef list_types():\n    return [\"text/plain\"]\n"),
-		},
-		{
 			name:     "CRLFLineEndings",
 			userData: []byte("#cloud-config\r\nusers: []\r\n"),
 		},
@@ -115,8 +111,13 @@ func TestValidateUserDataRejectsMalformedPayloads(t *testing.T) {
 		},
 		{
 			name:     "MultipartMalformedHeaders",
-			userData: []byte("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\nnot a valid header\n\n--BOUNDARY--\n"),
-			contains: "unable to parse multipart userData",
+			userData: []byte("Content-Type: multipart/mixed; boundary=\"BOUNDARY\"\nMIME-Version: 1.0\nnot a valid header\n\n--BOUNDARY--\n"),
+			contains: "unable to parse MIME userData",
+		},
+		{
+			name:     "PartHandler",
+			userData: []byte("#part-handler\ndef list_types():\n    return [\"text/plain\"]\n"),
+			contains: "part-handler",
 		},
 		{
 			name:     "MultipartTruncatedPart",

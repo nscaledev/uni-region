@@ -30,7 +30,9 @@ paths:
     parameters:
     - $ref: '#/components/parameters/organizationIDParameter'
     get:
-      x-hidden: true
+      summary: List regions
+      tags:
+      - Regions
       description: |-
         List all regions.
       security:
@@ -75,7 +77,9 @@ paths:
     - $ref: '#/components/parameters/organizationIDParameter'
     - $ref: '#/components/parameters/regionIDParameter'
     get:
-      x-hidden: true
+      summary: List flavors
+      tags:
+      - Flavors
       description: |-
         Lists all compute flavors.
       security:
@@ -956,6 +960,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     delete:
@@ -973,6 +979,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/securitygroups:
@@ -1091,6 +1099,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
@@ -1304,6 +1314,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
 
@@ -1375,6 +1387,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
         '403':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '409':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '422':
@@ -1422,6 +1436,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '422':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
@@ -1468,6 +1484,16 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          description: >-
+            The report's outputs differ from those the satisfied gate already
+            holds. Final: the gate keeps its outputs until a provider-create
+            retry resets it, so retrying the same report is refused again. A
+            500 is not a conflict and should be retried.
+          content:
+            application/json:
+              schema:
+                $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/error'
         '422':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
@@ -1747,8 +1773,9 @@ paths:
         Update this storage. Snapshot Policies are managed as inline parent File Storage
         desired state. Omitted spec.snapshotPolicies preserves existing user-managed
         policies, an empty list clears all user-managed policies, and a non-empty list
-        replaces the full user-managed policy list. Default Snapshot Protection is
-        controlled separately by spec.defaultSnapshotProtectionEnabled.
+        replaces the full user-managed policy list. For an existing policy name,
+        protectedPath is immutable; schedule and retention may change. Default Snapshot
+        Protection is controlled separately by spec.defaultSnapshotProtectionEnabled.
       summary: Update file storage
       tags:
       - File storage
@@ -1767,6 +1794,8 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
         '404':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
         '422':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
@@ -1781,6 +1810,107 @@ paths:
       responses:
         '202':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/filestorage/{filestorageID}/snapshots:
+    description: Manual snapshots of a file storage resource.
+    parameters:
+    - $ref: '#/components/parameters/filestorageIDParameter'
+    post:
+      description: Create a Manual Snapshot under a File Storage. Returns the complete pending resource. A deleting parent conflicts.
+      summary: Create a manual file storage snapshot
+      tags:
+      - File storage snapshots
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/fileStorageSnapshotV2Create'
+      responses:
+        '202':
+          $ref: '#/components/responses/fileStorageSnapshotV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    get:
+      description: List Manual Snapshots of a File Storage, ordered by name then ID. Inaccessible and expired snapshots are omitted.
+      summary: List manual file storage snapshots
+      tags:
+      - File storage snapshots
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/fileStorageSnapshotsV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/filestorage/{filestorageID}/snapshots/{filestorageSnapshotID}:
+    description: A manual snapshot of a file storage resource.
+    parameters:
+    - $ref: '#/components/parameters/filestorageIDParameter'
+    - $ref: '#/components/parameters/filestorageSnapshotIDParameter'
+    delete:
+      description: Record deletion intent for a Manual Snapshot without provider calls.
+      summary: Delete a manual file storage snapshot
+      tags:
+      - File storage snapshots
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    get:
+      description: Get a Manual Snapshot. Missing, inaccessible, and expired snapshots return not found.
+      summary: Get a manual file storage snapshot
+      tags:
+      - File storage snapshots
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/fileStorageSnapshotV2Response'
         '400':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
         '401':
@@ -1941,7 +2071,7 @@ paths:
       Lists provider-neutral block-storage classes available from Regions visible to the caller. Results can be narrowed to one or more Regions.
     get:
       description: |-
-        Lists provider-neutral VolumeClasses from Regions visible to the caller. Repeat the regionID query parameter to narrow results to one or more Regions. Missing or inaccessible Regions are omitted, so selectors can produce an empty or partial list. Media and performance caps are returned only when published by the Region.
+        Lists provider-neutral VolumeClasses from Regions visible to the caller. Repeat the regionID query parameter to narrow results to one or more Regions. Missing or inaccessible Regions are omitted, so selectors can produce an empty or partial list. Without a regionID filter, Regions whose provider inventory cannot be fetched are logged and omitted so available Regions can still be returned. Provider failures for explicitly selected Regions fail the request. Media and performance caps are returned only when published by the Region.
       summary: List volume classes
       tags:
       - Volume classes
@@ -2068,6 +2198,13 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/fileStorageId'
+    filestorageSnapshotIDParameter:
+      name: filestorageSnapshotID
+      in: path
+      description: The Manual Snapshot unique identifier.
+      required: true
+      schema:
+        $ref: '#/components/schemas/fileStorageSnapshotId'
     projectIDQueryParameter:
       name: projectID
       in: query
@@ -2185,6 +2322,14 @@ components:
       type: string
       format: uuid
       x-go-type: regionids.FileStorageID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    fileStorageSnapshotId:
+      description: A Manual File Storage Snapshot ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.FileStorageSnapshotID
       x-go-type-import:
         name: regionids
         path: github.com/unikorn-cloud/region/pkg/ids
@@ -2502,6 +2647,16 @@ components:
         logicalCount:
           description: The logical number of GPUs available as seen in the OS.
           type: integer
+    infiniBandSpec:
+      description: InfiniBand specification.
+      type: object
+      required:
+      - portCount
+      properties:
+        portCount:
+          description: The number of InfiniBand ports available to the flavor.
+          type: integer
+          minimum: 1
     flavorSpec:
       description: A flavor.
       type: object
@@ -2530,6 +2685,8 @@ components:
           $ref: '#/components/schemas/architecture'
         gpu:
           $ref: '#/components/schemas/gpuSpec'
+        infiniBand:
+          $ref: '#/components/schemas/infiniBandSpec'
         pinnedOnly:
           description: When true, a server using this flavor must specify an infrastructureRef to identify the target host.
           type: boolean
@@ -2717,7 +2874,9 @@ components:
           description: An IPv4 address for the route's next hop.
           type: string
     routes:
-      description: A list of network routes.
+      description: |-
+        A list of network routes. On update, omitting the list keeps the stored
+        routes, and an empty list removes them.
       type: array
       items:
         $ref: '#/components/schemas/route'
@@ -3432,14 +3591,18 @@ components:
         baremetal servers waiting on hardware, Building for servers the
         provider is actively bringing up. Rebuilding means an already
         provisioned server is being reimaged in place and is not usable until
-        it completes. Error means the provider reported the server in a
-        terminal error state.
+        it completes. Rebooting means a soft or hard reboot has been accepted
+        and is in flight; it returns to Running once the provider has
+        processed the request. To confirm the guest actually restarted, use
+        OS-level evidence such as a changed boot ID or boot time. Error 
+        means the provider reported the server in a terminal error state.
       type: string
       enum:
       - Pending
       - Queued
       - Building
       - Rebuilding
+      - Rebooting
       - Running
       - Stopping
       - Stopped
@@ -3516,6 +3679,7 @@ components:
     serverProviderCreateGates:
       description: Provider-create gates requested at server creation time.
       type: array
+      maxItems: 16
       items:
         $ref: '#/components/schemas/serverProviderCreateGate'
     serverProviderCreateGateState:
@@ -3586,6 +3750,26 @@ components:
           - Open
           - Locked
           default: Open
+        outputs:
+          description: >-
+            Values the gate's satisfier publishes to the server. Each is
+            written as instance metadata when the server is created, named as
+            a tag would be under the gate's `<service>.<domain>/`: output
+            `pkey` on gate `fabric.unikorn-cloud.org/partition-ready` becomes
+            `fabric:pkey`. A key must be a tag's local name, and the condition
+            type must have that prefix; otherwise the report is a 400. Outputs
+            are sent with the report that satisfies the gate, and are frozen
+            once it is Open, until a provider-create retry resets it: a later
+            report with the same outputs or none keeps them, and one with any
+            other outputs is a 409. Outputs are accepted only on an Open
+            report; a Closed or Locked report with outputs is a 400. The
+            values are readable from inside the server, so they must never be
+            secret.
+          type: object
+          maxProperties: 8
+          additionalProperties:
+            type: string
+            maxLength: 255
     serverV2Networking:
       description: A server's network configuration.
       type: object
@@ -3621,6 +3805,11 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/serverV2VolumeStatus'
+    serverV2VolumeList:
+      description: Complete desired set of existing Volumes to attach to the Server.
+      type: array
+      items:
+        $ref: '#/components/schemas/volumeId'
     serverV2Spec:
       description: A server's specification.
       type: object
@@ -3644,11 +3833,14 @@ components:
           description: |-
             Contains base64-encoded configuration information or scripts to use upon launch.
             The format of the data is governed by the cloud-init standard, and may be a script,
-            a MIME multipart archive, etc. On update the field is replaced wholesale: omitting
-            it clears the stored value. A changed value is not applied to the running guest —
+            a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
+            as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
+            value, and an empty string clears it. A changed value is not applied to the running guest —
             it takes effect only when the server is next rebuilt (image change) or recreated.
           type: string
           format: byte
+        volumes:
+          $ref: '#/components/schemas/serverV2VolumeList'
     serverV2CreateSpec:
       description: A server's specification.
       type: object
@@ -3779,6 +3971,10 @@ components:
       required:
       - regionId
       properties:
+        attachedAt:
+          description: Timestamp when the current volume attachment was first confirmed. Omitted when no current attachment is recorded.
+          type: string
+          format: date-time
         regionId:
           description: The Region in which the volume is provisioned.
           allOf:
@@ -3957,6 +4153,11 @@ components:
           type: string
           maxLength: 19
           pattern: '^[a-z]([-a-z0-9]*[a-z0-9])?$'
+        protectedPath:
+          description: Optional relative path protected by this policy. Omission protects the File Storage root. It is immutable for an existing policy name.
+          type: string
+          maxLength: 1024
+          pattern: '^([^/]+/)*[^/]+$'
         schedule:
           $ref: '#/components/schemas/storageSnapshotScheduleV2Spec'
         retention:
@@ -4150,6 +4351,81 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/storageV2Read'
+    fileStorageSnapshotV2Create:
+      description: Manual Snapshot resource.
+      type: object
+      additionalProperties: false
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/fileStorageSnapshotV2CreateSpec'
+    fileStorageSnapshotV2CreateSpec:
+      description: Capture intent. Omitted expiration means no automatic expiration; omitted protected path selects the File Storage root.
+      type: object
+      additionalProperties: false
+      properties:
+        expirationTime:
+          description: Optional expiration deadline using the platform date-time format. Fractional seconds are truncated before validating that the normalized deadline is strictly later than request acceptance time. Malformed timestamps return 400; non-future normalized deadlines return 422.
+          type: string
+          format: date-time
+          example: '2030-01-01T00:00:00Z'
+        protectedPath:
+          description: Optional canonical relative path within the File Storage. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected.
+          type: string
+          maxLength: 1024
+          pattern: '^([^/]+/)*[^/]+$'
+          example: datasets/model
+    fileStorageSnapshotV2Read:
+      description: A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/fileStorageSnapshotV2Spec'
+        status:
+          $ref: '#/components/schemas/fileStorageSnapshotV2Status'
+    fileStorageSnapshotV2Spec:
+      description: Immutable Manual Snapshot capture intent.
+      type: object
+      required:
+      - fileStorageId
+      properties:
+        fileStorageId:
+          $ref: '#/components/schemas/fileStorageId'
+        expirationTime:
+          description: Optional immutable expiration deadline. The snapshot is hidden once the deadline is reached. Omission means no automatic expiration.
+          type: string
+          format: date-time
+        protectedPath:
+          description: Optional immutable canonical relative protected path within the File Storage. Omission selects the File Storage root.
+          type: string
+          maxLength: 1024
+          pattern: '^([^/]+/)*[^/]+$'
+    fileStorageSnapshotV2Status:
+      description: Snapshot details observed during capture.
+      type: object
+      properties:
+        snapshotTime:
+          description: Optional provider-observed capture time; distinct from Region creation time.
+          type: string
+          format: date-time
+        absoluteProtectedPath:
+          description: Optional absolute path captured by the snapshot.
+          type: string
+    fileStorageSnapshotsV2Read:
+      description: A list of manual file storage snapshots.
+      type: array
+      items:
+        $ref: '#/components/schemas/fileStorageSnapshotV2Read'
     storageClassListV2Read:
       description: A list of storage classes.
       type: array
@@ -4232,7 +4508,7 @@ components:
           format: int64
           minimum: 1
         supportedFlavorIds:
-          description: Optional allowlist of Region flavors compatible with this volume class. Omitted or empty means no compatibility restriction.
+          description: Optional allowlist of Region flavors that can attach Volumes of this class to Servers. Omitted or empty means Server attachment is not supported; standalone Volume creation remains available.
           type: array
           uniqueItems: true
           items:
@@ -5417,6 +5693,18 @@ components:
               tq29HkEWIBfr5Qag/D+4b9TUNr6I3WU0dhbOTxiE855TAAAAHXVuaWtvcm4gZXBo
               ZW1lcmFsIGVkMjU1MTkga2V5
               -----END OPENSSH PRIVATE KEY-----
+    fileStorageSnapshotV2Response:
+      description: A Manual File Storage Snapshot.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/fileStorageSnapshotV2Read'
+    fileStorageSnapshotsV2Response:
+      description: A list of manual file storage snapshots.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/fileStorageSnapshotsV2Read'
     storageV2Response:
       description: A storage.
       content:

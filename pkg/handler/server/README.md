@@ -38,11 +38,36 @@ related dependencies rather than from nested path scope.
   uploads, images predating the label) or an architecture are not rejected,
   because absence of evidence is not evidence of incompatibility
 - create/update can validate and bind an SSH certificate authority
+- create/update execute as sagas. Before the terminal Server write, they acquire
+  new Volume claims. The terminal write persists only Server intent; the Volume
+  controller owns the corresponding Server reference and places it before
+  provider attachment. The Volume controller leaves an unconfirmed claim
+  untouched while its Server is absent or does not yet contain the attachment
+  intent. Saga compensation attempts to release claims after a failed terminal
+  write.
+  Update also repairs a missing claim for Volume intent already present on the
+  Server. Removed claims remain until the Volume controller reconciles the
+  changed Server intent. Providers remain exclusively controller-owned
+- Claim records identify the Server but not the request that created them.
+  Concurrent updates for the same Server can therefore clear a winning claim
+  during compensation. A failed multi-Volume rollback can also leave claims
+  without Server intent. The Volume controller retains these ambiguous claims,
+  so they require operator repair.
 - v2 reads the stored per-Volume attachment state (attachment progress, optional
   provider device, and a safe message). A removed Volume remains in this
   projection while its observed attachment deprovisions and disappears only
-  when the controller clears that status row. This is status only; handlers do
-  not claim Volumes or call providers in this slice.
+  when the controller clears that status row. The read `spec.volumes` is the
+  complete desired existing-Volume set; create omission means no attachments,
+  update omission preserves it, and explicit update replacement (including an
+  empty list) changes it. A Volume claimed by another Server is rejected with
+  HTTP 422 until detached. A same-Server claim is accepted only for Volume intent
+  already persisted on that Server; otherwise it returns HTTP 409 so concurrent
+  updates cannot share and then compensate the same claim. The handler validates
+  duplicate, deletion, claim, scope, and VolumeClass/Flavor compatibility before
+  it claims Volumes. A VolumeClass must define a non-empty supported-flavor list
+  that contains the Server flavor. The handler returns HTTP 422 when the class
+  is missing, the list is unset or empty, or the flavor does not match. The
+  handler never calls a provider.
 - create accepts an explicit SSH injection mode: `ca`, `identityKeypair`, or
   `none`. Omitted values preserve the legacy contract: requests with
   `sshCertificateAuthorityId` resolve to `ca`, all other requests resolve to
@@ -66,31 +91,48 @@ related dependencies rather than from nested path scope.
 - create can carry an `infrastructureRef` that pins initial placement to a
   provider-specific physical host; reads expose the value in status so callers
   can verify the placement request that was persisted
-- create can carry immutable `providerCreateGates`; reads expose only
-  `status.remainingProviderCreateGates`, while the stored Kubernetes object
-  retains per-gate status details for operators
+- create can carry immutable `providerCreateGates` (at most 16); reads
+  expose only `status.remainingProviderCreateGates`, while the stored
+  Kubernetes object retains per-gate status details for operators
 - internal service callers can satisfy an existing provider-create gate through
   `POST /api/v2/servers/{serverID}/provider-create-gates`, which records the
-  authenticated service actor, reason, and message on the status subresource
+  authenticated service actor, reason, and message on the status subresource.
+  The satisfying report may carry `outputs` (at most 8), which the provider
+  writes into the server's metadata at create, named as tags would be under
+  the gate's service prefix (`pkey` on
+  `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`). Outputs
+  are frozen once the gate is True, because metadata is written only at
+  create and the controller may already be creating the server: a later
+  report with the same outputs or none keeps them, and one with any other
+  outputs, including outputs brought to a gate satisfied without them, is
+  refused with 409 and writes nothing. An output that maps to no metadata key
+  is a 400, not a 422, which satisfiers read as "gate not configured here".
+  A lost optimistic-lock race on the status patch is a 500, to be retried
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
-  already be able to see the server and also be allowed to create images in the
-  owning organization
-- the package exposes operational verbs:
+  be allowed to update the server and to create images in the owning
+  organization
+- the package exposes operational verbs, each needing update on the server:
   - start
   - stop
   - soft reboot
   - hard reboot
   - console output/session
+- an accepted stop or reboot is stamped on the `Active` condition before the 202
+  returns (`Stopping`, `Rebooting`), so the request is observable without waiting
+  for a monitor poll; a VM reboot can finish inside one poll period and would
+  otherwise leave no trace. A rejected request (e.g. Nova 409) stamps nothing.
+  The health monitor owns the transition back out (`Rebooting` → `Running`)
 - server-name uniqueness is enforced per network to avoid aliasing cloud-side
   host identity; the Kubernetes resource name is derived deterministically from
   `(networkID, serverName)` so a duplicate create collides at the Kubernetes
   layer and is rejected with HTTP 409 without a read-before-write
 - server names are immutable after creation; update requests that supply a
   different name are rejected with HTTP 422
-- a v2 update replaces the persisted `userData` wholesale — an omitted field
-  clears the stored value. The value is never applied to the running guest; it
-  is consumed by the next recreate. A rebuild (image change) re-runs the
+- a v2 update keeps persisted `userData` when omitted or null, clears it when
+  an empty string is supplied, and otherwise replaces it. The value is never
+  applied to the running guest; it is consumed by the next recreate. A
+  rebuild (image change) re-runs the
   create-time user data, not the updated value — applying updated user data on
   rebuild is deferred until Nova's microversion 2.57 `user_data` field is wired
   through the client library
@@ -112,14 +154,12 @@ related dependencies rather than from nested path scope.
   contents even if the rebuild subsequently fails, so failure recovery is
   choosing another image or replacing the server — never data restoration.
 - while a rebuild is pending or in flight the v2 read reports
-  `provisioningStatus=provisioning`, with one bounded exception: between an
-  accepted v2 update and the first reconcile pass it triggers — one watch
-  dispatch, typically sub-second, not a poll period — a read still reports
-  `provisioned`, because the status is derived purely from the `Available`
-  condition and only the reconciler rewrites that condition. This is deliberate:
-  the read path performs no masking of its own (that machinery was removed with
-  the rebuild marker). Once the reconciler runs it yields while an image change
-  is outstanding, and core maps a yield to `Available=Provisioning`.
+  `provisioningStatus=provisioning`, from the accepted update onward, because a
+  result without the current generation stamp projects as `provisioning` with
+  reason `Provisioning` and message "awaiting reconciliation of the current
+  specification". Exceptions: deletion stays `deprovisioning`, never-evaluated
+  stays `pending`, and a paused server (`spec.pause`) does not restamp and
+  reads `provisioning` while paused. The v1 read shares the helper.
   `provisioned` means settled — which the sole consumer, uni-compute's instance
   settlement gate, relies on — and the target image is not realized until the
   rebuild converges. A rebuild
@@ -156,9 +196,13 @@ related dependencies rather than from nested path scope.
   existing gate list and the CRD marks it immutable; only Region writes the
   derived status entries.
 - The provider-create gate action has its own
-  `region:servers:v2/provider-create-gates` permission. It also requires normal
-  server read access because callers must not satisfy gates on servers they
-  cannot see.
+  `region:servers:v2/provider-create-gates` permission, and needs nothing else
+  on the server. It is for internal services; of the built-in roles only the
+  platform administrator also holds it.
+  Its outputs carry no extra permission: whoever may satisfy a gate may
+  publish its outputs. They land in instance metadata, readable from inside
+  the server, so they must not be secret.
+- `v1` update needs update on the server.
 - The Kubernetes resource name for a `v2` server is a deterministic UUID v5
   derived from `(networkID, serverName)` at creation time, making the name
   immutable for the lifetime of the resource — consistent with OpenStack not

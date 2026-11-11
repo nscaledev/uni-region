@@ -38,6 +38,8 @@ import (
 	regionids "github.com/unikorn-cloud/region/pkg/ids"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -172,7 +174,7 @@ func (s *createSaga) validateRequest(ctx context.Context) error {
 }
 
 func (s *createSaga) validateRegion(ctx context.Context, regionID regionids.RegionID) error {
-	if err := region.NewClient(s.client.ClientArgs).CheckAccess(ctx, regionID); err != nil {
+	if err := region.NewClient(s.client.ClientArgs).CheckAccess(ctx, s.organizationID, regionID); err != nil {
 		if !errors.IsHTTPNotFound(err) {
 			return err
 		}
@@ -247,6 +249,10 @@ func (s *updateSaga) validateRequest(ctx context.Context) error {
 		if err := validateSnapshotPolicyList(s.request.Spec.SnapshotPolicies); err != nil {
 			return err
 		}
+
+		if err := validateSnapshotPolicyProtectedPaths(s.current.Spec.SnapshotPolicies, s.request.Spec.SnapshotPolicies); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -308,6 +314,10 @@ func (s *updateSaga) revertAllocation(ctx context.Context) error {
 
 func (s *updateSaga) updateStorage(ctx context.Context) error {
 	if err := s.client.Client.Patch(ctx, s.updated, client.MergeFromWithOptions(s.current, &client.MergeFromWithOptimisticLock{})); err != nil {
+		if kerrors.IsConflict(err) {
+			return errors.HTTPConflict().WithError(err)
+		}
+
 		return fmt.Errorf("%w: unable to update filestorage", err)
 	}
 

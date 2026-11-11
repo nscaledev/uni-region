@@ -57,6 +57,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack/mock"
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 
+	k8score "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8stypes "k8s.io/apimachinery/pkg/types"
@@ -648,6 +649,19 @@ func TestDeleteVolumeNoopsWhenIdentityUnrealized(t *testing.T) {
 	require.NoError(t, p.DeleteVolume(t.Context(), identity, volume))
 }
 
+func TestUpdateVolumeStateNoopsWhenIdentityUnrealized(t *testing.T) {
+	t.Parallel()
+
+	region := providerNetworkRegionFixture()
+	identity := identityFixture()
+	volume := volumeFixture()
+
+	k8sClient := getClient(t, []client.Object{unrealizedOpenstackIdentityFixture(identity)})
+	p := openstack.NewTestProvider(k8sClient, region)
+
+	require.NoError(t, p.UpdateVolumeState(t.Context(), identity, volume))
+}
+
 // TestDeleteLoadBalancerNoopsWhenIdentityUnrealized verifies the delete is a
 // clean no-op when the backing identity has no project allocated yet.
 func TestDeleteLoadBalancerNoopsWhenIdentityUnrealized(t *testing.T) {
@@ -835,6 +849,20 @@ func withNetwork(network *regionv1.Network) func(*regionv1.Server) {
 		s.Spec.Networks = append(s.Spec.Networks, regionv1.ServerNetworkSpec{
 			ID: idstest.MustParseNetworkID(network.Name),
 		})
+	}
+}
+
+func serverNetworkAddressPair(t *testing.T, cidr, macAddress string) regionv1.ServerNetworkAddressPair {
+	t.Helper()
+
+	_, prefix, err := net.ParseCIDR(cidr)
+	require.NoError(t, err)
+
+	return regionv1.ServerNetworkAddressPair{
+		CIDR: corev1.IPv4Prefix{
+			IPNet: *prefix,
+		},
+		MACAddress: macAddress,
 	}
 }
 
@@ -1555,7 +1583,6 @@ func TestReconcileSecurityGroupRules(t *testing.T) {
 }
 
 // TestReconcileServerPort tests a resource is created when one isn't present.
-// TODO: allowed address pairs for NFV.
 func TestReconcileServerPort(t *testing.T) {
 	t.Parallel()
 
@@ -1610,13 +1637,13 @@ func TestReconcileServerPort(t *testing.T) {
 		t.Parallel()
 
 		server := server.DeepCopy()
+		currentPort := *openstackServerPort
+		currentPort.SecurityGroups = []string{openstackSecurityGroup.ID}
 
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
-		// TODO: this shouldn't happen as it's not been modified.
-		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1628,7 +1655,7 @@ func TestReconcileServerPort(t *testing.T) {
 		require.Nil(t, server.Status.MACAddress)
 	})
 
-	t.Run("ItUpdatesSecurityGroups", func(t *testing.T) {
+	t.Run("ItIgnoresSecurityGroupAndAddressPairOrder", func(t *testing.T) {
 		t.Parallel()
 
 		server := server.DeepCopy()
@@ -1636,12 +1663,109 @@ func TestReconcileServerPort(t *testing.T) {
 			ID: idstest.MustParseSecurityGroupID(securityGroup2.Name),
 		})
 
+		desiredAddressPairs := []ports.AddressPair{
+			{IPAddress: "10.0.0.0/24"},
+			{IPAddress: "192.168.10.10/32", MACAddress: "fa:16:3e:ab:cd:ef"},
+		}
+		server.Spec.Networks[0].AllowedAddressPairs = []regionv1.ServerNetworkAddressPair{
+			serverNetworkAddressPair(t, desiredAddressPairs[0].IPAddress, desiredAddressPairs[0].MACAddress),
+			serverNetworkAddressPair(t, desiredAddressPairs[1].IPAddress, desiredAddressPairs[1].MACAddress),
+		}
+
+		currentPort := *openstackServerPort
+		currentPort.SecurityGroups = []string{openstackSecurityGroup2.ID, openstackSecurityGroup.ID}
+		currentPort.AllowedAddressPairs = []ports.AddressPair{
+			{IPAddress: desiredAddressPairs[1].IPAddress, MACAddress: desiredAddressPairs[1].MACAddress},
+			{IPAddress: desiredAddressPairs[0].IPAddress, MACAddress: currentPort.MACAddress},
+		}
+		originalDesiredAddressPairs := server.DeepCopy().Spec.Networks[0].AllowedAddressPairs
+		originalCurrentAddressPairs := append([]ports.AddressPair(nil), currentPort.AllowedAddressPairs...)
+
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup2)).Return(openstackSecurityGroup2, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+		require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP)
+		// Address-pair normalization compares effective values using local copies;
+		// it must not rewrite the desired specification or observed port state.
+		require.Equal(t, originalDesiredAddressPairs, server.Spec.Networks[0].AllowedAddressPairs)
+		require.Equal(t, originalCurrentAddressPairs, currentPort.AllowedAddressPairs)
+	})
+
+	t.Run("ItIgnoresMACAddressFormatting", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+		server.Spec.Networks[0].AllowedAddressPairs = []regionv1.ServerNetworkAddressPair{
+			serverNetworkAddressPair(t, "192.168.10.10/32", "FA:16:3E:AB:CD:EF"),
+		}
+
+		currentPort := *openstackServerPort
+		currentPort.SecurityGroups = []string{openstackSecurityGroup.ID}
+		currentPort.AllowedAddressPairs = []ports.AddressPair{
+			{IPAddress: "192.168.10.10/32", MACAddress: "fa:16:3e:ab:cd:ef"},
+		}
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+		require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP)
+	})
+
+	t.Run("ItUpdatesSecurityGroups", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+		server.Spec.SecurityGroups = append(server.Spec.SecurityGroups, regionv1.ServerSecurityGroupSpec{
+			ID: idstest.MustParseSecurityGroupID(securityGroup2.Name),
+		})
+		currentPort := *openstackServerPort
+		currentPort.SecurityGroups = []string{openstackSecurityGroup.ID}
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup2)).Return(openstackSecurityGroup2, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
 		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID, openstackSecurityGroup2.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+	})
+
+	t.Run("ItUpdatesAllowedAddressPairs", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+		desiredAddressPairs := []ports.AddressPair{
+			{IPAddress: "10.0.0.0/24"},
+		}
+		server.Spec.Networks[0].AllowedAddressPairs = []regionv1.ServerNetworkAddressPair{
+			serverNetworkAddressPair(t, desiredAddressPairs[0].IPAddress, desiredAddressPairs[0].MACAddress),
+		}
+
+		currentPort := *openstackServerPort
+		currentPort.SecurityGroups = []string{openstackSecurityGroup.ID}
+
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID}, desiredAddressPairs).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1882,6 +2006,7 @@ func TestReconcileVolume(t *testing.T) {
 	t.Run("ItDoesNotExist", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(nil, coreerrors.ErrResourceNotFound)
@@ -1889,14 +2014,32 @@ func TestReconcileVolume(t *testing.T) {
 
 		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume)
 		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.Nil(t, volume.Status.ProvisionedAt)
 	})
 
 	t.Run("ItIsAvailable", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(openstackVolume, nil)
+
+		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
+		require.NotNil(t, volume.Status.ProvisionedAt)
+	})
+
+	t.Run("ItIsInUse", func(t *testing.T) {
+		t.Parallel()
+
+		volume := volume.DeepCopy()
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
+			ID:     openstackVolume.ID,
+			Name:   openstackVolume.Name,
+			Status: "in-use",
+		}, nil)
 
 		require.NoError(t, openstack.ReconcileVolume(t.Context(), blockStorage, identity, volume))
 	})
@@ -1904,6 +2047,7 @@ func TestReconcileVolume(t *testing.T) {
 	t.Run("ItIsCreating", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
@@ -1919,6 +2063,7 @@ func TestReconcileVolume(t *testing.T) {
 	t.Run("ItIsErrored", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
@@ -1937,9 +2082,30 @@ func TestReconcileVolume(t *testing.T) {
 		require.Equal(t, "provider volume entered an error state", provisioningError.Message())
 	})
 
+	t.Run("ItWasProvisionedButIsMissing", func(t *testing.T) {
+		t.Parallel()
+
+		missingVolume := volumeFixture()
+		provisionedAt := metav1.Now()
+		missingVolume.Status.ProvisionedAt = &provisionedAt
+
+		c := gomock.NewController(t)
+		blockStorage := mock.NewMockVolumeInterface(c)
+		blockStorage.EXPECT().GetVolume(t.Context(), missingVolume).Return(nil, coreerrors.ErrResourceNotFound)
+
+		err := openstack.ReconcileVolume(t.Context(), blockStorage, identity, missingVolume)
+		require.ErrorIs(t, err, provisioners.ErrUserActionRequired)
+
+		health, healthErr := corev1.GetHealthyCondition(missingVolume)
+		require.NoError(t, healthErr)
+		require.Equal(t, k8score.ConditionFalse, health.Status)
+		require.Equal(t, corev1.ConditionReasonDegraded, health.Reason)
+	})
+
 	t.Run("ItHasAnUnknownProviderStatus", func(t *testing.T) {
 		t.Parallel()
 
+		volume := volume.DeepCopy()
 		c := gomock.NewController(t)
 		blockStorage := mock.NewMockVolumeInterface(c)
 		blockStorage.EXPECT().GetVolume(t.Context(), volume).Return(&volumes.Volume{
@@ -2212,7 +2378,6 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 	networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
-	networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 	compute := mock.NewMockServerInterface(c)
@@ -2332,66 +2497,6 @@ func TestImageTagRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMetadataKey tests the tag key transformation from namespaced CRD tag format
-// to the OpenStack metadata key format.
-func TestMetadataKey(t *testing.T) {
-	t.Parallel()
-
-	cases := []struct {
-		name     string
-		input    string
-		expected string
-		ok       bool
-	}{
-		{
-			name:     "ValidSimple",
-			input:    "compute.unikorn-cloud.org/instance-id",
-			expected: "compute:instance_id",
-			ok:       true,
-		},
-		{
-			name:     "ValidOtherService",
-			input:    "kubernetes.unikorn-cloud.org/cluster-id",
-			expected: "kubernetes:cluster_id",
-			ok:       true,
-		},
-		{
-			name:     "ValidHyphenInSubdomain",
-			input:    "my-service.unikorn-cloud.org/foo-bar",
-			expected: "my-service:foo_bar",
-			ok:       true,
-		},
-		{
-			name:  "InvalidNoSlash",
-			input: "compute.unikorn-cloud.org",
-			ok:    false,
-		},
-		{
-			name:  "InvalidUppercase",
-			input: "Compute.unikorn-cloud.org/id",
-			ok:    false,
-		},
-		{
-			name:  "InvalidBareName",
-			input: "instance-id",
-			ok:    false,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-
-			got, ok := openstack.MetadataKey(c.input)
-			require.Equal(t, c.ok, ok)
-
-			if c.ok {
-				require.Equal(t, c.expected, got)
-			}
-		})
-	}
-}
-
 // TestReconcileServerTags verifies that server tags are correctly forwarded to
 // OpenStack instance metadata, invalid keys are silently dropped, and system keys
 // are always present and cannot be overwritten by user tags.
@@ -2472,6 +2577,93 @@ func TestReconcileServerTags(t *testing.T) {
 
 		// The system key must win — value must be the real organizationID.
 		expectedMetadata := map[string]string{
+			"serverID":                 server.Name,
+			"organizationID":           organizationID,
+			"projectID":                projectID,
+			"regionID":                 regionID,
+			"region:server_id":         server.Name,
+			"identity:organization_id": organizationID,
+			"identity:project_id":      projectID,
+			"region:region_id":         regionID,
+		}
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
+
+	t.Run("GateOutputsPublishedBetweenTagsAndSystemKeys", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		server := serverFixture(withTags(
+			// A tenant tag colliding with the gate's output: the gate wins.
+			corev1.Tag{Name: "fabric.unikorn-cloud.org/pkey", Value: "tenant"},
+		))
+		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+			{ConditionType: "fabric.unikorn-cloud.org/partition-ready"},
+			{ConditionType: "storage.unikorn-cloud.org/pending"},
+			{ConditionType: "region.unikorn-cloud.org/ready"},
+		}
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/partition-ready", regionv1.ServerProviderCreateGateOpen, "hfm", "Programmed", "ready", map[string]string{"pkey": "0x0600"})
+		// Not satisfied: its outputs are not published.
+		server.ProviderCreateGateStatusWrite("storage.unikorn-cloud.org/pending", regionv1.ServerProviderCreateGateClosed, "s", "Waiting", "waiting", map[string]string{"volume": "v"})
+		// A system key's name: the system key still wins.
+		server.ProviderCreateGateStatusWrite("region.unikorn-cloud.org/ready", regionv1.ServerProviderCreateGateOpen, "x", "Ready", "ready", map[string]string{"server-id": "evil"})
+
+		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+		openstackNetworks := []servers.Network{{UUID: openstackNetwork.ID, Port: openstackServerPort.ID}}
+		openstackServer := openstackServerFixture(server)
+
+		expectedMetadata := map[string]string{
+			"fabric:pkey":              "0x0600",
+			"serverID":                 server.Name,
+			"organizationID":           organizationID,
+			"projectID":                projectID,
+			"regionID":                 regionID,
+			"region:server_id":         server.Name,
+			"identity:organization_id": organizationID,
+			"identity:project_id":      projectID,
+			"region:region_id":         regionID,
+		}
+
+		compute := mock.NewMockServerInterface(c)
+		compute.EXPECT().GetServer(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+		compute.EXPECT().CreateServer(t.Context(), server, sshKeyName, openstackNetworks, nil, expectedMetadata).Return(openstackServer, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		_, err := openstack.ReconcileServer(t.Context(), p, compute, server, openstackServerPort, sshKeyName)
+		require.NoError(t, err)
+	})
+
+	t.Run("LaterGateWinsACollision", func(t *testing.T) {
+		t.Parallel()
+
+		c := gomock.NewController(t)
+		t.Cleanup(c.Finish)
+
+		server := serverFixture()
+		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
+			{ConditionType: "fabric.unikorn-cloud.org/b-ready"},
+			{ConditionType: "fabric.unikorn-cloud.org/a-ready"},
+		}
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/a-ready", regionv1.ServerProviderCreateGateOpen, "a", "Ready", "ready", map[string]string{"pkey": "0x0a00"})
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/b-ready", regionv1.ServerProviderCreateGateOpen, "b", "Ready", "ready", map[string]string{"pkey": "0x0b00"})
+
+		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+		openstackNetworks := []servers.Network{{UUID: openstackNetwork.ID, Port: openstackServerPort.ID}}
+		openstackServer := openstackServerFixture(server)
+
+		expectedMetadata := map[string]string{
+			"fabric:pkey":              "0x0a00",
 			"serverID":                 server.Name,
 			"organizationID":           organizationID,
 			"projectID":                projectID,

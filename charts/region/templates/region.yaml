@@ -18,6 +18,10 @@ spec:
     {{- end }}
   {{- end }}
   provider: {{ $region.provider }}
+  {{- with $blockedNetworkPrefixes := $region.blockedNetworkPrefixes }}
+  blockedNetworkPrefixes:
+    {{- toYaml $blockedNetworkPrefixes | nindent 4 }}
+  {{- end }}
   {{- with $kubernetes := $region.kubernetes }}
   kubernetes:
     kubeConfigSecret:

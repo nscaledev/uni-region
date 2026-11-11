@@ -129,6 +129,7 @@ spec:
                   required:
                   - conditionType
                   type: object
+                maxItems: 16
                 type: array
                 x-kubernetes-list-map-keys:
                 - conditionType
@@ -315,7 +316,10 @@ spec:
                     description: |-
                       Generation is metadata.generation as read when this snapshot was taken, so a
                       reader can tell whether the observation postdates a spec edit. Stamped on
-                      every poll, so a present subtree with no image means the image was unreadable.
+                      every poll, including a poll that finds no provider server at all, so a
+                      present subtree with no image means either the image was unreadable or there
+                      is no provider server to read one from. Those two are distinguished by the
+                      Active condition, not by this subtree.
                     format: int64
                     type: integer
                   image:
@@ -363,6 +367,21 @@ spec:
                         so it is length-bounded to keep the stored object small.
                       maxLength: 1024
                       type: string
+                    outputs:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        Outputs are values the gate's satisfier publishes to the server as
+                        instance metadata at provider create. Fixed once the gate is Open;
+                        cleared when a provider-create retry resets the gate. The rule's cost
+                        depends on the gate lists' MaxItems: see this package's README.
+                      maxProperties: 8
+                      type: object
+                      x-kubernetes-validations:
+                      - message: output keys are a tag's local name and values at
+                          most 255 characters
+                        rule: self.all(k, k.matches('^[a-z0-9][a-z0-9-]*$') && size(self[k])
+                          <= 255)
                     reason:
                       description: |-
                         Reason is a machine-readable reason for the state. It is written by an
@@ -387,6 +406,7 @@ spec:
                   - lastTransitionTime
                   - state
                   type: object
+                maxItems: 16
                 type: array
                 x-kubernetes-list-map-keys:
                 - conditionType

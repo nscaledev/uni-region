@@ -19,6 +19,9 @@ behaviour is identical everywhere by construction rather than by convention.
   platform unmodified.
 - Managed payloads (an SSH certificate authority is referenced) must support
   managed cloud-init augmentation, which excludes gzip.
+- `#part-handler` is rejected as the payload or a top-level part; see the
+  server README's "Managed cloud-init augmentation" section. Region checks it
+  on create and on an update that changes user-data, never stored data.
 - Rejections carry the parser's specific reason, recovered structurally from
   the parser's typed error — never by parsing message strings.
 

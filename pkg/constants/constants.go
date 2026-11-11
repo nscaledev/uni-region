@@ -41,6 +41,9 @@ var (
 	Revision string
 )
 
+// Service names the service in metrics and traces, the same for every binary in it.
+const Service = "unikorn-region"
+
 // VersionString returns a canonical version string.  It's based on
 // HTTP's User-Agent so can be used to set that too, if this ever has to
 // call out ot other micro services.
@@ -75,6 +78,9 @@ const (
 	// ServerLabel creates an indexable linkage between resources and an
 	// owning entity.
 	ServerLabel = "regions.unikorn-cloud.org/server-id"
+	// FileStorageLabel creates an indexable linkage between Manual Snapshots
+	// and their parent File Storage.
+	FileStorageLabel = "regions.unikorn-cloud.org/file-storage-id"
 )
 
 const (

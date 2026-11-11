@@ -28,13 +28,35 @@ The useful way to read it is not as a directory tree, but as one system:
   public v2 Volume lifecycle contract and core CRUD handlers are published;
   creation allocates requested capacity through Identity before persisting the
   Volume. Its persisted model reserves one Server attachment through the
-  internal handler-owned `spec.claimRef`; Server status is the sole persisted
-  projection of attachment progress. Claim writes and attachment reconciliation
-  remain later lifecycle slices
+  internal `spec.claimRef`, which the Server handler creates and compensates and
+  the Volume controller releases after provider teardown. Before attachment,
+  that controller places its canonical per-Volume reference on the Server; it
+  removes the reference after teardown and before releasing the claim. Server
+  deletion remains blocked while any such reference exists. Server status projects
+  detailed attachment progress, while Volume status exposes when the current
+  attachment was first confirmed. Its Volume
+  provisioner reconciles the backing Volume and claimed Server attachment, then
+  projects progress to Server status.
+  Its provider capability exposes neutral backing discovery, observed
+  size, and lifecycle state. The monitor projects that truth into observed
+  size and coarse health without taking over the controller-owned `Available`
+  condition. `VolumeStatus.ProvisionedAt` records durable backing-storage
+  creation, so provider loss degrades health without triggering replacement
+  under the same Region Volume ID.
+  OpenStack also supports server attachment behavior.
+- `FileStorageSnapshot` is the installable storage contract for project-scoped
+  customer Manual Snapshots, with [nested v2 creation, deletion](./handler/storage/README.md#manual-snapshot-lifecycle),
+  and [reads](./handler/storage/README.md#manual-snapshot-reads) under their File
+  Storage parent. Region records intent. File Storage deletion foreground-cascades
+  to blocking snapshots before parent deprovisioning.
+- `FileStorageDirectoryQuota` is the internal CRD for hard capacity and inode
+  limits on one directory of a File Storage, with default user/group limits and
+  up to 20 per-subject rules. Only the [resource model](./apis/unikorn/v1alpha1/README.md)
+  exists so far; the API handler and the `uni-storage` controller come later.
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
-  Nova attach/detach implementation exist; public API projection and
-  server-controller reconciliation remain separate follow-up work
+  Nova attach/detach implementation exist; the Volume provisioner projects
+  attachment progress while the Server handler remains the owner of intent.
 
 ## Recommended Reading Order
 
@@ -102,6 +124,7 @@ relationships.
 
 - [monitor](./monitor/README.md)
 - [monitor/health/server](./monitor/health/server/README.md)
+- [monitor/health/volume](./monitor/health/volume/README.md)
 
 These packages cover the part of the system that is intentionally observational
 rather than declarative.

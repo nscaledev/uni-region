@@ -18,6 +18,7 @@ region service addresses through its public API:
 | `ServerID` | servers |
 | `SSHCertificateAuthorityID` | SSH certificate authorities |
 | `FileStorageID` | file storage |
+| `FileStorageSnapshotID` | manual File Storage snapshot name slots |
 | `ImageID` | images |
 | `FlavorID` | flavors |
 
@@ -35,13 +36,14 @@ binding time before any handler is reached. Non-UUID path values produce a
 These types run from the router down to the provider layer — not the API layer
 alone. The region service mints UUIDs for its own CRD-backed resources (`Region`,
 `Identity`, `Network`, `SecurityGroup`, `LoadBalancer`, `Volume`, `Server`,
-`SSHCertificateAuthority`, `FileStorage`) and addresses provider-owned
+`SSHCertificateAuthority`, `FileStorage`, `FileStorageSnapshot`) and addresses provider-owned
 `Image`/`Flavor` resources by their provider-assigned UUIDs. They appear on:
 
 - the generated OpenAPI surface (path parameters and request/response body fields);
 - **CRD spec fields** that hold region-owned UUIDs — currently the `Server` CRD's
   `FlavorID`, `Image.ID`, `SecurityGroups[].ID`, `Networks[].ID`, and
-  `VolumeClassFlavorSelector.IDs`. Because the
+  `VolumeClassFlavorSelector.IDs`, plus
+  `FileStorageSnapshot.Spec.FileStorageID`. Because the
   types are `uuid.UUID`-backed (`[16]byte`), each declaration carries
   `+kubebuilder:validation:Type=string` (and `Format=uuid`) so controller-gen
   emits a string schema rather than a byte array; the existing `TextMarshaler`
