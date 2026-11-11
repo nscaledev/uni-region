@@ -60,6 +60,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/types"
 	"github.com/unikorn-cloud/region/pkg/userdata"
 
+	kcorev1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -237,39 +238,11 @@ func sshInjectionStatus(in *regionv1.Server) *openapi.SshInjection {
 	return &out
 }
 
-func convertProviderCreateGateState(in regionv1.ServerProviderCreateGateState) openapi.ServerProviderCreateGateState {
-	switch in {
-	case regionv1.ServerProviderCreateGateOpen:
-		return openapi.ServerProviderCreateGateStateOpen
-	case regionv1.ServerProviderCreateGateLocked:
-		return openapi.ServerProviderCreateGateStateLocked
-	case regionv1.ServerProviderCreateGateClosed:
-		return openapi.ServerProviderCreateGateStateClosed
-	default:
-		return openapi.ServerProviderCreateGateStateClosed
-	}
-}
-
 func convertRemainingProviderCreateGates(in *regionv1.Server) *openapi.ServerRemainingProviderCreateGates {
-	remaining := in.RemainingProviderCreateGateStatuses()
+	remaining := in.RemainingProviderCreateGates()
 	out := make(openapi.ServerRemainingProviderCreateGates, len(remaining))
 
-	for i := range remaining {
-		gate := &remaining[i]
-
-		out[i] = openapi.ServerRemainingProviderCreateGate{
-			ConditionType: gate.ConditionType,
-			State:         convertProviderCreateGateState(gate.State),
-		}
-
-		if gate.Reason != "" {
-			out[i].Reason = ptr.To(gate.Reason)
-		}
-
-		if gate.Message != "" {
-			out[i].Message = ptr.To(gate.Message)
-		}
-	}
+	copy(out, remaining)
 
 	return &out
 }
@@ -906,15 +879,15 @@ func providerCreateGateActor(ctx context.Context) (string, error) {
 }
 
 // providerCreateGateActionChanged reports whether a report changes the gate.
-// Its outputs need no comparison: on a gate already Open they are frozen, so a
+// Its outputs need no comparison: on a gate already True they are frozen, so a
 // report either matches the stored ones or is refused before this.
-func providerCreateGateActionChanged(current *regionv1.Server, conditionType string, state regionv1.ServerProviderCreateGateState, actor, reason, message string) bool {
+func providerCreateGateActionChanged(current *regionv1.Server, conditionType, actor, reason, message string) bool {
 	status, ok := current.ProviderCreateGateStatusRead(conditionType)
 	if !ok {
 		return true
 	}
 
-	return status.State != state ||
+	return status.Status != kcorev1.ConditionTrue ||
 		status.Actor != actor ||
 		status.Reason != reason ||
 		status.Message != message
@@ -951,75 +924,14 @@ func validateProviderCreateGateAction(request *openapi.ServerProviderCreateGateA
 	return *request.Outputs, nil
 }
 
-// providerCreateGateActionState resolves the reported gate state, defaulting to
-// Open (satisfy) when the caller omits it. The openapi layer already validates
-// the enum on the HTTP path; the explicit mapping here rejects any unrecognized
-// value so a non-HTTP caller cannot write a garbage state onto the status.
-func providerCreateGateActionState(request *openapi.ServerProviderCreateGateAction) (regionv1.ServerProviderCreateGateState, error) {
-	if request.State == nil {
-		return regionv1.ServerProviderCreateGateOpen, nil
-	}
-
-	switch *request.State {
-	case openapi.ServerProviderCreateGateActionStateClosed:
-		return regionv1.ServerProviderCreateGateClosed, nil
-	case openapi.ServerProviderCreateGateActionStateOpen:
-		return regionv1.ServerProviderCreateGateOpen, nil
-	case openapi.ServerProviderCreateGateActionStateLocked:
-		return regionv1.ServerProviderCreateGateLocked, nil
-	}
-
-	return "", errors.OAuth2InvalidRequest("state must be one of Closed, Open, Locked")
-}
-
-// providerCreateGateOpenDowngrade reports whether the reported state would move
-// an already-Open gate backwards. Once a gate is Open, provider-create may have
-// started (or completed) on the strength of it, and servers reconcile
-// constantly, so letting a satisfier move it back to Closed or Locked would let
-// any holder of this endpoint wedge or fail a running server on a later pass.
-// Open is monotonic for the life of an attempt; only Region resets it, as part
-// of a provider-create retry.
-func providerCreateGateOpenDowngrade(current *regionv1.Server, conditionType string, state regionv1.ServerProviderCreateGateState) bool {
-	existing, ok := current.ProviderCreateGateStatusRead(conditionType)
-
-	return ok &&
-		existing.State == regionv1.ServerProviderCreateGateOpen &&
-		state != regionv1.ServerProviderCreateGateOpen
-}
-
-// providerCreateGateReport validates a gate report and returns the state and
-// outputs it reports. The state defaults to Open (satisfy). Locked tells the
-// provisioner the gate will never be satisfied, so provider-create fails
-// instead of holding; Closed reports transient progress without resolving the
-// gate. Outputs are published by the report that opens the gate: a Closed or
-// Locked gate never reaches provider create, so outputs on one would be
-// dropped silently, and are refused instead.
-func providerCreateGateReport(request *openapi.ServerProviderCreateGateAction) (regionv1.ServerProviderCreateGateState, map[string]string, error) {
-	requested, err := validateProviderCreateGateAction(request)
-	if err != nil {
-		return "", nil, err
-	}
-
-	state, err := providerCreateGateActionState(request)
-	if err != nil {
-		return "", nil, err
-	}
-
-	if requested != nil && state != regionv1.ServerProviderCreateGateOpen {
-		return "", nil, errors.OAuth2InvalidRequest("outputs may only be sent with an Open report")
-	}
-
-	return state, requested, nil
-}
-
 // providerCreateGateResolveOutputs returns the outputs a report leaves on the
 // gate. They come with the report that satisfies it and are frozen once it is
-// Open: the controller may already be in provider create with the metadata
+// True: the controller may already be in provider create with the metadata
 // they made, which is written only then, so a value added or changed later
 // would never reach the host. A report without outputs keeps the stored ones.
 func providerCreateGateResolveOutputs(current *regionv1.Server, conditionType string, requested map[string]string) (map[string]string, error) {
 	status, ok := current.ProviderCreateGateStatusRead(conditionType)
-	if !ok || status.State != regionv1.ServerProviderCreateGateOpen {
+	if !ok || status.Status != kcorev1.ConditionTrue {
 		return requested, nil
 	}
 
@@ -1041,7 +953,7 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 	// Declared before the request is validated, so a refused one is recorded.
 	authz.Declare(ctx, target)
 
-	state, requested, err := providerCreateGateReport(request)
+	requested, err := validateProviderCreateGateAction(request)
 	if err != nil {
 		return err
 	}
@@ -1061,30 +973,25 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
 	}
 
-	if providerCreateGateOpenDowngrade(current, conditionType, state) {
-		return errors.HTTPConflict()
-	}
-
 	outputs, err := providerCreateGateResolveOutputs(current, conditionType, requested)
 	if err != nil {
 		return err
 	}
 
-	changed := providerCreateGateActionChanged(current, conditionType, state, actor, request.Reason, request.Message)
+	changed := providerCreateGateActionChanged(current, conditionType, actor, request.Reason, request.Message)
 
 	if changed {
 		updated := current.DeepCopy()
-		updated.ProviderCreateGateStatusWrite(conditionType, state, actor, request.Reason, request.Message, outputs)
+		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionTrue, actor, request.Reason, request.Message, outputs)
 
 		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
-			return fmt.Errorf("%w: unable to report provider-create gate", err)
+			return fmt.Errorf("%w: unable to satisfy provider-create gate", err)
 		}
 	}
 
-	log.FromContext(ctx).Info("server provider-create gate reported",
+	log.FromContext(ctx).Info("server provider-create gate satisfied",
 		"server", serverID.String(),
 		"conditionType", conditionType,
-		"state", state,
 		"actor", actor,
 		"reason", request.Reason,
 		"outputs", outputs,

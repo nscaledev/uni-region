@@ -2612,11 +2612,11 @@ func TestReconcileServerTags(t *testing.T) {
 			{ConditionType: "storage.unikorn-cloud.org/pending"},
 			{ConditionType: "region.unikorn-cloud.org/ready"},
 		}
-		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/partition-ready", regionv1.ServerProviderCreateGateOpen, "hfm", "Programmed", "ready", map[string]string{"pkey": "0x0600"})
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/partition-ready", k8score.ConditionTrue, "hfm", "Programmed", "ready", map[string]string{"pkey": "0x0600"})
 		// Not satisfied: its outputs are not published.
-		server.ProviderCreateGateStatusWrite("storage.unikorn-cloud.org/pending", regionv1.ServerProviderCreateGateClosed, "s", "Waiting", "waiting", map[string]string{"volume": "v"})
+		server.ProviderCreateGateStatusWrite("storage.unikorn-cloud.org/pending", k8score.ConditionUnknown, "s", "Waiting", "waiting", map[string]string{"volume": "v"})
 		// A system key's name: the system key still wins.
-		server.ProviderCreateGateStatusWrite("region.unikorn-cloud.org/ready", regionv1.ServerProviderCreateGateOpen, "x", "Ready", "ready", map[string]string{"server-id": "evil"})
+		server.ProviderCreateGateStatusWrite("region.unikorn-cloud.org/ready", k8score.ConditionTrue, "x", "Ready", "ready", map[string]string{"server-id": "evil"})
 
 		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
 		openstackNetworks := []servers.Network{{UUID: openstackNetwork.ID, Port: openstackServerPort.ID}}
@@ -2655,8 +2655,8 @@ func TestReconcileServerTags(t *testing.T) {
 			{ConditionType: "fabric.unikorn-cloud.org/b-ready"},
 			{ConditionType: "fabric.unikorn-cloud.org/a-ready"},
 		}
-		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/a-ready", regionv1.ServerProviderCreateGateOpen, "a", "Ready", "ready", map[string]string{"pkey": "0x0a00"})
-		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/b-ready", regionv1.ServerProviderCreateGateOpen, "b", "Ready", "ready", map[string]string{"pkey": "0x0b00"})
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/a-ready", k8score.ConditionTrue, "a", "Ready", "ready", map[string]string{"pkey": "0x0a00"})
+		server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/b-ready", k8score.ConditionTrue, "b", "Ready", "ready", map[string]string{"pkey": "0x0b00"})
 
 		openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
 		openstackNetworks := []servers.Network{{UUID: openstackNetwork.ID, Port: openstackServerPort.ID}}

@@ -117,8 +117,8 @@ spec:
                 type: string
               providerCreateGates:
                 description: |-
-                  ProviderCreateGates are externally satisfied gates that must all be Open
-                  before the server controller calls the provider create path.
+                  ProviderCreateGates are externally satisfied gates that must be True before
+                  the server controller calls the provider create path.
                 items:
                   properties:
                     conditionType:
@@ -348,8 +348,7 @@ spec:
                     actor:
                       description: |-
                         Actor is the authenticated service identity that last wrote this gate
-                        state.
-                      maxLength: 256
+                        status.
                       type: string
                     conditionType:
                       description: ConditionType matches a configured ServerSpec.ProviderCreateGates
@@ -357,22 +356,19 @@ spec:
                       minLength: 1
                       type: string
                     lastTransitionTime:
-                      description: LastTransitionTime records when the gate state
+                      description: LastTransitionTime records when the gate status
                         last changed.
                       format: date-time
                       type: string
                     message:
-                      description: |-
-                        Message is human-readable detail. It is written by an external satisfier,
-                        so it is length-bounded to keep the stored object small.
-                      maxLength: 1024
+                      description: Message is human-readable detail.
                       type: string
                     outputs:
                       additionalProperties:
                         type: string
                       description: |-
                         Outputs are values the gate's satisfier publishes to the server as
-                        instance metadata at provider create. Fixed once the gate is Open;
+                        instance metadata at provider create. Fixed once the gate is True;
                         cleared when a provider-create retry resets the gate. The rule's cost
                         depends on the gate lists' MaxItems: see this package's README.
                       maxProperties: 8
@@ -383,28 +379,19 @@ spec:
                         rule: self.all(k, k.matches('^[a-z0-9][a-z0-9-]*$') && size(self[k])
                           <= 255)
                     reason:
-                      description: |-
-                        Reason is a machine-readable reason for the state. It is written by an
-                        external satisfier, so it is length-bounded to keep the stored object
-                        small.
-                      maxLength: 256
+                      description: Reason is a machine-readable reason for the status.
                       type: string
-                    state:
-                      default: Closed
-                      description: |-
-                        State is the resolved gate state: Closed (default) holds provider-create,
-                        Open satisfies it, and Locked fails it permanently. The default makes a
-                        gate persisted before this field existed (status "True", no state) decode
-                        as Closed rather than "", which would fail the enum on the next write.
+                    status:
+                      description: Status is True when the gate is satisfied.
                       enum:
-                      - Closed
-                      - Open
-                      - Locked
+                      - "True"
+                      - "False"
+                      - Unknown
                       type: string
                   required:
                   - conditionType
                   - lastTransitionTime
-                  - state
+                  - status
                   type: object
                 maxItems: 16
                 type: array

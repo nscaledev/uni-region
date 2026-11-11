@@ -136,7 +136,7 @@ func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
 	identity.Name = "identity-1"
 	identity.SetProvisioningCondition(corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned, "")
 
-	newServer := func(gateState regionv1.ServerProviderCreateGateState, write bool) *regionv1.Server {
+	newServer := func(gateStatus corev1.ConditionStatus, write bool) *regionv1.Server {
 		server := &regionv1.Server{}
 		server.Name = "server-1"
 		server.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
@@ -145,7 +145,7 @@ func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
 
 		if write {
 			server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/partition-ready",
-				gateState, "actor", "Reason", "message", nil)
+				gateStatus, "actor", "Reason", "message", nil)
 		}
 
 		return server
@@ -166,10 +166,10 @@ func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
 		require.False(t, provisioners.IsTerminal(err), "an unsatisfied gate yields, it must not park")
 	})
 
-	t.Run("ClosedGateYieldsTypedAndNamesTheGate", func(t *testing.T) {
+	t.Run("FalseGateYieldsTypedAndNamesTheGate", func(t *testing.T) {
 		t.Parallel()
 
-		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(regionv1.ServerProviderCreateGateClosed, true), cli, identity)
+		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(corev1.ConditionFalse, true), cli, identity)
 		require.Error(t, err)
 
 		var perr *provisioners.Error
@@ -182,7 +182,7 @@ func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
 	t.Run("SatisfiedGatePasses", func(t *testing.T) {
 		t.Parallel()
 
-		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(regionv1.ServerProviderCreateGateOpen, true), cli, identity)
+		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(corev1.ConditionTrue, true), cli, identity)
 		require.NoError(t, err, "a satisfied gate must not block the create path")
 	})
 }

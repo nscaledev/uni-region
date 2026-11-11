@@ -310,11 +310,11 @@ func (c *Server) ProviderCreateGateStatusRead(conditionType string) (*ServerProv
 // ProviderCreateGateStatusWrite records a gate's status. It replaces the whole
 // entry, so outputs are an explicit argument: pass the outputs to keep, or nil
 // to clear them. The map is copied.
-func (c *Server) ProviderCreateGateStatusWrite(conditionType string, state ServerProviderCreateGateState, actor, reason, message string, outputs map[string]string) {
+func (c *Server) ProviderCreateGateStatusWrite(conditionType string, status corev1.ConditionStatus, actor, reason, message string, outputs map[string]string) {
 	now := metav1.Now()
 	gate := ServerProviderCreateGateStatus{
 		ConditionType:      conditionType,
-		State:              state,
+		Status:             status,
 		LastTransitionTime: now,
 		Actor:              actor,
 		Reason:             reason,
@@ -329,7 +329,7 @@ func (c *Server) ProviderCreateGateStatusWrite(conditionType string, state Serve
 		return
 	}
 
-	if existing.State == state {
+	if existing.Status == status {
 		gate.LastTransitionTime = existing.LastTransitionTime
 	}
 
@@ -341,7 +341,7 @@ func (c *Server) RemainingProviderCreateGates() []string {
 
 	for _, gate := range c.Spec.ProviderCreateGates {
 		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
-		if !ok || status.State != ServerProviderCreateGateOpen {
+		if !ok || status.Status != corev1.ConditionTrue {
 			out = append(out, gate.ConditionType)
 		}
 	}
@@ -353,54 +353,12 @@ func (c *Server) ProviderCreateGatesReady() bool {
 	return len(c.RemainingProviderCreateGates()) == 0
 }
 
-// RemainingProviderCreateGateStatuses returns the resolved status of every
-// configured gate that is not Open, so a reader can tell Closed (unresolved,
-// still being worked) from Locked (will never open) and see the reported
-// reason. A gate with no status yet is reported Closed, its resting state.
-func (c *Server) RemainingProviderCreateGateStatuses() []ServerProviderCreateGateStatus {
-	out := make([]ServerProviderCreateGateStatus, 0, len(c.Spec.ProviderCreateGates))
-
-	for _, gate := range c.Spec.ProviderCreateGates {
-		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
-		if ok && status.State == ServerProviderCreateGateOpen {
-			continue
-		}
-
-		if !ok {
-			out = append(out, ServerProviderCreateGateStatus{
-				ConditionType: gate.ConditionType,
-				State:         ServerProviderCreateGateClosed,
-			})
-
-			continue
-		}
-
-		out = append(out, *status)
-	}
-
-	return out
-}
-
-// LockedProviderCreateGate returns the first configured gate reported Locked, if
-// any. A Locked gate can never be satisfied, so the provisioner fails
-// provider-create rather than holding when a gate is Locked.
-func (c *Server) LockedProviderCreateGate() (*ServerProviderCreateGateStatus, bool) {
-	for _, gate := range c.Spec.ProviderCreateGates {
-		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
-		if ok && status.State == ServerProviderCreateGateLocked {
-			return status, true
-		}
-	}
-
-	return nil, false
-}
-
-// ProviderCreateGatesReset returns every configured gate to Closed for a
+// ProviderCreateGatesReset returns every configured gate to Unknown for a
 // provider-create retry, clearing its outputs: the next satisfying report
 // sets them again, before the next create.
 func (c *Server) ProviderCreateGatesReset(actor, reason, message string) {
 	for _, gate := range c.Spec.ProviderCreateGates {
-		c.ProviderCreateGateStatusWrite(gate.ConditionType, ServerProviderCreateGateClosed, actor, reason, message, nil)
+		c.ProviderCreateGateStatusWrite(gate.ConditionType, corev1.ConditionUnknown, actor, reason, message, nil)
 	}
 }
 

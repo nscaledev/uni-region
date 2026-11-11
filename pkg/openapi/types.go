@@ -88,20 +88,6 @@ const (
 	RegionTypeSimulated  RegionType = "simulated"
 )
 
-// Defines values for ServerProviderCreateGateActionState.
-const (
-	ServerProviderCreateGateActionStateClosed ServerProviderCreateGateActionState = "Closed"
-	ServerProviderCreateGateActionStateLocked ServerProviderCreateGateActionState = "Locked"
-	ServerProviderCreateGateActionStateOpen   ServerProviderCreateGateActionState = "Open"
-)
-
-// Defines values for ServerProviderCreateGateState.
-const (
-	ServerProviderCreateGateStateClosed ServerProviderCreateGateState = "Closed"
-	ServerProviderCreateGateStateLocked ServerProviderCreateGateState = "Locked"
-	ServerProviderCreateGateStateOpen   ServerProviderCreateGateState = "Open"
-)
-
 // Defines values for SshInjection.
 const (
 	SshInjectionCa              SshInjection = "ca"
@@ -1144,7 +1130,7 @@ type ServerProviderCreateGate struct {
 	ConditionType ServerProviderCreateGateType `json:"conditionType"`
 }
 
-// ServerProviderCreateGateAction Request to report a configured provider-create gate's status.
+// ServerProviderCreateGateAction Request to satisfy a configured provider-create gate.
 type ServerProviderCreateGateAction struct {
 	// ConditionType A provider-create gate condition type.
 	ConditionType ServerProviderCreateGateType `json:"conditionType"`
@@ -1152,21 +1138,12 @@ type ServerProviderCreateGateAction struct {
 	// Message Human-readable details for operators.
 	Message string `json:"message"`
 
-	// Outputs Values the gate's satisfier publishes to the server. Each is written as instance metadata when the server is created, named as a tag would be under the gate's `<service>.<domain>/`: output `pkey` on gate `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`. A key must be a tag's local name, and the condition type must have that prefix; otherwise the report is a 400. Outputs are sent with the report that satisfies the gate, and are frozen once it is Open, until a provider-create retry resets it: a later report with the same outputs or none keeps them, and one with any other outputs is a 409. Outputs are accepted only on an Open report; a Closed or Locked report with outputs is a 400. The values are readable from inside the server, so they must never be secret.
+	// Outputs Values the gate's satisfier publishes to the server. Each is written as instance metadata when the server is created, named as a tag would be under the gate's `<service>.<domain>/`: output `pkey` on gate `fabric.unikorn-cloud.org/partition-ready` becomes `fabric:pkey`. A key must be a tag's local name, and the condition type must have that prefix; otherwise the report is a 400. Outputs are sent with the report that satisfies the gate, and are frozen once it is satisfied, until a provider-create retry resets it: a later report with the same outputs or none keeps them, and one with any other outputs is a 409. The values are readable from inside the server, so they must never be secret.
 	Outputs *map[string]string `json:"outputs,omitempty"`
 
-	// Reason Machine-readable reason for the reported state.
+	// Reason Machine-readable reason for satisfying the gate.
 	Reason string `json:"reason"`
-
-	// State The gate state to report. Open satisfies the gate; Locked blocks it permanently (provider-create fails); Closed reports transient progress and refreshes the reason without resolving the gate. Defaults to Open. Once a gate is Open it may not be moved back to Closed or Locked; that downgrade is rejected with a conflict.
-	State *ServerProviderCreateGateActionState `json:"state,omitempty"`
 }
-
-// ServerProviderCreateGateActionState The gate state to report. Open satisfies the gate; Locked blocks it permanently (provider-create fails); Closed reports transient progress and refreshes the reason without resolving the gate. Defaults to Open. Once a gate is Open it may not be moved back to Closed or Locked; that downgrade is rejected with a conflict.
-type ServerProviderCreateGateActionState string
-
-// ServerProviderCreateGateState The resolved state of a provider-create gate. Closed holds provider-create (unresolved, still being worked); Open satisfies it; Locked fails provider-create permanently.
-type ServerProviderCreateGateState string
 
 // ServerProviderCreateGateType A provider-create gate condition type.
 type ServerProviderCreateGateType = string
@@ -1192,23 +1169,8 @@ type ServerRead struct {
 	Status ServerStatus `json:"status"`
 }
 
-// ServerRemainingProviderCreateGate A configured provider-create gate that is not yet Open, with its resolved state.
-type ServerRemainingProviderCreateGate struct {
-	// ConditionType A provider-create gate condition type.
-	ConditionType ServerProviderCreateGateType `json:"conditionType"`
-
-	// Message Human-readable detail reported for the gate.
-	Message *string `json:"message,omitempty"`
-
-	// Reason Machine-readable reason for the reported state.
-	Reason *string `json:"reason,omitempty"`
-
-	// State The resolved state of a provider-create gate. Closed holds provider-create (unresolved, still being worked); Open satisfies it; Locked fails provider-create permanently.
-	State ServerProviderCreateGateState `json:"state"`
-}
-
-// ServerRemainingProviderCreateGates Configured provider-create gates that are not yet Open, each with its resolved state so a reader can tell Closed (still being worked) from Locked (will never open).
-type ServerRemainingProviderCreateGates = []ServerRemainingProviderCreateGate
+// ServerRemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
+type ServerRemainingProviderCreateGates = []ServerProviderCreateGateType
 
 // ServerSecurityGroup A security group.
 type ServerSecurityGroup struct {
@@ -1400,7 +1362,7 @@ type ServerV2Status struct {
 	// RegionId The region the server belongs to.
 	RegionId RegionId `json:"regionId"`
 
-	// RemainingProviderCreateGates Configured provider-create gates that are not yet Open, each with its resolved state so a reader can tell Closed (still being worked) from Locked (will never open).
+	// RemainingProviderCreateGates Configured provider-create gates that are not currently satisfied.
 	RemainingProviderCreateGates *ServerRemainingProviderCreateGates `json:"remainingProviderCreateGates,omitempty"`
 
 	// SshCertificateAuthorityId The SSH certificate authority configured when the server was created.
@@ -2061,7 +2023,7 @@ type SecurityGroupV2CreateRequest = SecurityGroupV2Create
 // SecurityGroupV2UpdateRequest A security group request.
 type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 
-// ServerProviderCreateGateRequest Request to report a configured provider-create gate's status.
+// ServerProviderCreateGateRequest Request to satisfy a configured provider-create gate.
 type ServerProviderCreateGateRequest = ServerProviderCreateGateAction
 
 // ServerRequest A server request.

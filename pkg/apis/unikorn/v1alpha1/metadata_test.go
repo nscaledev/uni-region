@@ -22,6 +22,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 func TestMetadataKey(t *testing.T) {
@@ -128,10 +130,10 @@ func TestServerProviderCreateGateOutputMetadata(t *testing.T) {
 		},
 	}
 
-	server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/b-ready", regionv1.ServerProviderCreateGateOpen, "b", "Ready", "ready", map[string]string{"pkey": "0x0b00"})
-	server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/a-ready", regionv1.ServerProviderCreateGateOpen, "a", "Ready", "ready", map[string]string{"pkey": "0x0a00", "pkeys": "0x0a00"})
-	server.ProviderCreateGateStatusWrite("storage.unikorn-cloud.org/pending", regionv1.ServerProviderCreateGateClosed, "s", "Waiting", "waiting", map[string]string{"volume": "v"})
-	server.ProviderCreateGateStatusWrite("nodomain", regionv1.ServerProviderCreateGateOpen, "n", "Ready", "ready", map[string]string{"x": "y"})
+	server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/b-ready", corev1.ConditionTrue, "b", "Ready", "ready", map[string]string{"pkey": "0x0b00"})
+	server.ProviderCreateGateStatusWrite("fabric.unikorn-cloud.org/a-ready", corev1.ConditionTrue, "a", "Ready", "ready", map[string]string{"pkey": "0x0a00", "pkeys": "0x0a00"})
+	server.ProviderCreateGateStatusWrite("storage.unikorn-cloud.org/pending", corev1.ConditionUnknown, "s", "Waiting", "waiting", map[string]string{"volume": "v"})
+	server.ProviderCreateGateStatusWrite("nodomain", corev1.ConditionTrue, "n", "Ready", "ready", map[string]string{"x": "y"})
 
 	metadata, unmapped := server.ProviderCreateGateOutputMetadata()
 

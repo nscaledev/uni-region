@@ -1158,9 +1158,7 @@ func TestServerCreateV2SetsProviderCreateGates(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
-	require.Equal(t, openapi.ServerRemainingProviderCreateGates{
-		{ConditionType: srvProviderGate, State: openapi.ServerProviderCreateGateStateClosed},
-	}, *result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{srvProviderGate}, *result.Status.RemainingProviderCreateGates)
 
 	created := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: result.Metadata.Id}, created))
@@ -2019,9 +2017,7 @@ func TestServerUpdateV2PreservesProviderCreateGates(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
-	require.Equal(t, openapi.ServerRemainingProviderCreateGates{
-		{ConditionType: srvProviderGate, State: openapi.ServerProviderCreateGateStateClosed},
-	}, *result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{srvProviderGate}, *result.Status.RemainingProviderCreateGates)
 
 	updated, err := c.GetV2Raw(ctx, resource.Name)
 	require.NoError(t, err)
@@ -2275,7 +2271,7 @@ func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
 		{ConditionType: srvProviderGate},
 		{ConditionType: "example.unikorn-cloud.org/second-ready"},
 	}
-	resource.ProviderCreateGateStatusWrite(srvProviderGate, regionv1.ServerProviderCreateGateOpen, "service", "Prepared", "done", nil)
+	resource.ProviderCreateGateStatusWrite(srvProviderGate, corev1.ConditionTrue, "service", "Prepared", "done", nil)
 
 	k8sClient := newSrvFakeClient(t, resource).Build()
 	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
@@ -2293,9 +2289,7 @@ func TestServerGetV2ReturnsRemainingProviderCreateGates(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
-	require.Equal(t, openapi.ServerRemainingProviderCreateGates{
-		{ConditionType: "example.unikorn-cloud.org/second-ready", State: openapi.ServerProviderCreateGateStateClosed},
-	}, *result.Status.RemainingProviderCreateGates)
+	require.Equal(t, openapi.ServerRemainingProviderCreateGates{"example.unikorn-cloud.org/second-ready"}, *result.Status.RemainingProviderCreateGates)
 }
 
 func TestServerSatisfyProviderCreateGate(t *testing.T) {
@@ -2336,7 +2330,7 @@ func TestServerSatisfyProviderCreateGate(t *testing.T) {
 
 	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
 	require.True(t, ok)
-	require.Equal(t, regionv1.ServerProviderCreateGateOpen, status.State)
+	require.Equal(t, corev1.ConditionTrue, status.Status)
 	require.Equal(t, "pre-create-service", status.Actor)
 	require.Equal(t, request.Reason, status.Reason)
 	require.Equal(t, request.Message, status.Message)
@@ -2352,207 +2346,6 @@ func TestServerSatisfyProviderCreateGate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result.Status.RemainingProviderCreateGates)
 	require.Empty(t, *result.Status.RemainingProviderCreateGates)
-}
-
-func TestServerSatisfyProviderCreateGateLocks(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-
-	resource := testServerV2(srvServerID)
-	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
-		{ConditionType: srvProviderGate},
-	}
-
-	k8sClient := newSrvFakeClient(t, resource).
-		WithStatusSubresource(&regionv1.Server{}).
-		Build()
-	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-
-	c := server.NewClientV2(common.ClientArgs{
-		Client:    k8sClient,
-		Namespace: srvNamespace,
-		Identity:  mockIdentity,
-	})
-
-	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
-	ctx = withPrincipal(ctx)
-	ctx = withProviderCreateServiceCertificate(ctx, t)
-
-	locked := openapi.ServerProviderCreateGateActionStateLocked
-	request := &openapi.ServerProviderCreateGateAction{
-		ConditionType: srvProviderGate,
-		Reason:        "NoPKeyAvailable",
-		Message:       "p_key pool exhausted",
-		State:         &locked,
-	}
-
-	require.NoError(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
-
-	updated := &regionv1.Server{}
-	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
-
-	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
-	require.True(t, ok)
-	require.Equal(t, regionv1.ServerProviderCreateGateLocked, status.State)
-	require.Equal(t, "NoPKeyAvailable", status.Reason)
-
-	// A Locked gate is not satisfied, so it stays outstanding and Locked.
-	require.Equal(t, []string{srvProviderGate}, updated.RemainingProviderCreateGates())
-	gate, ok := updated.LockedProviderCreateGate()
-	require.True(t, ok)
-	require.Equal(t, srvProviderGate, gate.ConditionType)
-}
-
-func TestServerSatisfyProviderCreateGateRejectsDowngradeFromOpen(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		name  string
-		state openapi.ServerProviderCreateGateActionState
-	}{
-		{name: "to Closed", state: openapi.ServerProviderCreateGateActionStateClosed},
-		{name: "to Locked", state: openapi.ServerProviderCreateGateActionStateLocked},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			ctrl := gomock.NewController(t)
-
-			resource := testServerV2(srvServerID)
-			resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
-				{ConditionType: srvProviderGate},
-			}
-			// The gate is already Open (provider-create may already have run).
-			resource.ProviderCreateGateStatusWrite(srvProviderGate, regionv1.ServerProviderCreateGateOpen, "pre-create-service", "Prepared", "ready", nil)
-
-			k8sClient := newSrvFakeClient(t, resource).
-				WithStatusSubresource(&regionv1.Server{}).
-				Build()
-			mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-
-			c := server.NewClientV2(common.ClientArgs{
-				Client:    k8sClient,
-				Namespace: srvNamespace,
-				Identity:  mockIdentity,
-			})
-
-			ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
-			ctx = withPrincipal(ctx)
-			ctx = withProviderCreateServiceCertificate(ctx, t)
-
-			state := tc.state
-			request := &openapi.ServerProviderCreateGateAction{
-				ConditionType: srvProviderGate,
-				Reason:        "ChangedMind",
-				Message:       "trying to wedge a running server",
-				State:         &state,
-			}
-
-			err := c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request)
-			require.True(t, coreerrors.IsConflict(err), "expected 409 conflict, got: %v", err)
-
-			// The gate must remain Open and untouched.
-			updated := &regionv1.Server{}
-			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
-			status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
-			require.True(t, ok)
-			require.Equal(t, regionv1.ServerProviderCreateGateOpen, status.State)
-			require.Equal(t, "Prepared", status.Reason)
-		})
-	}
-}
-
-func TestServerSatisfyProviderCreateGateReportsClosed(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-
-	resource := testServerV2(srvServerID)
-	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
-		{ConditionType: srvProviderGate},
-	}
-
-	k8sClient := newSrvFakeClient(t, resource).
-		WithStatusSubresource(&regionv1.Server{}).
-		Build()
-	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-
-	c := server.NewClientV2(common.ClientArgs{
-		Client:    k8sClient,
-		Namespace: srvNamespace,
-		Identity:  mockIdentity,
-	})
-
-	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
-	ctx = withPrincipal(ctx)
-	ctx = withProviderCreateServiceCertificate(ctx, t)
-
-	// Reporting Closed records transient progress: the gate stays unresolved
-	// (not satisfied, not Locked) but the reason is recorded for operators.
-	closed := openapi.ServerProviderCreateGateActionStateClosed
-	request := &openapi.ServerProviderCreateGateAction{
-		ConditionType: srvProviderGate,
-		Reason:        "AllocatingPKey",
-		Message:       "still programming the fabric",
-		State:         &closed,
-	}
-
-	require.NoError(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
-
-	updated := &regionv1.Server{}
-	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
-
-	status, ok := updated.ProviderCreateGateStatusRead(srvProviderGate)
-	require.True(t, ok)
-	require.Equal(t, regionv1.ServerProviderCreateGateClosed, status.State)
-	require.Equal(t, "AllocatingPKey", status.Reason)
-
-	require.Equal(t, []string{srvProviderGate}, updated.RemainingProviderCreateGates())
-	_, ok = updated.LockedProviderCreateGate()
-	require.False(t, ok)
-}
-
-func TestServerSatisfyProviderCreateGateRejectsInvalidState(t *testing.T) {
-	t.Parallel()
-
-	ctrl := gomock.NewController(t)
-
-	resource := testServerV2(srvServerID)
-	resource.Spec.ProviderCreateGates = []regionv1.ServerProviderCreateGate{
-		{ConditionType: srvProviderGate},
-	}
-
-	k8sClient := newSrvFakeClient(t, resource).
-		WithStatusSubresource(&regionv1.Server{}).
-		Build()
-	mockIdentity := identitymock.NewMockClientWithResponsesInterface(ctrl)
-
-	c := server.NewClientV2(common.ClientArgs{
-		Client:    k8sClient,
-		Namespace: srvNamespace,
-		Identity:  mockIdentity,
-	})
-
-	ctx := rbac.NewContext(t.Context(), aclWithSrvProviderCreateGate())
-	ctx = withPrincipal(ctx)
-	ctx = withProviderCreateServiceCertificate(ctx, t)
-
-	// A state outside the Closed/Open/Locked enum is rejected by the handler,
-	// guarding non-HTTP callers that skip the openapi request validator.
-	bad := openapi.ServerProviderCreateGateActionState("Bogus")
-	request := &openapi.ServerProviderCreateGateAction{
-		ConditionType: srvProviderGate,
-		Reason:        "Bogus",
-		Message:       "not a valid state",
-		State:         &bad,
-	}
-
-	require.Error(t, c.SatisfyProviderCreateGate(ctx, idstest.MustParseServerID(resource.Name), request))
-
-	updated := &regionv1.Server{}
-	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
-	require.Empty(t, updated.Status.ProviderCreateGates)
 }
 
 func TestServerSatisfyProviderCreateGateIsIdempotent(t *testing.T) {
@@ -3518,11 +3311,11 @@ func TestServerSatisfyProviderCreateGateKeepsOutputsOnRepeat(t *testing.T) {
 	require.Equal(t, "still ready", status.Message)
 }
 
-// Outputs are frozen once the gate is Open: the server may already be in
+// Outputs are frozen once the gate is True: the server may already be in
 // provider create with the metadata it had, so a change, or outputs brought
 // to a gate satisfied without them, could never reach the host. Both are a
 // conflict, and nothing is written.
-func TestServerSatisfyProviderCreateGateFreezesOutputsOnceOpen(t *testing.T) {
+func TestServerSatisfyProviderCreateGateFreezesOutputsOnceTrue(t *testing.T) {
 	t.Parallel()
 
 	for name, first := range map[string]map[string]string{
@@ -3591,37 +3384,5 @@ func TestServerSatisfyProviderCreateGateRefusesOutputsItCannotPublish(t *testing
 
 		require.NoError(t, gc.SatisfyProviderCreateGate(ctx, id, gateReport(c.gate, nil)), c)
 		require.Nil(t, storedGate(ctx, t, k8sClient, resource, c.gate).Outputs, c)
-	}
-}
-
-// Outputs are published by the report that opens the gate. A Closed or Locked
-// gate never reaches provider create, so outputs on one would be dropped
-// silently: they are a bad request, and nothing is written.
-func TestServerSatisfyProviderCreateGateRefusesOutputsUnlessOpen(t *testing.T) {
-	t.Parallel()
-
-	for _, state := range []openapi.ServerProviderCreateGateActionState{
-		openapi.ServerProviderCreateGateActionStateClosed,
-		openapi.ServerProviderCreateGateActionStateLocked,
-	} {
-		t.Run(string(state), func(t *testing.T) {
-			t.Parallel()
-
-			c, k8sClient, resource, ctx := newGateClient(t, fabricGate)
-			id := idstest.MustParseServerID(resource.Name)
-
-			request := gateReport(fabricGate, map[string]string{"pkey": "0x0600"})
-			request.State = &state
-
-			err := c.SatisfyProviderCreateGate(ctx, id, request)
-			require.Error(t, err)
-			require.True(t, coreerrors.IsBadRequest(err), "expected 400, got: %v", err)
-
-			updated := &regionv1.Server{}
-			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
-
-			_, ok := updated.ProviderCreateGateStatusRead(fabricGate)
-			require.False(t, ok, "a refused report writes nothing")
-		})
 	}
 }
