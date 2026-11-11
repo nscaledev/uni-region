@@ -288,6 +288,11 @@ var objectWrites = []objectWrite{
 			ConditionType: "example", Reason: "test", Message: "test",
 		})
 	}},
+	{"server provider create gate withhold", "region:servers:v2/provider-create-gates", "withhold-create-gate", auditServer, false, func(ctx context.Context, args common.ClientArgs, id string) error {
+		return server.NewClientV2(args).WithholdProviderCreateGate(ctx, serverID(id), &openapi.ServerProviderCreateGateWithholdAction{
+			ConditionType: "example", Reason: "test", Message: "test",
+		})
+	}},
 	{"file storage update", "region:filestorage:v2", "update", auditFileStorage, false, func(ctx context.Context, args common.ClientArgs, id string) error {
 		_, err := storage.New(args).Update(ctx, regionids.FileStorageID(uuid.MustParse(id)), &openapi.StorageV2Update{})
 		return err
@@ -675,6 +680,9 @@ func TestWritesFailingBeforeTheirCheckAreRecorded(t *testing.T) {
 		}},
 		{"provider create gate with no condition", "region:servers:v2/provider-create-gates", "satisfy-create-gate", auditServer, func(ctx context.Context, args common.ClientArgs) error {
 			return server.NewClientV2(args).SatisfyProviderCreateGate(ctx, serverID(auditServer), &openapi.ServerProviderCreateGateAction{})
+		}},
+		{"provider create gate withhold with no condition", "region:servers:v2/provider-create-gates", "withhold-create-gate", auditServer, func(ctx context.Context, args common.ClientArgs) error {
+			return server.NewClientV2(args).WithholdProviderCreateGate(ctx, serverID(auditServer), &openapi.ServerProviderCreateGateWithholdAction{})
 		}},
 	}
 

@@ -90,7 +90,13 @@ stored objects rely on for linkage, migration, and operational coordination.
   by the server controller to pause before provider create. Matching
   `Server.Status.ProviderCreateGates` entries record the condition status,
   actor, reason, message, and transition time for operator diagnostics, and
-  any `outputs` the satisfier published for instance metadata.
+  any `outputs` the satisfier published for instance metadata. `True` means
+  satisfied; `Unknown` means not yet reported, or reset by a provider-create
+  retry; `False` means the satisfier has withheld the gate, reporting that it
+  cannot satisfy it yet and why. `False` is pending, not terminal: the server
+  controller keeps waiting (as `DependencyFailed`) and a later satisfying
+  report moves the gate to `True`. A gate is never moved from `True` to
+  `False`; that is a 409 at the API.
   `ProviderCreateGateStatusWrite` replaces the whole entry, so outputs are an
   explicit argument; `ProviderCreateGatesReset` clears them. Both gate lists
   hold at most 16 entries. That bound is load-bearing: the CEL rule on

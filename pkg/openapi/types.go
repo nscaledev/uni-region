@@ -1148,6 +1148,18 @@ type ServerProviderCreateGateAction struct {
 // ServerProviderCreateGateType A provider-create gate condition type.
 type ServerProviderCreateGateType = string
 
+// ServerProviderCreateGateWithholdAction Request to report that a configured provider-create gate cannot be satisfied yet. It carries no outputs: outputs are published only by the report that satisfies the gate.
+type ServerProviderCreateGateWithholdAction struct {
+	// ConditionType A provider-create gate condition type.
+	ConditionType ServerProviderCreateGateType `json:"conditionType"`
+
+	// Message Human-readable details for operators.
+	Message string `json:"message"`
+
+	// Reason Machine-readable reason the gate cannot be satisfied yet.
+	Reason string `json:"reason"`
+}
+
 // ServerProviderCreateGates Provider-create gates requested at server creation time.
 type ServerProviderCreateGates = []ServerProviderCreateGate
 
@@ -2026,6 +2038,9 @@ type SecurityGroupV2UpdateRequest = SecurityGroupV2Update
 // ServerProviderCreateGateRequest Request to satisfy a configured provider-create gate.
 type ServerProviderCreateGateRequest = ServerProviderCreateGateAction
 
+// ServerProviderCreateGateWithholdRequest Request to report that a configured provider-create gate cannot be satisfied yet. It carries no outputs: outputs are published only by the report that satisfies the gate.
+type ServerProviderCreateGateWithholdRequest = ServerProviderCreateGateWithholdAction
+
 // ServerRequest A server request.
 type ServerRequest = ServerWrite
 
@@ -2290,6 +2305,9 @@ type PutApiV2ServersServerIDJSONRequestBody = ServerV2Update
 
 // PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody defines body for PostApiV2ServersServerIDProviderCreateGates for application/json ContentType.
 type PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody = ServerProviderCreateGateAction
+
+// PostApiV2ServersServerIDProviderCreateGatesWithholdJSONRequestBody defines body for PostApiV2ServersServerIDProviderCreateGatesWithhold for application/json ContentType.
+type PostApiV2ServersServerIDProviderCreateGatesWithholdJSONRequestBody = ServerProviderCreateGateWithholdAction
 
 // PostApiV2ServersServerIDSnapshotJSONRequestBody defines body for PostApiV2ServersServerIDSnapshot for application/json ContentType.
 type PostApiV2ServersServerIDSnapshotJSONRequestBody = SnapshotCreate

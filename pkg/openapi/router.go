@@ -222,6 +222,9 @@ type ServerInterface interface {
 	// (POST /api/v2/servers/{serverID}/provider-create-gates)
 	PostApiV2ServersServerIDProviderCreateGates(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
+	// (POST /api/v2/servers/{serverID}/provider-create-gates/withhold)
+	PostApiV2ServersServerIDProviderCreateGatesWithhold(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
+
 	// (POST /api/v2/servers/{serverID}/snapshot)
 	PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter)
 
@@ -647,6 +650,11 @@ func (_ Unimplemented) PostApiV2ServersServerIDHardreboot(w http.ResponseWriter,
 
 // (POST /api/v2/servers/{serverID}/provider-create-gates)
 func (_ Unimplemented) PostApiV2ServersServerIDProviderCreateGates(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (POST /api/v2/servers/{serverID}/provider-create-gates/withhold)
+func (_ Unimplemented) PostApiV2ServersServerIDProviderCreateGatesWithhold(w http.ResponseWriter, r *http.Request, serverID ServerIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3631,6 +3639,37 @@ func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDProviderCreateGates(w
 	handler.ServeHTTP(w, r)
 }
 
+// PostApiV2ServersServerIDProviderCreateGatesWithhold operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDProviderCreateGatesWithhold(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "serverID" -------------
+	var serverID ServerIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "serverID", chi.URLParam(r, "serverID"), &serverID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "serverID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2ServersServerIDProviderCreateGatesWithhold(w, r, serverID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PostApiV2ServersServerIDSnapshot operation middleware
 func (siw *ServerInterfaceWrapper) PostApiV2ServersServerIDSnapshot(w http.ResponseWriter, r *http.Request) {
 
@@ -4467,6 +4506,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/provider-create-gates", wrapper.PostApiV2ServersServerIDProviderCreateGates)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/provider-create-gates/withhold", wrapper.PostApiV2ServersServerIDProviderCreateGatesWithhold)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/api/v2/servers/{serverID}/snapshot", wrapper.PostApiV2ServersServerIDSnapshot)

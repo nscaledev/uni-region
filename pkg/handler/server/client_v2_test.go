@@ -3206,6 +3206,8 @@ func TestServerGetV2ProvisioningStatusFreshness(t *testing.T) {
 		{testServerWithProvisioningResult(2, 2, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned), coreapi.ResourceProvisioningStatusProvisioned, ptr.To(coreapi.ProvisioningStatusReasonProvisioned)},
 		{testServerWithProvisioningResult(3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
 		{testServerWithProvisioningResult(3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusError, ptr.To(coreapi.ProvisioningStatusReasonErrored)},
+		// A failed dependency, such as a withheld provider-create gate, is still provisioning.
+		{testServerWithProvisioningResult(3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonDependencyFailed), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonDependencyFailed)},
 		{testServerWithProvisioningResult(2, 1, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
 		{unstamped, coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
 		{noCondition, coreapi.ResourceProvisioningStatusPending, nil},

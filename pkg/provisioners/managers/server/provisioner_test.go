@@ -124,6 +124,34 @@ func TestProvisionProviderCreateGateRemaining(t *testing.T) {
 	require.ErrorIs(t, err, provisioners.ErrYield)
 }
 
+// A withheld gate holds provider create, as an unreported one does, but names
+// the failure: the create path is never reached and the yield is not terminal.
+func TestProvisionProviderCreateGateWithheld(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	server := testProvisionServer(withProviderCreateGate(corev1.ConditionFalse))
+	cli := testProvisionClient(t, server, testProvisionIdentity())
+
+	prov := serverprovisioner.NewForTest(server, providers, nil)
+	err := prov.Provision(coreclient.NewContext(t.Context(), cli))
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.False(t, provisioners.IsTerminal(err))
+
+	var perr *provisioners.Error
+
+	require.ErrorAs(t, err, &perr)
+	require.Equal(t, unikornv1core.ConditionReasonDependencyFailed, perr.Reason())
+	require.NotContains(t, perr.Message(), testProviderMessage)
+	require.NotContains(t, perr.Message(), testProviderReason)
+}
+
 func TestProvisionProviderCreateGateSatisfied(t *testing.T) {
 	t.Parallel()
 

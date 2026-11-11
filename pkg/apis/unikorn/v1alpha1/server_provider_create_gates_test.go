@@ -80,6 +80,43 @@ func TestServerProviderCreateGates(t *testing.T) {
 	require.True(t, status.LastTransitionTime.Equal(&trueTransitionTime))
 }
 
+// A gate reported False is withheld: still remaining, and named, first in spec
+// order, so the provisioner can tell it from one nobody has reported.
+func TestServerWithheldProviderCreateGate(t *testing.T) {
+	t.Parallel()
+
+	const second = "example.unikorn-cloud.org/second-ready"
+
+	server := &regionv1.Server{
+		Spec: regionv1.ServerSpec{
+			ProviderCreateGates: []regionv1.ServerProviderCreateGate{
+				{ConditionType: testProviderCreateGate},
+				{ConditionType: second},
+			},
+		},
+	}
+
+	_, ok := server.WithheldProviderCreateGate()
+	require.False(t, ok, "an unreported gate is not withheld")
+
+	server.ProviderCreateGateStatusWrite(testProviderCreateGate, corev1.ConditionUnknown, "region", "Reset", "", nil)
+
+	_, ok = server.WithheldProviderCreateGate()
+	require.False(t, ok, "an Unknown gate is not withheld")
+
+	server.ProviderCreateGateStatusWrite(second, corev1.ConditionFalse, "service", "PoolExhausted", "", nil)
+
+	gate, ok := server.WithheldProviderCreateGate()
+	require.True(t, ok)
+	require.Equal(t, second, gate)
+	require.Equal(t, []string{testProviderCreateGate, second}, server.RemainingProviderCreateGates())
+
+	server.ProviderCreateGateStatusWrite(second, corev1.ConditionTrue, "service", "Prepared", "", nil)
+
+	_, ok = server.WithheldProviderCreateGate()
+	require.False(t, ok, "a satisfied gate is not withheld")
+}
+
 func TestServerProviderCreateGatesReset(t *testing.T) {
 	t.Parallel()
 

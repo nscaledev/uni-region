@@ -108,6 +108,20 @@ related dependencies rather than from nested path scope.
   refused with 409 and writes nothing. An output that maps to no metadata key
   is a 400, not a 422, which satisfiers read as "gate not configured here".
   A lost optimistic-lock race on the status patch is a 500, to be retried
+- the same callers can withhold a gate through
+  `POST /api/v2/servers/{serverID}/provider-create-gates/withhold`, body
+  `{conditionType, reason, message}` and nothing else (an `outputs` field is a
+  400: outputs come only with the report that satisfies the gate). It records
+  the gate `False` with the actor, reason, and message, and the server keeps
+  waiting for the gate as a failed dependency, reading `provisioning`, not
+  `error`. It answers 422 for a gate not configured, as satisfy does; 409 for
+  a gate already `True`, which stays `True` because the server may already be
+  building on it; and writes nothing for a repeat of the stored report. A
+  later satisfying report opens a withheld gate. `remainingProviderCreateGates`
+  stays a list of gate names whichever way a gate is pending.
+  It is a separate operation, not a field on the satisfy report, so that it
+  fails closed: a Region that predates it answers 404, where one that ignored
+  an unknown field would record the gate satisfied
 - snapshot creation bridges server lifecycle into image provenance semantics
 - snapshot creation is also a cross-resource permission bridge: the caller must
   be allowed to update the server and to create images in the owning
@@ -195,11 +209,12 @@ related dependencies rather than from nested path scope.
 - `providerCreateGates` is create-time coordination input. Updates preserve the
   existing gate list and the CRD marks it immutable; only Region writes the
   derived status entries.
-- The provider-create gate action has its own
-  `region:servers:v2/provider-create-gates` permission, and needs nothing else
-  on the server. It is for internal services; of the built-in roles only the
-  platform administrator also holds it.
-  Its outputs carry no extra permission: whoever may satisfy a gate may
+- The provider-create gate actions (satisfy and withhold) share their own
+  `region:servers:v2/provider-create-gates` update permission, and need
+  nothing else on the server. They are recorded as `satisfy-create-gate` and
+  `withhold-create-gate`. The permission is for internal services; of the
+  built-in roles only the platform administrator also holds it.
+  Satisfy's outputs carry no extra permission: whoever may satisfy a gate may
   publish its outputs. They land in instance metadata, readable from inside
   the server, so they must not be secret.
 - `v1` update needs update on the server.

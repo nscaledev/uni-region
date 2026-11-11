@@ -17,8 +17,12 @@ limitations under the License.
 package openapi_test
 
 import (
+	"bytes"
+	"net/http"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/getkin/kin-openapi/routers/legacy"
 	"github.com/stretchr/testify/require"
 
 	"github.com/unikorn-cloud/region/pkg/openapi"
@@ -54,4 +58,59 @@ func TestServerProviderCreateGateReportContract(t *testing.T) {
 	for _, code := range []string{"204", "400", "409", "422"} {
 		require.NotNil(t, gates.Post.Responses.Value(code), code)
 	}
+}
+
+// Withholding is its own operation, so a Region that predates it answers 404
+// and the gate stays shut. It declares the conflict for a gate already
+// satisfied, and the unprocessable content for one not configured.
+func TestServerProviderCreateGateWithholdContract(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	withhold := swagger.Paths.Find("/api/v2/servers/{serverID}/provider-create-gates/withhold")
+	require.NotNil(t, withhold)
+	require.NotNil(t, withhold.Post)
+
+	for _, code := range []string{"204", "400", "409", "422"} {
+		require.NotNil(t, withhold.Post.Responses.Value(code), code)
+	}
+}
+
+// A withhold report carries no outputs, which are published only by the
+// report that satisfies a gate: the request validation refuses any field it
+// does not define with a 400 rather than dropping it.
+func TestServerProviderCreateGateWithholdRefusesOutputs(t *testing.T) {
+	t.Parallel()
+
+	swagger, err := openapi.GetSwagger()
+	require.NoError(t, err)
+
+	router, err := legacy.NewRouter(swagger)
+	require.NoError(t, err)
+
+	validate := func(body string) error {
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
+			"/api/v2/servers/9a8c6370-4065-4d4a-9da0-7678df40cd9d/provider-create-gates/withhold", bytes.NewBufferString(body))
+		require.NoError(t, err)
+
+		request.Header.Set("Content-Type", "application/json")
+
+		route, pathParams, err := router.FindRoute(request)
+		require.NoError(t, err)
+
+		return openapi3filter.ValidateRequest(t.Context(), &openapi3filter.RequestValidationInput{
+			Request:    request,
+			PathParams: pathParams,
+			Route:      route,
+			Options: &openapi3filter.Options{
+				AuthenticationFunc: openapi3filter.NoopAuthenticationFunc,
+			},
+		})
+	}
+
+	require.NoError(t, validate(`{"conditionType":"example.unikorn-cloud.org/pre-create-ready","reason":"PoolExhausted","message":"no partition key is free"}`))
+	require.Error(t, validate(`{"conditionType":"example.unikorn-cloud.org/pre-create-ready","reason":"PoolExhausted","message":"no partition key is free","outputs":{"pkey":"0x0600"}}`))
+	require.Error(t, validate(`{"conditionType":"example.unikorn-cloud.org/pre-create-ready","reason":"","message":"no partition key is free"}`))
 }
