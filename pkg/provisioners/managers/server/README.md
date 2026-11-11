@@ -12,7 +12,16 @@ Distinctive behaviour:
   unsatisfied. The wait is a typed `provisioners.Yield` naming the outstanding
   gates on the `Available` condition: gates are satisfied by a separate service,
   so this wait can legitimately be long, and a bare sentinel would make it
-  indistinguishable from every other wait on the create path
+  indistinguishable from every other wait on the create path. A gate nobody
+  has reported, or one reset to `Unknown`, is `DependencyNotReady`. A gate its
+  satisfier has withheld (status `False`) is `DependencyFailed`, as an errored
+  network or security group is: it still yields, never parks, because the
+  cause may clear (a pool grows, a host is fixed, the server lands elsewhere)
+  and a later satisfying report opens it. Both read as `provisioning` in the
+  API, never `error`, so one fabric fault does not mark every server behind
+  it errored. The condition message for a withheld gate is Region's own,
+  naming the gate; the satisfier's reason and message stay on the gate record,
+  because condition text reaches customers
 - preflight checks may still yield inside the provider, after other
   validation succeeds; those checks are transient and are not recorded
   as lifecycle transitions

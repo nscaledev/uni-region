@@ -437,6 +437,18 @@ func (p *Provisioner) blockUntilDependenciesReady(ctx context.Context, cli clien
 		}
 	}
 
+	// A gate its satisfier has withheld is a failed dependency, handled as
+	// classifyDependency handles one: it still yields, because the cause may
+	// clear (a pool grows, a host is fixed) and a later satisfying report opens
+	// the gate, but it names the failure so the wait is not mistaken for
+	// progress. DependencyFailed reads as provisioning, not error. The message
+	// is Region's own: the satisfier's reason and message stay on the gate
+	// record, because the condition text reaches customers.
+	if conditionType, ok := p.server.WithheldProviderCreateGate(); ok {
+		return provisioners.Yield(unikornv1core.ConditionReasonDependencyFailed,
+			fmt.Sprintf("provider create gate %q reported it cannot be satisfied yet", conditionType))
+	}
+
 	// Typed rather than a bare ErrYield: the manager lifts a reason and message
 	// onto the Available condition only from a provisioners.Error, so a bare
 	// sentinel would leave this wait indistinguishable from every other one above.

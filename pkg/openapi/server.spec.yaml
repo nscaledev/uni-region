@@ -1498,6 +1498,50 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/servers/{serverID}/provider-create-gates/withhold:
+    description: |-
+      Lets a provider-create gate's satisfier report that it cannot satisfy
+      the gate yet, and why.
+    parameters:
+    - $ref: '#/components/parameters/serverIDParameter'
+    post:
+      x-hidden: true
+      description: >-
+        Report that a configured provider-create gate cannot be satisfied yet.
+        The gate is recorded as not satisfied (status False) with the
+        satisfier's reason and message, and provider create keeps waiting for
+        it: a withheld gate is pending, never an error, and a later satisfy
+        report opens it. The reason and message are kept on the gate record
+        for operators; they are not shown on the server's conditions. A
+        repeated identical report changes nothing.
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/serverProviderCreateGateWithholdRequest'
+      responses:
+        '204':
+          description: The gate was recorded as not satisfied.
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          description: >-
+            The gate is already satisfied. Final: a satisfied gate stays
+            satisfied until a provider-create retry resets it, because the
+            server may already be building on the strength of it.
+          content:
+            application/json:
+              schema:
+                $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/schemas/error'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/servers/{serverID}/sshkey:
     description: |-
       Manages servers.
@@ -3723,6 +3767,28 @@ components:
           additionalProperties:
             type: string
             maxLength: 255
+    serverProviderCreateGateWithholdAction:
+      description: >-
+        Request to report that a configured provider-create gate cannot be
+        satisfied yet. It carries no outputs: outputs are published only by
+        the report that satisfies the gate.
+      type: object
+      additionalProperties: false
+      required:
+      - conditionType
+      - reason
+      - message
+      properties:
+        conditionType:
+          $ref: '#/components/schemas/serverProviderCreateGateType'
+        reason:
+          description: Machine-readable reason the gate cannot be satisfied yet.
+          type: string
+          minLength: 1
+        message:
+          description: Human-readable details for operators.
+          type: string
+          minLength: 1
     serverV2Networking:
       description: A server's network configuration.
       type: object
@@ -4830,6 +4896,16 @@ components:
             conditionType: example.unikorn-cloud.org/pre-create-ready
             reason: ExternalStatePrepared
             message: External state required before provider create is ready.
+    serverProviderCreateGateWithholdRequest:
+      description: A request to report that a provider-create gate cannot be satisfied yet.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/serverProviderCreateGateWithholdAction'
+          example:
+            conditionType: example.unikorn-cloud.org/pre-create-ready
+            reason: ExternalStateUnavailable
+            message: External state required before provider create cannot be prepared yet.
 
     volumeV2CreateRequest:
       description: A request to create a volume.

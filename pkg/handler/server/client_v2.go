@@ -1000,6 +1000,110 @@ func (c *ClientV2) SatisfyProviderCreateGate(ctx context.Context, serverID regio
 	return nil
 }
 
+// validateProviderCreateGateWithhold checks a withhold report's fields, with
+// the same rules as a satisfying report's. It has no outputs to check: outputs
+// are published only by the report that satisfies a gate.
+func validateProviderCreateGateWithhold(request *openapi.ServerProviderCreateGateWithholdAction) error {
+	if request.ConditionType == "" {
+		return errors.OAuth2InvalidRequest("conditionType must be specified")
+	}
+
+	if request.Reason == "" {
+		return errors.OAuth2InvalidRequest("reason must be specified")
+	}
+
+	if request.Message == "" {
+		return errors.OAuth2InvalidRequest("message must be specified")
+	}
+
+	return nil
+}
+
+// providerCreateGateWithholdChanged reports whether a withhold report changes
+// the gate, so a satisfier repeating the same report on every pass writes
+// nothing.
+func providerCreateGateWithholdChanged(current *regionv1.Server, conditionType, actor, reason, message string) bool {
+	status, ok := current.ProviderCreateGateStatusRead(conditionType)
+	if !ok {
+		return true
+	}
+
+	return status.Status != kcorev1.ConditionFalse ||
+		status.Actor != actor ||
+		status.Reason != reason ||
+		status.Message != message
+}
+
+// WithholdProviderCreateGate records that a gate's satisfier cannot satisfy it
+// yet, and why. The gate is written False, which the provisioner treats as a
+// failed dependency: provider create keeps waiting, and the server reads as
+// provisioning, never errored, because the cause may clear (a pool grows, a
+// host is fixed, the server is placed elsewhere) and a later satisfying
+// report opens the gate.
+//
+// It is a separate operation from satisfying, rather than a field on that
+// report, so that it fails closed: a Region that predates it answers 404,
+// where one that ignored an unknown field would record the gate satisfied.
+//
+// A gate already True is a conflict. The server may already be building on
+// the strength of it, so it stays True until a provider-create retry resets
+// it.
+func (c *ClientV2) WithholdProviderCreateGate(ctx context.Context, serverID regionids.ServerID, request *openapi.ServerProviderCreateGateWithholdAction) error {
+	target := authz.Target{
+		Endpoint:  providerCreateGatesEndpoint,
+		Operation: authz.Action(identityapi.Update, "withhold-create-gate"),
+		Kind:      authz.Primary,
+		ObjectID:  uuid.UUID(serverID),
+	}
+
+	// Declared before the request is validated, so a refused one is recorded.
+	authz.Declare(ctx, target)
+
+	if err := validateProviderCreateGateWithhold(request); err != nil {
+		return err
+	}
+
+	current, err := c.getV2(ctx, serverID.String(), target)
+	if err != nil {
+		return err
+	}
+
+	conditionType := request.ConditionType
+	if !current.ProviderCreateGateConfigured(conditionType) {
+		return errors.HTTPUnprocessableContent("conditionType is not configured for this server")
+	}
+
+	actor, err := providerCreateGateActor(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: unable to derive provider-create gate actor", err)
+	}
+
+	if status, ok := current.ProviderCreateGateStatusRead(conditionType); ok && status.Status == kcorev1.ConditionTrue {
+		return errors.HTTPConflict().WithValues("conditionType", conditionType)
+	}
+
+	changed := providerCreateGateWithholdChanged(current, conditionType, actor, request.Reason, request.Message)
+
+	if changed {
+		updated := current.DeepCopy()
+		updated.ProviderCreateGateStatusWrite(conditionType, kcorev1.ConditionFalse, actor, request.Reason, request.Message, nil)
+
+		if err := c.Client.Client.Status().Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("%w: unable to withhold provider-create gate", err)
+		}
+	}
+
+	log.FromContext(ctx).Info("server provider-create gate withheld",
+		"server", serverID.String(),
+		"conditionType", conditionType,
+		"actor", actor,
+		"reason", request.Reason,
+		"message", request.Message,
+		"changed", changed)
+
+	return nil
+}
+
 // getServerIdentityAndProviderV2 loads a server, authorizing the operation on
 // it, with what is needed to act on it in the cloud.
 func (c *ClientV2) getServerIdentityAndProviderV2(ctx context.Context, serverID regionids.ServerID, target authz.Target) (*regionv1.Server, *regionv1.Identity, types.Provider, error) {

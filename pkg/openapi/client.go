@@ -335,6 +335,11 @@ type ClientInterface interface {
 
 	PostApiV2ServersServerIDProviderCreateGates(ctx context.Context, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostApiV2ServersServerIDProviderCreateGatesWithholdWithBody request with any body
+	PostApiV2ServersServerIDProviderCreateGatesWithholdWithBody(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PostApiV2ServersServerIDProviderCreateGatesWithhold(ctx context.Context, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesWithholdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostApiV2ServersServerIDSnapshotWithBody request with any body
 	PostApiV2ServersServerIDSnapshotWithBody(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1438,6 +1443,30 @@ func (c *Client) PostApiV2ServersServerIDProviderCreateGatesWithBody(ctx context
 
 func (c *Client) PostApiV2ServersServerIDProviderCreateGates(ctx context.Context, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostApiV2ServersServerIDProviderCreateGatesRequest(c.Server, serverID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2ServersServerIDProviderCreateGatesWithholdWithBody(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2ServersServerIDProviderCreateGatesWithholdRequestWithBody(c.Server, serverID, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PostApiV2ServersServerIDProviderCreateGatesWithhold(ctx context.Context, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesWithholdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApiV2ServersServerIDProviderCreateGatesWithholdRequest(c.Server, serverID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5229,6 +5258,53 @@ func NewPostApiV2ServersServerIDProviderCreateGatesRequestWithBody(server string
 	return req, nil
 }
 
+// NewPostApiV2ServersServerIDProviderCreateGatesWithholdRequest calls the generic PostApiV2ServersServerIDProviderCreateGatesWithhold builder with application/json body
+func NewPostApiV2ServersServerIDProviderCreateGatesWithholdRequest(server string, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesWithholdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApiV2ServersServerIDProviderCreateGatesWithholdRequestWithBody(server, serverID, "application/json", bodyReader)
+}
+
+// NewPostApiV2ServersServerIDProviderCreateGatesWithholdRequestWithBody generates requests for PostApiV2ServersServerIDProviderCreateGatesWithhold with any type of body
+func NewPostApiV2ServersServerIDProviderCreateGatesWithholdRequestWithBody(server string, serverID ServerIDParameter, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "serverID", runtime.ParamLocationPath, serverID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v2/servers/%s/provider-create-gates/withhold", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewPostApiV2ServersServerIDSnapshotRequest calls the generic PostApiV2ServersServerIDSnapshot builder with application/json body
 func NewPostApiV2ServersServerIDSnapshotRequest(server string, serverID ServerIDParameter, body PostApiV2ServersServerIDSnapshotJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -6232,6 +6308,11 @@ type ClientWithResponsesInterface interface {
 	PostApiV2ServersServerIDProviderCreateGatesWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDProviderCreateGatesResponse, error)
 
 	PostApiV2ServersServerIDProviderCreateGatesWithResponse(ctx context.Context, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDProviderCreateGatesResponse, error)
+
+	// PostApiV2ServersServerIDProviderCreateGatesWithholdWithBodyWithResponse request with any body
+	PostApiV2ServersServerIDProviderCreateGatesWithholdWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDProviderCreateGatesWithholdResponse, error)
+
+	PostApiV2ServersServerIDProviderCreateGatesWithholdWithResponse(ctx context.Context, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesWithholdJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDProviderCreateGatesWithholdResponse, error)
 
 	// PostApiV2ServersServerIDSnapshotWithBodyWithResponse request with any body
 	PostApiV2ServersServerIDSnapshotWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDSnapshotResponse, error)
@@ -8134,6 +8215,34 @@ func (r PostApiV2ServersServerIDProviderCreateGatesResponse) StatusCode() int {
 	return 0
 }
 
+type PostApiV2ServersServerIDProviderCreateGatesWithholdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *externalRef0.BadRequestResponse
+	JSON401      *externalRef0.UnauthorizedResponse
+	JSON403      *externalRef0.ForbiddenResponse
+	JSON404      *externalRef0.NotFoundResponse
+	JSON409      *externalRef0.Error
+	JSON422      *externalRef0.UnprocessableContentResponse
+	JSON500      *externalRef0.InternalServerErrorResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApiV2ServersServerIDProviderCreateGatesWithholdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApiV2ServersServerIDProviderCreateGatesWithholdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type PostApiV2ServersServerIDSnapshotResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9330,6 +9439,23 @@ func (c *ClientWithResponses) PostApiV2ServersServerIDProviderCreateGatesWithRes
 		return nil, err
 	}
 	return ParsePostApiV2ServersServerIDProviderCreateGatesResponse(rsp)
+}
+
+// PostApiV2ServersServerIDProviderCreateGatesWithholdWithBodyWithResponse request with arbitrary body returning *PostApiV2ServersServerIDProviderCreateGatesWithholdResponse
+func (c *ClientWithResponses) PostApiV2ServersServerIDProviderCreateGatesWithholdWithBodyWithResponse(ctx context.Context, serverID ServerIDParameter, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDProviderCreateGatesWithholdResponse, error) {
+	rsp, err := c.PostApiV2ServersServerIDProviderCreateGatesWithholdWithBody(ctx, serverID, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2ServersServerIDProviderCreateGatesWithholdResponse(rsp)
+}
+
+func (c *ClientWithResponses) PostApiV2ServersServerIDProviderCreateGatesWithholdWithResponse(ctx context.Context, serverID ServerIDParameter, body PostApiV2ServersServerIDProviderCreateGatesWithholdJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApiV2ServersServerIDProviderCreateGatesWithholdResponse, error) {
+	rsp, err := c.PostApiV2ServersServerIDProviderCreateGatesWithhold(ctx, serverID, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApiV2ServersServerIDProviderCreateGatesWithholdResponse(rsp)
 }
 
 // PostApiV2ServersServerIDSnapshotWithBodyWithResponse request with arbitrary body returning *PostApiV2ServersServerIDSnapshotResponse
@@ -13525,6 +13651,74 @@ func ParsePostApiV2ServersServerIDProviderCreateGatesResponse(rsp *http.Response
 	}
 
 	response := &PostApiV2ServersServerIDProviderCreateGatesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest externalRef0.BadRequestResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest externalRef0.UnauthorizedResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest externalRef0.ForbiddenResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest externalRef0.NotFoundResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest externalRef0.Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest externalRef0.UnprocessableContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest externalRef0.InternalServerErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePostApiV2ServersServerIDProviderCreateGatesWithholdResponse parses an HTTP response from a PostApiV2ServersServerIDProviderCreateGatesWithholdWithResponse call
+func ParsePostApiV2ServersServerIDProviderCreateGatesWithholdResponse(rsp *http.Response) (*PostApiV2ServersServerIDProviderCreateGatesWithholdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApiV2ServersServerIDProviderCreateGatesWithholdResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

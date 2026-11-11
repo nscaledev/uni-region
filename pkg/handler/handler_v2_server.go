@@ -122,6 +122,22 @@ func (h *ServerV2Handler) PostApiV2ServersServerIDProviderCreateGates(w http.Res
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *ServerV2Handler) PostApiV2ServersServerIDProviderCreateGatesWithhold(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
+	request := &openapi.ServerProviderCreateGateWithholdAction{}
+
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	if err := h.serverV2Client().WithholdProviderCreateGate(r.Context(), serverID, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *ServerV2Handler) GetApiV2ServersServerIDSshkey(w http.ResponseWriter, r *http.Request, serverID openapi.ServerIDParameter) {
 	result, err := h.serverV2Client().SSHKey(r.Context(), serverID)
 	if err != nil {

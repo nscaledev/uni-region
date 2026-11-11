@@ -166,7 +166,10 @@ func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
 		require.False(t, provisioners.IsTerminal(err), "an unsatisfied gate yields, it must not park")
 	})
 
-	t.Run("FalseGateYieldsTypedAndNamesTheGate", func(t *testing.T) {
+	// A withheld gate is a failed dependency, as classifyDependency treats an
+	// errored one: it yields, never parks, and the condition carries Region's
+	// own words, not the satisfier's, because compute shows it to customers.
+	t.Run("WithheldGateYieldsDependencyFailedInRegionWords", func(t *testing.T) {
 		t.Parallel()
 
 		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(corev1.ConditionFalse, true), cli, identity)
@@ -175,8 +178,26 @@ func TestBlockUntilDependenciesReadyGateYieldIsTyped(t *testing.T) {
 		var perr *provisioners.Error
 
 		require.ErrorAs(t, err, &perr)
+		require.ErrorIs(t, err, provisioners.ErrYield)
+		require.Equal(t, unikornv1core.ConditionReasonDependencyFailed, perr.Reason())
+		require.Equal(t, `provider create gate "fabric.unikorn-cloud.org/partition-ready" reported it cannot be satisfied yet`, perr.Message())
+		require.NotContains(t, perr.Message(), "Reason")
+		require.NotContains(t, perr.Message(), "message")
+		require.False(t, provisioners.IsTerminal(err), "a withheld gate yields, it must not park")
+	})
+
+	t.Run("UnknownGateYieldsDependencyNotReady", func(t *testing.T) {
+		t.Parallel()
+
+		err := serverprovisioner.BlockUntilDependenciesReadyForTest(t.Context(), newServer(corev1.ConditionUnknown, true), cli, identity)
+		require.Error(t, err)
+
+		var perr *provisioners.Error
+
+		require.ErrorAs(t, err, &perr)
 		require.Equal(t, unikornv1core.ConditionReasonDependencyNotReady, perr.Reason())
 		require.Contains(t, perr.Message(), "fabric.unikorn-cloud.org/partition-ready")
+		require.False(t, provisioners.IsTerminal(err))
 	})
 
 	t.Run("SatisfiedGatePasses", func(t *testing.T) {

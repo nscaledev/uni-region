@@ -349,6 +349,21 @@ func (c *Server) RemainingProviderCreateGates() []string {
 	return out
 }
 
+// WithheldProviderCreateGate returns the first configured gate, in spec order,
+// whose satisfier has reported it cannot be satisfied yet (status False). Such a
+// gate is pending, like one not yet reported: a later satisfying report opens
+// it.
+func (c *Server) WithheldProviderCreateGate() (string, bool) {
+	for _, gate := range c.Spec.ProviderCreateGates {
+		status, ok := c.ProviderCreateGateStatusRead(gate.ConditionType)
+		if ok && status.Status == corev1.ConditionFalse {
+			return gate.ConditionType, true
+		}
+	}
+
+	return "", false
+}
+
 func (c *Server) ProviderCreateGatesReady() bool {
 	return len(c.RemainingProviderCreateGates()) == 0
 }
