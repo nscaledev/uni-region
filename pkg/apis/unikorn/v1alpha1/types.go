@@ -1486,6 +1486,166 @@ type FileStorageSnapshotStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// FileStorageDirectoryQuotaList is a list of FileStorageDirectoryQuota resources.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+type FileStorageDirectoryQuotaList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []FileStorageDirectoryQuota `json:"items"`
+}
+
+// FileStorageDirectoryQuota records customer intent and observed lifecycle state
+// for the hard limits of one directory of a File Storage.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:resource:scope=Namespaced,categories=unikorn
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="display name",type="string",JSONPath=".metadata.labels['unikorn-cloud\\.org/name']"
+// +kubebuilder:printcolumn:name="file storage",type="string",JSONPath=".spec.fileStorageID"
+// +kubebuilder:printcolumn:name="path",type="string",JSONPath=".spec.path"
+// +kubebuilder:printcolumn:name="status",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason"
+// +kubebuilder:printcolumn:name="age",type="date",JSONPath=".metadata.creationTimestamp"
+type FileStorageDirectoryQuota struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              FileStorageDirectoryQuotaSpec   `json:"spec"`
+	Status            FileStorageDirectoryQuotaStatus `json:"status,omitempty"`
+}
+
+// FileStorageDirectoryQuotaSpec is the desired set of hard limits for a directory.
+// +kubebuilder:validation:XValidation:rule="self.fileStorageID == oldSelf.fileStorageID",message="fileStorageID is immutable"
+// +kubebuilder:validation:XValidation:rule="self.path == oldSelf.path",message="path is immutable"
+// +kubebuilder:validation:XValidation:rule="has(self.directoryLimits) || has(self.defaultUserLimits) || has(self.defaultGroupLimits) || (has(self.rules) && size(self.rules) > 0)",message="at least one limit or rule is required"
+// +kubebuilder:validation:XValidation:rule="!has(self.rules) || self.rules.all(a, self.rules.exists_one(b, a.subject == b.subject))",message="rules must not repeat a subject"
+type FileStorageDirectoryQuotaSpec struct {
+	// Pause inhibits reconciliation.
+	Pause bool `json:"pause,omitempty"`
+	// FileStorageID identifies the immutable parent File Storage.
+	FileStorageID regionids.FileStorageID `json:"fileStorageID"`
+	// Path is the immutable directory path relative to the File Storage root.
+	// It cannot be empty, absolute or end in a slash, so the root cannot be targeted.
+	// +kubebuilder:validation:Pattern=`^([^/]+/)*[^/]+$`
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.split('/').all(component, component != '.' && component != '..')",message="path must not contain . or .. path components"
+	Path string `json:"path"`
+	// DirectoryLimits is the hard limit on the whole directory tree, whoever
+	// owns the data. Observed as Status.Usage.Directory.
+	DirectoryLimits *FileStorageDirectoryQuotaLimits `json:"directoryLimits,omitempty"`
+	// DefaultUserLimits applies to every user without an explicit rule.
+	DefaultUserLimits *FileStorageDirectoryQuotaLimits `json:"defaultUserLimits,omitempty"`
+	// DefaultGroupLimits applies to every group without an explicit rule.
+	DefaultGroupLimits *FileStorageDirectoryQuotaLimits `json:"defaultGroupLimits,omitempty"`
+	// Rules are per-user/group hard limits. The list is atomic because name and
+	// id are optional and cannot be map keys, and an update replaces the whole list.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	Rules []FileStorageDirectoryQuotaRule `json:"rules,omitempty"`
+	// Tags are arbitrary user-managed key/value metadata.
+	Tags unikornv1core.TagList `json:"tags,omitempty"`
+}
+
+// FileStorageDirectoryQuotaLimits is a set of hard limits. At least one is required.
+// +kubebuilder:validation:XValidation:rule="has(self.capacity) || has(self.inodes)",message="capacity or inodes is required"
+type FileStorageDirectoryQuotaLimits struct {
+	// Capacity is the hard capacity limit in bytes. Its value is validated in code.
+	Capacity *resource.Quantity `json:"capacity,omitempty"`
+	// Inodes is the hard limit on the number of files and directories.
+	// +kubebuilder:validation:Minimum=1
+	Inodes *int64 `json:"inodes,omitempty"`
+}
+
+// FileStorageDirectoryQuotaRule is the hard limit of one user or group.
+type FileStorageDirectoryQuotaRule struct {
+	Subject FileStorageDirectoryQuotaSubject `json:"subject"`
+	Limits  FileStorageDirectoryQuotaLimits  `json:"limits"`
+}
+
+// FileStorageDirectoryQuotaSubjectKind is the kind of subject a rule applies to.
+// +kubebuilder:validation:Enum=user;group
+type FileStorageDirectoryQuotaSubjectKind string
+
+const (
+	FileStorageDirectoryQuotaSubjectKindUser  FileStorageDirectoryQuotaSubjectKind = "user"
+	FileStorageDirectoryQuotaSubjectKindGroup FileStorageDirectoryQuotaSubjectKind = "group"
+)
+
+// FileStorageDirectoryQuotaSubject identifies a user or group by name or by uid/gid.
+// +kubebuilder:validation:XValidation:rule="has(self.name) != has(self.id)",message="exactly one of name or id is required"
+type FileStorageDirectoryQuotaSubject struct {
+	Kind FileStorageDirectoryQuotaSubjectKind `json:"kind"`
+	// Name is the user or group name. It has no pattern because directory
+	// service names vary (DOMAIN\user, user@realm).
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Name *string `json:"name,omitempty"`
+	// ID is the uid or gid.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=4294967294
+	ID *int64 `json:"id,omitempty"`
+}
+
+// FileStorageDirectoryQuotaStatus is the observed state. The controller owns
+// observedGeneration, the Available condition and rules; the usage monitor owns
+// usage and the Healthy condition. Both write conditions, and a JSON merge patch
+// replaces the whole list, so writers must patch with an optimistic lock or
+// server-side apply.
+type FileStorageDirectoryQuotaStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	ObservedGeneration *int64 `json:"observedGeneration,omitempty"`
+	// Conditions are Available (lifecycle, written by the controller) and
+	// Healthy (limits reached or rule errors, written only by the usage monitor).
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	// Rules reflects the provisioning state of each spec rule (controller-owned).
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	Rules []FileStorageDirectoryQuotaRuleStatus `json:"rules,omitempty"`
+	// Usage is the observed usage (usage monitor-owned).
+	Usage *FileStorageDirectoryQuotaUsage `json:"usage,omitempty"`
+}
+
+// FileStorageDirectoryQuotaRuleProvisioningStatus is the backend state of one rule.
+// +kubebuilder:validation:Enum=Pending;Provisioned;Errored
+type FileStorageDirectoryQuotaRuleProvisioningStatus string
+
+const (
+	FileStorageDirectoryQuotaRulePending     FileStorageDirectoryQuotaRuleProvisioningStatus = "Pending"
+	FileStorageDirectoryQuotaRuleProvisioned FileStorageDirectoryQuotaRuleProvisioningStatus = "Provisioned"
+	FileStorageDirectoryQuotaRuleErrored     FileStorageDirectoryQuotaRuleProvisioningStatus = "Errored"
+)
+
+// FileStorageDirectoryQuotaRuleStatus is the provisioning state of one spec rule.
+type FileStorageDirectoryQuotaRuleStatus struct {
+	Subject            FileStorageDirectoryQuotaSubject                `json:"subject"`
+	ProvisioningStatus FileStorageDirectoryQuotaRuleProvisioningStatus `json:"provisioningStatus"`
+	Message            string                                          `json:"message,omitempty"`
+}
+
+// FileStorageDirectoryQuotaUsage is the observed usage of the directory.
+type FileStorageDirectoryQuotaUsage struct {
+	// Directory is the usage of the whole directory tree, the observed
+	// counterpart of Spec.DirectoryLimits.
+	Directory *FileStorageDirectoryQuotaUsedAmount `json:"directory,omitempty"`
+	// Rules is the usage of each explicitly ruled subject, keyed by subject.
+	// +listType=atomic
+	// +kubebuilder:validation:MaxItems=20
+	Rules []FileStorageDirectoryQuotaRuleUsage `json:"rules,omitempty"`
+	// Timestamp is when the usage was last refreshed.
+	Timestamp *metav1.Time `json:"timestamp,omitempty"`
+}
+
+// FileStorageDirectoryQuotaUsedAmount is an amount of used capacity and inodes.
+type FileStorageDirectoryQuotaUsedAmount struct {
+	UsedCapacity *resource.Quantity `json:"usedCapacity,omitempty"`
+	UsedInodes   *int64             `json:"usedInodes,omitempty"`
+}
+
+// FileStorageDirectoryQuotaRuleUsage is the usage of one explicitly ruled subject.
+type FileStorageDirectoryQuotaRuleUsage struct {
+	Subject FileStorageDirectoryQuotaSubject    `json:"subject"`
+	Usage   FileStorageDirectoryQuotaUsedAmount `json:"usage"`
+}
+
 // FileStorageSpec defines the storage request.
 // +kubebuilder:validation:XValidation:rule="has(self.source) == has(oldSelf.source)",message="source cannot be added or removed after creation"
 type FileStorageSpec struct {

@@ -11,7 +11,7 @@ The package contains three broad kinds of object:
 
 - user-meaningful region resources such as `Region`, `Identity`, `Network`,
   `SecurityGroup`, `LoadBalancer`, `SSHCertificateAuthority`, `Server`, and
-  `Volume`, `FileStorage`, and `FileStorageSnapshot`
+  `Volume`, `FileStorage`, `FileStorageSnapshot`, and `FileStorageDirectoryQuota`
 - service-internal provider state, primarily `OpenstackIdentity`
 - operational support objects such as `VLANAllocation`, `FileStorageClass`, and
   `FileStorageProvisioner`
@@ -117,6 +117,50 @@ stored objects rely on for linkage, migration, and operational coordination.
   [lifecycle contract](../../../handler/storage/README.md#manual-snapshot-lifecycle)
   describes creation-time blocking owner references, foreground parent cascade,
   deterministic ID reuse, and customer expiration visibility.
+- `FileStorageDirectoryQuota` is a namespaced child of `FileStorage` (status
+  subresource) holding hard capacity and inode limits for one directory. It is
+  a separate resource, not inline in `FileStorage.spec`, because per-rule usage
+  changes every few minutes and one bad quota must not degrade the File Storage.
+  Only the CRD exists today: there is no handler, OpenAPI, or controller yet.
+  Contract: `uni-storage/docs/directory-quotas/api-crd-design.md`.
+- Quota `spec.fileStorageID` and `spec.path` are immutable. `path` is required
+  and reuses the snapshot `protectedPath` pattern, length, and `.`/`..` rule;
+  the pattern rejects empty, absolute, and trailing-slash values, so the File
+  Storage root cannot be targeted. Pause, limits, rules, and tags are mutable.
+- One shared limits type (`capacity`, `inodes`; at least one required) is used
+  in four places. A rule overrides the matching default for its subject, and
+  the directory limit always wins because the backend blocks writes once the
+  directory is full:
+
+  | Field | Applies to | Backend mapping | Notes |
+  |---|---|---|---|
+  | `directoryLimits` | The whole directory tree, whoever owns the data | The quota's own hard limits | Optional ceiling for the rest. Observed as `status.usage.directory`. |
+  | `defaultUserLimits` | Each user without an explicit rule | `default_user_quota` | Per user, not shared. Usage is not tracked (known gap). |
+  | `defaultGroupLimits` | Each group without an explicit rule | `default_group_quota` | Per group, not shared. Same gap. |
+  | `rules[].limits` | One user or group, by name or uid/gid | An entry in `user_quotas` / `group_quotas` | Usage is reported. |
+
+- `capacity` is a plain `resource.Quantity` with no CEL rule, like the other
+  quantities in this package: a CEL cost estimate on an int-or-string field
+  cannot be bounded, and the rule exceeded the API server's budget inside
+  `rules[]`. Code must check that it is a positive whole number of bytes.
+  Rule subjects set `kind` plus exactly one of `name` or `id`.
+- `spec.rules` (max 20) is `listType=atomic`: `name` and `id` are optional so
+  neither can be a map key, and an update replaces the whole list. CEL rejects
+  duplicate subjects.
+- Path uniqueness, nested ancestor/descendant limits, and the File Storage size
+  bound are business logic enforced outside the CRD.
+- Quota status has two writers: the controller owns `observedGeneration`, the
+  `Available` condition, and `rules` (`Pending`, `Provisioned`, `Errored`, with
+  `message` only on error); the usage monitor owns `usage` and the `Healthy`
+  condition, which also folds in rule errors, so a rule error can surface one
+  poll late. Both write `status.conditions`, and a CRD merge patch replaces the
+  whole list despite `listType=map`, so both writers must patch with
+  `MergeFromWithOptimisticLock` (retrying on conflict) or server-side apply.
+  The public read model joins `status.rules` and `status.usage.rules` by subject.
+  The backend quota id is not recorded; the controller finds it by exact path.
+- Creators should use a deterministic name (`NewDeterministicObjectMetadata`,
+  File Storage UUID as namespace, `path` as invariant, as for snapshots) so
+  path uniqueness is atomic, including while a previous quota is terminating.
 - `FileStorage.Spec.Source` optionally records where a File Storage's initial
   data comes from; omission means the File Storage starts empty. It is a
   single-member union: exactly one member must be set, and `snapshot.id` names
@@ -281,8 +325,8 @@ stored objects rely on for linkage, migration, and operational coordination.
 - Where possible, OpenStack itself is now the intended source of truth for
   cloud-side state, with local code preferring deterministic lookup over
   mirrored persistence.
-- `FileStorage.ResourceLabels()` and `FileStorageSnapshot.ResourceLabels()`
-  currently return `nil, nil` to satisfy shared controller interfaces.
+- `FileStorage.ResourceLabels()`, `FileStorageSnapshot.ResourceLabels()`, and
+  `FileStorageDirectoryQuota.ResourceLabels()` currently return `nil, nil` to satisfy shared controller interfaces.
 - `SSHCertificateAuthority` is structurally much lighter than the other major
   resource types. It has no status and behaves more like a stored project-scoped
   OpenSSH user CA record than a long-running provisioned object.

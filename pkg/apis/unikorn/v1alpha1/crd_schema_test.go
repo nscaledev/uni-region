@@ -40,11 +40,12 @@ import (
 )
 
 const (
-	fileStorageCRDFile         = "region.unikorn-cloud.org_filestorages.yaml"
-	fileStorageSnapshotCRDFile = "region.unikorn-cloud.org_filestoragesnapshots.yaml"
-	regionCRDFile              = "region.unikorn-cloud.org_regions.yaml"
-	serverCRDFile              = "region.unikorn-cloud.org_servers.yaml"
-	volumeCRDFile              = "region.unikorn-cloud.org_volumes.yaml"
+	fileStorageCRDFile               = "region.unikorn-cloud.org_filestorages.yaml"
+	fileStorageSnapshotCRDFile       = "region.unikorn-cloud.org_filestoragesnapshots.yaml"
+	fileStorageDirectoryQuotaCRDFile = "region.unikorn-cloud.org_filestoragedirectoryquotas.yaml"
+	regionCRDFile                    = "region.unikorn-cloud.org_regions.yaml"
+	serverCRDFile                    = "region.unikorn-cloud.org_servers.yaml"
+	volumeCRDFile                    = "region.unikorn-cloud.org_volumes.yaml"
 )
 
 func requireSchemaProperty(t *testing.T, schema *apixv1.JSONSchemaProps, path ...string) *apixv1.JSONSchemaProps {
