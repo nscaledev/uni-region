@@ -543,6 +543,7 @@ func (p *Provisioner) createServerAndReleaseReferences(ctx context.Context, cli 
 	}
 
 	provisionErr := provider.CreateServer(ctx, identity, p.server, options)
+
 	if provisionErr != nil && !errors.Is(provisionErr, provisioners.ErrYield) && !provisioners.IsTerminal(provisionErr) {
 		return provisionErr
 	}

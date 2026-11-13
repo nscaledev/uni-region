@@ -19,7 +19,6 @@ package openstack_test
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,102 +36,131 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-// fakeNovaServer captures server create and action requests and returns minimal responses.
+// fakeNovaServer captures server create, action and metadata requests and
+// returns minimal responses.
 type fakeNovaServer struct {
 	body map[string]any
 }
 
+type fakeNovaResponse struct {
+	status int
+	body   string
+}
+
+//nolint:gochecknoglobals
+var fakeNovaResponses = map[string]fakeNovaResponse{
+	"/servers":                    {http.StatusAccepted, `{"server":{"id":"test-id","name":"test-server","status":"BUILD"}}`},
+	"/servers/server-id/action":   {http.StatusAccepted, `{"server":{"id":"server-id","status":"REBUILD"}}`},
+	"/servers/server-id/metadata": {http.StatusOK, `{"metadata":{}}`},
+}
+
+// ServeHTTP serves POST only, so a metadata PUT, which would replace rather
+// than merge, gets 404.
 func (f *fakeNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodPost && r.URL.Path == "/servers" {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := json.Unmarshal(raw, &f.body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"server":{"id":"test-id","name":"test-server","status":"BUILD"}}`))
-
+	response, ok := fakeNovaResponses[r.URL.Path]
+	if !ok || r.Method != http.MethodPost {
+		http.NotFound(w, r)
 		return
 	}
 
-	if r.Method == http.MethodPost && r.URL.Path == "/servers/server-id/action" {
-		raw, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		if err := json.Unmarshal(raw, &f.body); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"server":{"id":"server-id","status":"REBUILD"}}`))
-
+	if err := json.NewDecoder(r.Body).Decode(&f.body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	http.NotFound(w, r)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.status)
+	_, _ = w.Write([]byte(response.body))
+}
+
+// TestUpdateServerMetadataMerges pins that the user-data record is written
+// with Nova's merging metadata call, so other server metadata survives.
+func TestUpdateServerMetadataMerges(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeNovaServer{}
+
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	client := openstack.NewTestComputeClient(srv.URL + "/")
+
+	require.NoError(t, client.UpdateServerMetadata(t.Context(), "server-id", map[string]string{"region:system:user_data_hash": "digest"}))
+	assert.Equal(t, map[string]any{"metadata": map[string]any{"region:system:user_data_hash": "digest"}}, fake.body)
 }
 
 func TestRebuildServerSendsUserData(t *testing.T) {
 	t.Parallel()
 
-	fake := &fakeNovaServer{}
-
-	srv := httptest.NewServer(fake)
-	defer srv.Close()
-
-	client := openstack.NewTestComputeClient(srv.URL + "/")
-	options := openstack.ServerRebuildOptions{
-		ImageID:     idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
-		UserData:    []byte("#cloud-config\nusers: []\n"),
-		UseUserData: true,
+	cases := []struct {
+		name             string
+		userData         []byte
+		useUserData      bool
+		metadata         map[string]string
+		expectedUserData string
+		expectedMetadata any
+	}{
+		{
+			name:             "populated payload",
+			userData:         []byte("#cloud-config\nusers: []\n"),
+			useUserData:      true,
+			metadata:         map[string]string{"region:system:user_data_hash": "digest"},
+			expectedUserData: "I2Nsb3VkLWNvbmZpZwp1c2VyczogW10K",
+			// Metadata travels in the rebuild request so Nova commits it on acceptance.
+			expectedMetadata: map[string]any{"region:system:user_data_hash": "digest"},
+		},
+		{
+			// An empty payload must clear Nova user data.
+			name:             "empty payload",
+			userData:         []byte{},
+			useUserData:      true,
+			expectedUserData: "",
+		},
+		{
+			name:             "record without payload change",
+			userData:         []byte("ignored unless opted in"),
+			metadata:         map[string]string{"region:system:user_data_hash": "digest"},
+			expectedMetadata: map[string]any{"region:system:user_data_hash": "digest"},
+		},
 	}
 
-	_, err := client.RebuildServer(t.Context(), "server-id", options)
-	require.NoError(t, err)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
-	require.True(t, ok, "body missing 'rebuild' key")
-	assert.Equal(t, options.ImageID.String(), rebuildBody["imageRef"])
+			fake := &fakeNovaServer{}
 
-	// Rebuild cannot change the keypair, so it is intentionally omitted.
-	_, hasKeyName := rebuildBody["key_name"]
-	assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
+			srv := httptest.NewServer(fake)
+			defer srv.Close()
 
-	assert.Equal(t, "I2Nsb3VkLWNvbmZpZwp1c2VyczogW10K", rebuildBody["user_data"])
-}
+			client := openstack.NewTestComputeClient(srv.URL + "/")
+			options := openstack.ServerRebuildOptions{
+				ImageID:     idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+				UserData:    tc.userData,
+				UseUserData: tc.useUserData,
+				Metadata:    tc.metadata,
+			}
 
-func TestRebuildServerClearsUserData(t *testing.T) {
-	t.Parallel()
+			_, err := client.RebuildServer(t.Context(), "server-id", options)
+			require.NoError(t, err)
 
-	fake := &fakeNovaServer{}
+			rebuildBody, ok := fake.body["rebuild"].(map[string]any)
+			require.True(t, ok, "body missing 'rebuild' key")
+			assert.Equal(t, options.ImageID.String(), rebuildBody["imageRef"])
 
-	srv := httptest.NewServer(fake)
-	defer srv.Close()
+			// Rebuild cannot change the keypair, so it is intentionally omitted.
+			_, hasKeyName := rebuildBody["key_name"]
+			assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
 
-	client := openstack.NewTestComputeClient(srv.URL + "/")
-	_, err := client.RebuildServer(t.Context(), "server-id", openstack.ServerRebuildOptions{
-		ImageID:     idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
-		UserData:    []byte{},
-		UseUserData: true,
-	})
-	require.NoError(t, err)
+			if tc.useUserData {
+				assert.Equal(t, tc.expectedUserData, rebuildBody["user_data"])
+			} else {
+				assert.NotContains(t, rebuildBody, "user_data")
+			}
 
-	rebuildBody, ok := fake.body["rebuild"].(map[string]any)
-	require.True(t, ok, "body missing 'rebuild' key")
-	assert.IsType(t, "", rebuildBody["user_data"])
-	assert.Empty(t, rebuildBody["user_data"], "an empty payload must clear Nova user data")
+			assert.Equal(t, tc.expectedMetadata, rebuildBody["metadata"])
+		})
+	}
 }
 
 // newServerFixture is a server named test-server, matching the name the fake

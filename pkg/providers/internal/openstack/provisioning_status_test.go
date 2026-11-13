@@ -344,6 +344,9 @@ func (c *stubComputeClient) DeleteServer(context.Context, string) error { return
 func (c *stubComputeClient) RebuildServer(context.Context, string, ServerRebuildOptions) (*servers.Server, error) {
 	return nil, nil //nolint:nilnil // unused stub method
 }
+func (c *stubComputeClient) UpdateServerMetadata(context.Context, string, map[string]string) error {
+	return nil
+}
 func (c *stubComputeClient) RebootServer(context.Context, string, bool) error { return nil }
 func (c *stubComputeClient) StartServer(context.Context, string) error        { return nil }
 func (c *stubComputeClient) StopServer(context.Context, string) error         { return nil }

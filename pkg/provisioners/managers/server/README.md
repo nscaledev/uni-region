@@ -23,19 +23,23 @@ Distinctive behaviour:
   reached it aborts terminally rather than retrying further
 - clears or updates consumed-resource references during reprovision and teardown
 
-Create recovery and image rebuild recovery deliberately use different state:
+Create recovery and rebuild recovery deliberately use different state:
 
 | Initial create failure | Image rebuild failure |
 |---|---|
 | Server never launched | Server previously launched |
 | Delete/recreate, bounded by the existing flag | Nothing to recover |
-| `ProviderCreateFailures` | No persisted state |
+| `ProviderCreateFailures` | None here; Nova metadata records accepted user data |
 | Exhaustion is operator-terminal | The failure surfaces on the monitor's lifecycle axis |
 | Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | No wake needed: `ErrYield` requeues on a timer |
 
-The image reconcile lives in the OpenStack provider's existing-server path and
-leaves the create retry counter and predicate code untouched. It decides only from
+The rebuild reconcile lives in the OpenStack provider's existing-server path and
+leaves the create retry counter and predicate code untouched. It decides from
 the fresh provider read; see the provider README for the row-by-row pass order.
+When the provider reports that Nova holds the server's
+[user-data record](../../../providers/internal/openstack/README.md#user-data-record),
+the provider sets `UserDataRecorded=True` in Server status. The reconciler
+persists it with the rest of status and retries a failed write.
 
 Settlement for the create path is watch-predicate-driven (`pkg/managers/server`)
 over a helper exported from this package: `providerCreateFailureUpdate` over
