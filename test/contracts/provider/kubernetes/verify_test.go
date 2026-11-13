@@ -169,7 +169,10 @@ var _ = Describe("Region Provider Verification", func() {
 				ProviderBranch:             getProviderBranch(),
 				ConsumerVersionSelectors:   selectors,
 				EnablePending:              enablePending,
-				StateHandlers:              createStateHandlers(ctx, stateManager),
+				// The strict run is Envir's supported releases, which always include a network pact, so
+				// finding none means the selection or the broker is wrong, not that there's nothing to verify.
+				FailIfNoPactsFound: !enablePending,
+				StateHandlers:      createStateHandlers(ctx, stateManager),
 			})
 		}
 
@@ -216,11 +219,9 @@ var _ = Describe("Region Provider Verification", func() {
 		// Pending pacts never fail the build, so a broken interaction would stay green. Envir's released pacts
 		// are what customers run, so they are verified without pending: a failure here means this uni-region
 		// change breaks a supported Envir release. Envir's main and branches stay in the pending run above.
-		// FailIfNoPactsFound stays off: until AIPLAT-903 records releases there is nothing to select.
 		It("should verify Envir's released contracts without pending", func() {
 			Expect(verifyBroker([]provider.Selector{
-				// Envir releases recorded in the broker and still supported (N, N-1, N-2 once AIPLAT-903
-				// records them).
+				// Envir releases recorded in the broker and still supported (N, N-1 and N-2).
 				&provider.ConsumerVersionSelector{
 					Consumer:           "nscale-environments",
 					DeployedOrReleased: true,
