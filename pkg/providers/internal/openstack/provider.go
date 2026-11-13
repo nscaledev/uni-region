@@ -3337,15 +3337,21 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	// R3′: launched ERROR on a converged image. The ref alone cannot certify the
 	// write (it moved at accept), so this must not read as provisioned. Park
 	// on the provisioning axis, exactly as create-retry does when its
-	// attempts are exhausted. The remedy is a spec edit — a new image choice
-	// or a replacement server — which is ErrUserActionRequired's contract:
+	// attempts are exhausted. The remedy is a spec edit or a replacement
+	// server, which is ErrUserActionRequired's contract:
 	// recovery is generation-driven, and there is no retry bookkeeping to
 	// clear here, so the sentinel alone suffices. The park is also
 	// re-derived per pass, so a monitor observed-write after a silent
 	// provider recovery un-parks it without any spec change.
 	if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
+		message := "the provider reports the server in an error state; change the image or replace the server"
+		// Match the API gate, including knowledge restored from Nova this pass.
+		if server.UserDataRecorded() {
+			message = "the provider reports the server in an error state; change the image or user data, or replace the server"
+		}
+
 		return openstackServer, provisioners.UserActionRequired(unikornv1core.ConditionReasonErrored,
-			"the provider reports the server in an error state; select another image or replace the server")
+			message)
 	}
 
 	// R3a: retry a deferred record while the provider is still changing state.

@@ -152,8 +152,8 @@ related dependencies rather than from nested path scope.
   UUID, ports, fixed and floating IP relationships, attached data volumes,
   flavor, metadata, and placement. Flavor changes remain unsupported and are
   rejected with HTTP 422. An accepted rebuild destroys the previous root disk
-  contents even if the rebuild subsequently fails, so failure recovery is
-  choosing another image or replacing the server — never data restoration.
+  contents even if the rebuild subsequently fails; see the provider's
+  [ERROR recovery guidance](../../providers/internal/openstack/README.md#user-data-record).
 - while a rebuild is pending or in flight the v2 read reports
   `provisioningStatus=provisioning`, from the accepted update onward, because a
   result without the current generation stamp projects as `provisioning` with
@@ -216,7 +216,8 @@ related dependencies rather than from nested path scope.
   user-data record (see the provider's
   [user-data record](../../providers/internal/openstack/README.md#user-data-record)).
   A rebuild that fails leaves the server in `ERROR`; there is no
-  automatic retry, and recovery is another image or user-data update, or server replacement.
+  automatic retry. Available remedies depend on the user-data record; see the
+  [ERROR recovery guidance](../../providers/internal/openstack/README.md#user-data-record).
 - A v2 user-data change is refused with 409 until the Server status condition
   `UserDataRecorded` is `True`. See the provider's
   [user-data record](../../providers/internal/openstack/README.md#user-data-record)

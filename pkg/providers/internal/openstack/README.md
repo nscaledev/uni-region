@@ -666,6 +666,11 @@ data. A locked writable server instead retries the refused metadata write.
 A launched `ERROR`, including one with a task set, still parks; changing the
 image allows a rebuild once quiescent, which writes the record.
 
+Recovery from `ERROR` is changing the image or replacing the server. Changing
+user data is also available when `UserDataRecorded=True`, as required by the
+v2 API gate. Without that condition, `ERROR` prevents recording and a user-data
+change returns 409. Recovery never restores destroyed root-disk contents.
+
 The Server status condition `UserDataRecorded=True` says Nova holds the record.
 Whenever a pass knows the Nova server carries the key (read on `GetServer`, or
 written by this pass) the provider sets the condition in memory. The reconciler
