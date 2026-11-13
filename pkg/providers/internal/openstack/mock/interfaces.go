@@ -2177,6 +2177,20 @@ func (mr *MockServerInterfaceMockRecorder) StopServer(ctx, id any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopServer", reflect.TypeOf((*MockServerInterface)(nil).StopServer), ctx, id)
 }
 
+// UpdateServerMetadata mocks base method.
+func (m *MockServerInterface) UpdateServerMetadata(ctx context.Context, id string, metadata map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateServerMetadata", ctx, id, metadata)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateServerMetadata indicates an expected call of UpdateServerMetadata.
+func (mr *MockServerInterfaceMockRecorder) UpdateServerMetadata(ctx, id, metadata any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerMetadata", reflect.TypeOf((*MockServerInterface)(nil).UpdateServerMetadata), ctx, id, metadata)
+}
+
 // MockServerObservationInterface is a mock of ServerObservationInterface interface.
 type MockServerObservationInterface struct {
 	ctrl     *gomock.Controller
@@ -2374,6 +2388,20 @@ func (m *MockServerObservationInterface) StopServer(ctx context.Context, id stri
 func (mr *MockServerObservationInterfaceMockRecorder) StopServer(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StopServer", reflect.TypeOf((*MockServerObservationInterface)(nil).StopServer), ctx, id)
+}
+
+// UpdateServerMetadata mocks base method.
+func (m *MockServerObservationInterface) UpdateServerMetadata(ctx context.Context, id string, metadata map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateServerMetadata", ctx, id, metadata)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateServerMetadata indicates an expected call of UpdateServerMetadata.
+func (mr *MockServerObservationInterfaceMockRecorder) UpdateServerMetadata(ctx, id, metadata any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerMetadata", reflect.TypeOf((*MockServerObservationInterface)(nil).UpdateServerMetadata), ctx, id, metadata)
 }
 
 // MockVolumeAttachmentInterface is a mock of VolumeAttachmentInterface interface.
@@ -2770,6 +2798,20 @@ func (m *MockComputeInterface) UpdateQuotas(ctx context.Context, projectID strin
 func (mr *MockComputeInterfaceMockRecorder) UpdateQuotas(ctx, projectID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateQuotas", reflect.TypeOf((*MockComputeInterface)(nil).UpdateQuotas), ctx, projectID)
+}
+
+// UpdateServerMetadata mocks base method.
+func (m *MockComputeInterface) UpdateServerMetadata(ctx context.Context, id string, metadata map[string]string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateServerMetadata", ctx, id, metadata)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateServerMetadata indicates an expected call of UpdateServerMetadata.
+func (mr *MockComputeInterfaceMockRecorder) UpdateServerMetadata(ctx, id, metadata any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateServerMetadata", reflect.TypeOf((*MockComputeInterface)(nil).UpdateServerMetadata), ctx, id, metadata)
 }
 
 // MockPlacementInterface is a mock of PlacementInterface interface.

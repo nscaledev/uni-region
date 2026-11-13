@@ -2198,6 +2198,9 @@ func TestReconcileServer(t *testing.T) {
 		"identity:organization_id": organizationID,
 		"identity:project_id":      projectID,
 		"region:region_id":         regionID,
+		// SHA-256 of the fixture's empty user data, spelled out because
+		// Nova persists it.
+		"region:system:user_data_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	}
 
 	t.Run("ItDoesntExist", func(t *testing.T) {
@@ -2214,10 +2217,13 @@ func TestReconcileServer(t *testing.T) {
 	})
 
 	t.Run("ItExists", func(t *testing.T) {
+		server := server.DeepCopy()
+
 		t.Parallel()
 
 		compute := mock.NewMockServerInterface(c)
-		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+		compute.EXPECT().GetServer(t.Context(), server).Return(withUserDataHash(openstackServerFixture(server),
+			"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"), nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -2271,10 +2277,11 @@ func TestReconcileServerPreflight(t *testing.T) {
 		"projectID":      projectID,
 		"regionID":       regionID,
 		// Namespaced duplicates.
-		"region:server_id":         server.Name,
-		"identity:organization_id": organizationID,
-		"identity:project_id":      projectID,
-		"region:region_id":         regionID,
+		"region:server_id":             server.Name,
+		"identity:organization_id":     organizationID,
+		"identity:project_id":          projectID,
+		"region:region_id":             regionID,
+		"region:system:user_data_hash": types.UserDataHash(server.Spec.UserData),
 	}
 
 	t.Run("ItYieldsBeforeCreate", func(t *testing.T) {
@@ -2327,13 +2334,16 @@ func TestReconcileServerPreflight(t *testing.T) {
 	})
 
 	t.Run("ItSkipsPreflightWhenServerExists", func(t *testing.T) {
+		server := server.DeepCopy()
+
 		t.Parallel()
 
 		c := gomock.NewController(t)
 		t.Cleanup(c.Finish)
 
 		compute := mock.NewMockServerInterface(c)
-		compute.EXPECT().GetServer(t.Context(), server).Return(openstackServer, nil)
+		compute.EXPECT().GetServer(t.Context(), server).Return(withUserDataHash(openstackServerFixture(server),
+			"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"), nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -2380,11 +2390,12 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
+	rebuild := rebuildOptionsFor(options.UserData)
+	rebuild.Metadata = rebuildMetadata(server.Spec.UserData)
+
 	compute := mock.NewMockServerInterface(c)
 	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
-	compute.EXPECT().RebuildServer(t.Context(), "server-1", openstack.ServerRebuildOptions{
-		ImageID: idstest.MustParseImageID(rebuildNewImageID),
-	}).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+	compute.EXPECT().RebuildServer(t.Context(), "server-1", rebuild).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
 
 	p := openstack.NewTestProvider(client, regionFixture())
 
@@ -2540,10 +2551,11 @@ func TestReconcileServerTags(t *testing.T) {
 			"projectID":      projectID,
 			"regionID":       regionID,
 			// Namespaced system keys.
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"region:server_id":             server.Name,
+			"identity:organization_id":     organizationID,
+			"identity:project_id":          projectID,
+			"region:region_id":             regionID,
+			"region:system:user_data_hash": types.UserDataHash(server.Spec.UserData),
 		}
 
 		compute := mock.NewMockServerInterface(c)
@@ -2577,14 +2589,15 @@ func TestReconcileServerTags(t *testing.T) {
 
 		// The system key must win — value must be the real organizationID.
 		expectedMetadata := map[string]string{
-			"serverID":                 server.Name,
-			"organizationID":           organizationID,
-			"projectID":                projectID,
-			"regionID":                 regionID,
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"serverID":                     server.Name,
+			"organizationID":               organizationID,
+			"projectID":                    projectID,
+			"regionID":                     regionID,
+			"region:server_id":             server.Name,
+			"identity:organization_id":     organizationID,
+			"identity:project_id":          projectID,
+			"region:region_id":             regionID,
+			"region:system:user_data_hash": types.UserDataHash(server.Spec.UserData),
 		}
 
 		compute := mock.NewMockServerInterface(c)
@@ -2623,15 +2636,16 @@ func TestReconcileServerTags(t *testing.T) {
 		openstackServer := openstackServerFixture(server)
 
 		expectedMetadata := map[string]string{
-			"fabric:pkey":              "0x0600",
-			"serverID":                 server.Name,
-			"organizationID":           organizationID,
-			"projectID":                projectID,
-			"regionID":                 regionID,
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"fabric:pkey":                  "0x0600",
+			"serverID":                     server.Name,
+			"organizationID":               organizationID,
+			"projectID":                    projectID,
+			"regionID":                     regionID,
+			"region:server_id":             server.Name,
+			"identity:organization_id":     organizationID,
+			"identity:project_id":          projectID,
+			"region:region_id":             regionID,
+			"region:system:user_data_hash": types.UserDataHash(server.Spec.UserData),
 		}
 
 		compute := mock.NewMockServerInterface(c)
@@ -2663,15 +2677,16 @@ func TestReconcileServerTags(t *testing.T) {
 		openstackServer := openstackServerFixture(server)
 
 		expectedMetadata := map[string]string{
-			"fabric:pkey":              "0x0a00",
-			"serverID":                 server.Name,
-			"organizationID":           organizationID,
-			"projectID":                projectID,
-			"regionID":                 regionID,
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"fabric:pkey":                  "0x0a00",
+			"serverID":                     server.Name,
+			"organizationID":               organizationID,
+			"projectID":                    projectID,
+			"regionID":                     regionID,
+			"region:server_id":             server.Name,
+			"identity:organization_id":     organizationID,
+			"identity:project_id":          projectID,
+			"region:region_id":             regionID,
+			"region:system:user_data_hash": types.UserDataHash(server.Spec.UserData),
 		}
 
 		compute := mock.NewMockServerInterface(c)

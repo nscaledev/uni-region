@@ -170,14 +170,20 @@ type ComputeQuotaInterface interface {
 }
 
 type ServerRebuildOptions struct {
-	ImageID regionids.ImageID
+	ImageID  regionids.ImageID
+	UserData []byte
+	// Metadata replaces the server's whole metadata set in the same Nova
+	// write that accepts the rebuild, so it must include the entries to keep.
+	Metadata map[string]string
 }
 
-type ServerInterface interface {
+type ServerInterface interface { //nolint:interfacebloat // The server lifecycle the provider drives through Nova.
 	GetServer(ctx context.Context, server *unikornv1.Server) (*servers.Server, error)
 	CreateServer(ctx context.Context, server *unikornv1.Server, keyName string, networks []servers.Network, serverGroupID *string, metadata map[string]string) (*servers.Server, error)
 	DeleteServer(ctx context.Context, id string) error
 	RebuildServer(ctx context.Context, id string, options ServerRebuildOptions) (*servers.Server, error)
+	// UpdateServerMetadata merges metadata into the server's existing set.
+	UpdateServerMetadata(ctx context.Context, id string, metadata map[string]string) error
 	RebootServer(ctx context.Context, id string, hard bool) error
 	StartServer(ctx context.Context, id string) error
 	StopServer(ctx context.Context, id string) error

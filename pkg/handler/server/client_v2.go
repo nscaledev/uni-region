@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"net/http"
 	"reflect"
 	"slices"
 
@@ -151,12 +152,27 @@ func userDataChanged(current []byte, request *[]byte) bool {
 // predate validation keep working when a client PUTs the same bytes back. The
 // CA-awareness flag derives from the server's current SSH certificate
 // authority because updates preserve the CA chosen at create time.
+//
+// A change is refused until the controller has recorded the current user data
+// with the provider: a record taken after the change would hide it. See the
+// OpenStack provider README's user-data record section.
 func validateUpdatedUserData(current *regionv1.Server, request *openapi.ServerV2Update) error {
 	if !userDataChanged(current.Spec.UserData, request.Spec.UserData) {
 		return nil
 	}
 
-	return userdata.Validate(request.Spec.UserData, current.Spec.SSHCertificateAuthorityID != nil)
+	if err := userdata.Validate(request.Spec.UserData, current.Spec.SSHCertificateAuthorityID != nil); err != nil {
+		return err
+	}
+
+	if !current.UserDataRecorded() {
+		return errors.FromOpenAPIError(http.StatusConflict, nil, &coreopenapi.Error{
+			Error:            coreopenapi.Conflict,
+			ErrorDescription: "The server's existing user data has not been recorded, so it cannot be changed; if the server is in an error state, change its image or replace it. Otherwise, once it is in a normal state (unshelve or unrescue it if needed), change its tags or ask an operator to restart the controller before retrying.",
+		})
+	}
+
+	return nil
 }
 
 // validateUpdateV2Request runs the update-path validations that need the

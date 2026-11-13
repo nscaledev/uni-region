@@ -244,10 +244,15 @@ stored objects rely on for linkage, migration, and operational coordination.
   hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
   authoritative for live state.
+  `Server.Spec.UserData` changes are applied by rebuild too. The accepted
+  value is recorded in Nova. Server status condition `UserDataRecorded=True`
+  reports knowledge of that record; see the OpenStack
+  [user-data record](../../../providers/internal/openstack/README.md#user-data-record).
   A rebuild failure is not attributable: an unrelated host failure on the desired
   image is indistinguishable from a failed rebuild, whatever is recorded, so it
   surfaces on the monitor's lifecycle axis rather than as a reconciler diagnosis.
-  Recovery is another image or a replacement server — never data restoration.
+  See the provider's [ERROR recovery guidance](../../../providers/internal/openstack/README.md#user-data-record)
+  for the remedies available with and without a user-data record.
 - `Server.Status.Observed` is the partition that lets the two status writers stop
   arbitrating. `Server` status has two writers: the reconciler drives the provider
   toward spec, the monitor polls the provider and records what it saw. Anything they

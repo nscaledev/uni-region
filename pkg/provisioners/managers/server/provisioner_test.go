@@ -17,6 +17,7 @@ limitations under the License.
 package server_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,6 +29,7 @@ import (
 	regionv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
 	mockproviders "github.com/unikorn-cloud/region/pkg/providers/mock"
+	"github.com/unikorn-cloud/region/pkg/providers/types"
 	mocktypes "github.com/unikorn-cloud/region/pkg/providers/types/mock"
 	serverprovisioner "github.com/unikorn-cloud/region/pkg/provisioners/managers/server"
 
@@ -141,4 +143,83 @@ func TestProvisionProviderCreateGateSatisfied(t *testing.T) {
 
 	prov := serverprovisioner.NewForTest(server, providers, nil)
 	require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
+}
+
+// provisionAfterGet runs one pass over the server as the reconciler reads it.
+func provisionAfterGet(t *testing.T, provider *mocktypes.MockProvider, ctrl *gomock.Controller) (client.Client, *regionv1.Server, error) {
+	t.Helper()
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	restMapper := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{regionv1.SchemeGroupVersion})
+	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("Server"), apimeta.RESTScopeNamespace)
+
+	initial := testProvisionServer()
+
+	cli := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRESTMapper(restMapper).
+		WithObjects(initial, testProvisionIdentity()).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+
+	server := &regionv1.Server{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(initial), server))
+
+	err := serverprovisioner.NewForTest(server, providers, nil).Provision(coreclient.NewContext(t.Context(), cli))
+
+	return cli, server, err
+}
+
+// TestProvisionPersistsUserDataRecorded pins the stored condition and the
+// provider's other status through the reconciler's status update.
+func TestProvisionPersistsUserDataRecorded(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	privateIP := "192.0.2.1"
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ *regionv1.Identity, server *regionv1.Server, _ *types.ServerCreateOptions) error {
+			server.SetUserDataRecorded()
+			server.Status.PrivateIP = &privateIP
+
+			return provisioners.ErrYield
+		})
+
+	cli, server, err := provisionAfterGet(t, provider, ctrl)
+	require.ErrorIs(t, err, provisioners.ErrYield)
+	require.Equal(t, &privateIP, server.Status.PrivateIP)
+	require.NoError(t, cli.Status().Update(t.Context(), server))
+
+	stored := &regionv1.Server{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(server), stored))
+	condition := apimeta.FindStatusCondition(stored.Status.Conditions, "UserDataRecorded")
+	require.NotNil(t, condition)
+	require.Equal(t, metav1.ConditionTrue, condition.Status)
+	require.Equal(t, &privateIP, stored.Status.PrivateIP)
+}
+
+// TestProvisionLeavesMetadataWithoutRecord pins that a pass that does not
+// establish the record writes no metadata.
+func TestProvisionLeavesMetadataWithoutRecord(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil)
+
+	cli, server, err := provisionAfterGet(t, provider, ctrl)
+	require.NoError(t, err)
+
+	stored := &regionv1.Server{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(server), stored))
+	require.Equal(t, server.ResourceVersion, stored.ResourceVersion)
+	require.False(t, stored.UserDataRecorded())
 }

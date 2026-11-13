@@ -174,6 +174,19 @@ func (c *Volume) ResourceLabels() (labels.Set, error) {
 	return nil, nil
 }
 
+// ConditionUserDataRecorded says the provider holds the server's user-data record.
+const ConditionUserDataRecorded unikornv1core.ConditionType = "UserDataRecorded"
+
+// SetUserDataRecorded marks knowledge of the provider's durable user-data record.
+func (c *Server) SetUserDataRecorded() {
+	unikornv1core.UpdateCondition(&c.Status.Conditions, ConditionUserDataRecorded, corev1.ConditionTrue, "Recorded", "the provider holds the user-data record")
+}
+
+// UserDataRecorded reports whether the provider's user-data record is known.
+func (c *Server) UserDataRecorded() bool {
+	return meta.IsStatusConditionTrue(c.Status.Conditions, string(ConditionUserDataRecorded))
+}
+
 // Paused implements the ReconcilePauser interface.
 func (c *Server) Paused() bool {
 	return c.Spec.Pause
