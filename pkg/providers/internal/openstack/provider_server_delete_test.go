@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/servers"
 	"github.com/stretchr/testify/require"
@@ -31,6 +32,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/providers/internal/openstack"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -182,6 +184,22 @@ func TestDeleteServerPresentRetainsNetworking(t *testing.T) {
 			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()), provisioners.ErrYield)
 		})
 	}
+}
+
+func TestDeleteLaunchedServerDuringCreateRetry(t *testing.T) {
+	t.Parallel()
+
+	endpoint := newTeardownOpenstack(t,
+		novaLookup(`{"servers":[{"id":"nova-1","name":"server-1","status":"ACTIVE","OS-SRV-USG:launched_at":"2026-01-02T03:04:05.000000"}]}`),
+		novaDelete(http.StatusNoContent),
+	)
+	cli := contractRetryClient(t, contractOpenstackIdentity())
+	server := teardownServer()
+	server.Status.ProviderCreateRetrying = true
+	deleted := metav1.NewTime(time.Now())
+	server.DeletionTimestamp = &deleted
+
+	require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server), provisioners.ErrYield)
 }
 
 func TestDeleteServerReleasesBuildHold(t *testing.T) {

@@ -409,6 +409,76 @@ func TestUpdateServerStateNotFoundContractCreateRetry(t *testing.T) {
 	require.False(t, srv.Status.Observed.Errored)
 }
 
+func TestCreateRetryUsesFreshNovaLaunchState(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []string{"ACTIVE", "ERROR"} {
+		for _, retrying := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/retrying=%t", status, retrying), func(t *testing.T) {
+				t.Parallel()
+
+				endpoint := newTeardownOpenstack(t, novaLookup(fmt.Sprintf(`{"servers":[{"id":"nova-1","name":"server-1","status":%q,"OS-SRV-USG:launched_at":"2026-01-02T03:04:05.000000"}]}`, status)))
+				cli := contractRetryClient(t, contractIdentity(), contractOpenstackIdentity())
+				prov := serverprovisioner.New(nil, contractMockProviders(t, teardownProvider(cli, endpoint)))
+				server, ok := prov.Object().(*regionv1.Server)
+				require.True(t, ok)
+
+				*server = *teardownServer()
+				server.SetActiveCondition(regionv1.ActiveConditionReasonError)
+				server.Status.ProviderCreateRetrying = retrying
+
+				if retrying {
+					server.Status.ProviderCreateFailures = 1
+				}
+
+				require.True(t, serverprovisioner.ProviderCreateFailure(server), "stale status must admit create-retry")
+
+				recorder := record.NewFakeRecorder(4)
+				ctx := coremanager.NewContext(coreclient.NewContext(t.Context(), cli), contractManager{recorder: recorder})
+				require.ErrorIs(t, prov.Provision(ctx), provisioners.ErrYield)
+				require.False(t, server.Status.ProviderCreateRetrying, "the next reconcile must leave the delete path")
+				require.False(t, serverprovisioner.ProviderCreateFailure(server), "the launch observation must prevent re-arming retry")
+
+				launched := metav1.NewTime(time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC))
+				require.Equal(t, &launched, server.Status.LaunchedAt)
+				require.Equal(t, &launched, server.Status.ProvisionedAt)
+				require.EqualValues(t, 1, server.Status.ProviderCreateFailures)
+			})
+		}
+	}
+}
+
+func TestCreateRetryDeletesNeverLaunchedServer(t *testing.T) {
+	t.Parallel()
+
+	endpoint := newTeardownOpenstack(t,
+		novaLookup(`{"servers":[{"id":"nova-1","name":"server-1","status":"ERROR","OS-SRV-USG:launched_at":null}]}`), novaDelete(http.StatusNoContent),
+		novaLookup(`{"servers":[]}`), portLookup(false), novaLookup(`{"servers":[]}`),
+		novaLookup(`{"servers":[]}`),
+	)
+	cli := contractRetryClient(t, contractIdentity(), contractOpenstackIdentity())
+	prov := serverprovisioner.New(nil, contractMockProviders(t, teardownProvider(cli, endpoint)))
+	server, ok := prov.Object().(*regionv1.Server)
+	require.True(t, ok)
+
+	*server = *teardownServer()
+	server.SetActiveCondition(regionv1.ActiveConditionReasonError)
+
+	recorder := record.NewFakeRecorder(4)
+	ctx := coremanager.NewContext(coreclient.NewContext(t.Context(), cli), contractManager{recorder: recorder})
+
+	require.ErrorIs(t, prov.Provision(ctx), provisioners.ErrYield)
+	require.True(t, server.Status.ProviderCreateRetrying)
+	require.EqualValues(t, 1, server.Status.ProviderCreateFailures)
+	require.ErrorIs(t, prov.Provision(ctx), provisioners.ErrYield)
+	require.False(t, server.Status.ProviderCreateRetrying)
+	require.Equal(t, regionv1.ActiveConditionReasonPending, contractActiveReason(t, server))
+	require.Nil(t, server.Status.LaunchedAt)
+	require.Nil(t, server.Status.ProvisionedAt)
+	contractRequireEvent(t, recorder, "ProviderCreateRetrying")
+	contractRequireEvent(t, recorder, "ProviderCreateRetryReady")
+}
+
 func TestDeprovisionDeleteWaitsForNovaAndNetworking(t *testing.T) {
 	t.Parallel()
 

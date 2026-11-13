@@ -56,7 +56,9 @@ This is the clearest controller-side expression of the lifecycle DAG model:
 Deprovisioning retains consumed-resource references and the Server's finalizer
 until provider deletion succeeds. During failed-create retry, deletion yields
 also preserve `ProviderCreateRetrying`, attempt count, runtime state and satisfied
-create gates across restart, without emitting readiness events. Cleanup success
+create gates across restart, without emitting readiness events, except when a
+fresh provider read cancels an obsolete retry (see the
+[OpenStack create-retry rules](../../../providers/internal/openstack/README.md#invariants-and-guard-rails)). Cleanup success
 resumes the existing absence check/reset before gates can admit another attempt.
 
 ## Managed cloud-init augmentation

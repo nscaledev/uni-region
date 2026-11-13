@@ -3461,8 +3461,8 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	if openstackServer != nil {
-		if serverDeleteHeld(openstackServer) {
-			return holdServerDelete(ctx, server, openstackServer)
+		if err := guardServerDelete(ctx, server, openstackServer); err != nil {
+			return err
 		}
 
 		log.V(1).Info("deleting server")
@@ -3527,6 +3527,24 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 	}
 
 	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a provider server discovered during network cleanup")
+}
+
+// Retry eligibility may be stale; only Nova can authorize deleting a failed
+// create. Explicit resource deletion still proceeds.
+func guardServerDelete(ctx context.Context, server *unikornv1.Server, openstackServer *servers.Server) error {
+	if server.DeletionTimestamp.IsZero() && server.Status.ProviderCreateRetrying && !openstackServer.LaunchedAt.IsZero() {
+		setServerActive(ctx, server, openstackServer, nil)
+		server.Status.ProviderCreateRetrying = false
+		releaseServerDelete(server)
+
+		return provisioners.Yield(unikornv1core.ConditionReasonProvisioning, "provider server has launched; resuming normal reconciliation")
+	}
+
+	if serverDeleteHeld(openstackServer) {
+		return holdServerDelete(ctx, server, openstackServer)
+	}
+
+	return nil
 }
 
 const (

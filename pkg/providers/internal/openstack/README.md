@@ -132,8 +132,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   state), though the yield itself is named on the `Available` condition — and
   absorbed by the bounded provider-create
   delete-and-retry flow, which recreates it from the already-updated spec
-  image. That retry adoption keys off the `Healthy=Errored` stamp the
-  monitor's poll writes, so it takes effect at worst one poll later. This
+  image. That retry adoption keys off the `Active=Error` stamp the
+  monitor's poll writes and empty launch/provisioning timestamps. These are
+  only eligibility hints: before retry deletion, a fresh Nova `GetServer`
+  must still report no `launched_at`. If Nova reports a launch, regardless of
+  its current status, the provider records the launch observation, clears
+  `ProviderCreateRetrying`, and yields so the next pass uses normal
+  reconciliation. It preserves the attempt counter and create gates, and
+  performs no Nova or networking deletion. Explicit resource deletion
+  (`deletionTimestamp` set) remains allowed even with a pending retry. This
   assumes the cloud exposes
   `OS-SRV-USG:launched_at` — the same signal the health monitor mirrors and the
   create-retry guard keys off. Deliberately not a goal: recreating a
