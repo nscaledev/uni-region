@@ -478,10 +478,6 @@ func (c *ComputeClient) RebuildServer(ctx context.Context, id string, options Se
 	_, span := traceStart(ctx, "POST /compute/v2/servers/{id}/action", spanAttributes)
 	defer span.End()
 
-	if !options.UseUserData {
-		return servers.Rebuild(ctx, c.client, id, servers.RebuildOpts{ImageRef: options.ImageID.String(), Metadata: options.Metadata}).Extract()
-	}
-
 	return servers.Rebuild(ctx, c.client, id, rebuildOpts{
 		ImageRef: options.ImageID.String(),
 		UserData: options.UserData,

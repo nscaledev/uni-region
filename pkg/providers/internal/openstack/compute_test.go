@@ -95,7 +95,6 @@ func TestRebuildServerSendsUserData(t *testing.T) {
 	cases := []struct {
 		name             string
 		userData         []byte
-		useUserData      bool
 		metadata         map[string]string
 		expectedUserData string
 		expectedMetadata any
@@ -103,7 +102,6 @@ func TestRebuildServerSendsUserData(t *testing.T) {
 		{
 			name:             "populated payload",
 			userData:         []byte("#cloud-config\nusers: []\n"),
-			useUserData:      true,
 			metadata:         map[string]string{"region:system:user_data_hash": "digest"},
 			expectedUserData: "I2Nsb3VkLWNvbmZpZwp1c2VyczogW10K",
 			// Metadata travels in the rebuild request so Nova commits it on acceptance.
@@ -113,14 +111,7 @@ func TestRebuildServerSendsUserData(t *testing.T) {
 			// An empty payload must clear Nova user data.
 			name:             "empty payload",
 			userData:         []byte{},
-			useUserData:      true,
 			expectedUserData: "",
-		},
-		{
-			name:             "record without payload change",
-			userData:         []byte("ignored unless opted in"),
-			metadata:         map[string]string{"region:system:user_data_hash": "digest"},
-			expectedMetadata: map[string]any{"region:system:user_data_hash": "digest"},
 		},
 	}
 
@@ -135,10 +126,9 @@ func TestRebuildServerSendsUserData(t *testing.T) {
 
 			client := openstack.NewTestComputeClient(srv.URL + "/")
 			options := openstack.ServerRebuildOptions{
-				ImageID:     idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
-				UserData:    tc.userData,
-				UseUserData: tc.useUserData,
-				Metadata:    tc.metadata,
+				ImageID:  idstest.MustParseImageID("bbbbbbbb-0000-0000-0000-000000000001"),
+				UserData: tc.userData,
+				Metadata: tc.metadata,
 			}
 
 			_, err := client.RebuildServer(t.Context(), "server-id", options)
@@ -152,12 +142,7 @@ func TestRebuildServerSendsUserData(t *testing.T) {
 			_, hasKeyName := rebuildBody["key_name"]
 			assert.False(t, hasKeyName, "key_name must be omitted so Nova keeps the stored keypair")
 
-			if tc.useUserData {
-				assert.Equal(t, tc.expectedUserData, rebuildBody["user_data"])
-			} else {
-				assert.NotContains(t, rebuildBody, "user_data")
-			}
-
+			assert.Equal(t, tc.expectedUserData, rebuildBody["user_data"])
 			assert.Equal(t, tc.expectedMetadata, rebuildBody["metadata"])
 		})
 	}

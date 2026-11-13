@@ -130,23 +130,24 @@ related dependencies rather than from nested path scope.
 - server names are immutable after creation; update requests that supply a
   different name are rejected with HTTP 422
 - a v2 update keeps persisted `userData` when omitted or null, clears it when
-  an empty string is supplied, and otherwise replaces it. The value is never
-  applied to the running guest; it is consumed by the next recreate. A
-  rebuild (image change) re-runs the
-  create-time user data, not the updated value — applying updated user data on
-  rebuild is deferred until Nova's microversion 2.57 `user_data` field is wired
-  through the client library
-- the image is immutable through the v1 API: a v1 update carrying a different
-  `imageId` succeeds but preserves the stored image (the rest of the update
-  still applies). The `imageId` on a v1 update is ignored entirely and not
-  validated — the value is discarded, so even one referencing a since-deleted
-  image does not fail the update. The destructive rebuild contract below is
-  exposed — and its compatibility validation enforced — only by v2, so v1 must
-  never let the stored image drift from the running server. This preserves v1's
-  historical accept-and-ignore behaviour for image changes, now enforced at the
-  API boundary instead of falling out of the old create-only image handling in
-  the provider.
-- changing a v2 server's `imageId` is a destructive in-place Nova rebuild. It
+  an empty string is supplied, and otherwise replaces it. A changed value triggers an in-place rebuild using
+  the effective cloud-init payload, including managed SSH-CA augmentation.
+  Until the existing user data is recorded, a change returns HTTP 409 with a
+  client-visible explanation and recovery steps; see the provider's
+  [user-data record](../../providers/internal/openstack/README.md#user-data-record).
+- the image and `userData` are immutable through the v1 API: a v1 update carrying
+  different values succeeds but preserves the stored image and payload (the rest
+  of the update still applies). Those values are ignored entirely and not
+  validated — even an image referencing a since-deleted resource does not fail
+  the update. The destructive rebuild contract below is exposed — and its
+  compatibility validation enforced — only by v2, so v1 must never let its stored
+  rebuild inputs drift from the running server. For the image this preserves
+  v1's historical accept-and-ignore behaviour, now enforced at the API boundary
+  instead of falling out of the old create-only image handling in the provider.
+  For `userData` it is a change: v1 used to store an updated value, which had
+  no effect on the running guest; it is now ignored, because a stored change
+  would trigger a rebuild.
+- changing a v2 server's `imageId` or `userData` is a destructive in-place Nova rebuild. It
   recreates the root disk and destroys its contents while retaining the server
   UUID, ports, fixed and floating IP relationships, attached data volumes,
   flavor, metadata, and placement. Flavor changes remain unsupported and are
@@ -210,9 +211,16 @@ related dependencies rather than from nested path scope.
 - Servers provisioned before this mechanism was introduced have random-UUID
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
-- Image rebuild submits at most one Nova-accepted action per target image. A rebuild that fails
-  leaves the server on the desired image in `ERROR`; there is no automatic retry, and
-  recovery is another image update or server replacement.
+- Rebuild submits at most one Nova-accepted action per target image and customer
+  user-data, except in one unguarded race for servers created before the
+  user-data record (see the provider's
+  [user-data record](../../providers/internal/openstack/README.md#user-data-record)).
+  A rebuild that fails leaves the server in `ERROR`; there is no
+  automatic retry, and recovery is another image or user-data update, or server replacement.
+- A v2 user-data change is refused with 409 until the Server status condition
+  `UserDataRecorded` is `True`. See the provider's
+  [user-data record](../../providers/internal/openstack/README.md#user-data-record)
+  for the states and why.
 
 ## Caveats
 

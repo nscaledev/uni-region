@@ -1420,7 +1420,12 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.17.1/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
       x-hidden: true
-      description: Update a server.
+      description: |-
+        Update a server.
+
+        A userData change returns HTTP 409 if the server's existing user data has not
+        been recorded yet. Follow the response's error_description recovery steps
+        to record it before retrying the change.
       security:
       - oauth2Authentication: []
       requestBody:
@@ -3520,7 +3525,10 @@ components:
         networks:
           $ref: '#/components/schemas/serverNetworkList'
         userData:
-          description: UserData contains base64-encoded configuration information or scripts to use upon launch.
+          description: |-
+            UserData contains base64-encoded configuration information or scripts to use upon launch.
+            On update this field is accepted but ignored, preserving the stored value.
+            Use the v2 API to change user data.
           type: string
           format: byte 
     serverNetworkList:
@@ -3788,8 +3796,9 @@ components:
             The format of the data is governed by the cloud-init standard, and may be a script,
             a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
             as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
-            value, and an empty string clears it. A changed value is not applied to the running guest —
-            it takes effect only when the server is next rebuilt (image change) or recreated.
+            value, and an empty string clears it. A changed value triggers an in-place rebuild using the
+            supplied cloud-init payload.
+            See the v2 server update operation for HTTP 409 recovery when existing user data is not recorded.
           type: string
           format: byte
         volumes:

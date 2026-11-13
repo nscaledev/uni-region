@@ -170,9 +170,8 @@ type ComputeQuotaInterface interface {
 }
 
 type ServerRebuildOptions struct {
-	ImageID     regionids.ImageID
-	UserData    []byte
-	UseUserData bool
+	ImageID  regionids.ImageID
+	UserData []byte
 	// Metadata replaces the server's whole metadata set in the same Nova
 	// write that accepts the rebuild, so it must include the entries to keep.
 	Metadata map[string]string

@@ -25,7 +25,7 @@ Distinctive behaviour:
 
 Create recovery and rebuild recovery deliberately use different state:
 
-| Initial create failure | Image rebuild failure |
+| Initial create failure | Image or user-data rebuild failure |
 |---|---|
 | Server never launched | Server previously launched |
 | Delete/recreate, bounded by the existing flag | Nothing to recover |

@@ -23,6 +23,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	goerrors "errors"
 	"fmt"
@@ -336,7 +337,7 @@ func testServerWithSSHCertificateAuthority() *regionv1.Server {
 		caID     = "ca-1"
 	)
 
-	return &regionv1.Server{
+	server := &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
@@ -361,6 +362,9 @@ func testServerWithSSHCertificateAuthority() *regionv1.Server {
 			SSHCertificateAuthorityID: ptr.To(caID),
 		},
 	}
+	server.SetUserDataRecorded()
+
+	return server
 }
 
 func testSecurityGroupInNetwork(networkID, securityGroupID string) *regionv1.SecurityGroup {
@@ -1239,6 +1243,7 @@ func TestServerUpdateV2SagaPersistsServer(t *testing.T) {
 	updated := &regionv1.Server{}
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: srvNamespace, Name: resource.Name}, updated))
 	require.Equal(t, *result.Spec.UserData, updated.Spec.UserData)
+	require.True(t, updated.UserDataRecorded())
 }
 
 func TestServerPutV2UserDataPersistence(t *testing.T) {
@@ -1248,12 +1253,20 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 	replacement := []byte("#cloud-config\nusers: []\n")
 
 	for _, test := range []struct {
-		name   string
-		field  string
-		want   []byte
-		status int
+		name         string
+		field        string
+		metadata     string
+		want         []byte
+		status       int
+		unrecorded   bool
+		recordStatus metav1.ConditionStatus
 	}{
 		{name: "omitted preserves legacy bytes", want: legacy, status: http.StatusAccepted},
+		{name: "change before the record is refused", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: legacy, status: http.StatusConflict, unrecorded: true},
+		{name: "false record is refused", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: legacy, status: http.StatusConflict, recordStatus: metav1.ConditionFalse},
+		{name: "unknown record is refused", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: legacy, status: http.StatusConflict, recordStatus: metav1.ConditionUnknown},
+		{name: "unchanged before the record is accepted", want: legacy, status: http.StatusAccepted, unrecorded: true},
+		{name: "tag change before the record is accepted", metadata: `,"tags":[{"name":"reconcile","value":"requested"}]`, want: legacy, status: http.StatusAccepted, unrecorded: true},
 		{name: "null preserves legacy bytes", field: `,"userData":null`, want: legacy, status: http.StatusAccepted},
 		{name: "empty value clears", field: `,"userData":""`, status: http.StatusAccepted},
 		{name: "value replaces", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: replacement, status: http.StatusAccepted},
@@ -1266,9 +1279,20 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 
 			resource := testServerV2(srvServerID)
 			resource.Spec.UserData = legacy
+			// The record is independent of the current spec generation.
+			resource.Generation = 2
+
+			if test.unrecorded {
+				resource.Status.Conditions = nil
+			}
+
+			if test.recordStatus != "" {
+				resource.Status.Conditions[0].Status = test.recordStatus
+			}
+
 			k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), resource).Build()
 			h := handler.NewServerV2Handler(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
-			body := fmt.Sprintf(`{"metadata":{"name":%q},"spec":{"flavorId":%q,"imageId":%q%s}}`, resource.Name, srvFlavorID, srvImageID, test.field)
+			body := fmt.Sprintf(`{"metadata":{"name":%q%s},"spec":{"flavorId":%q,"imageId":%q%s}}`, resource.Name, test.metadata, srvFlavorID, srvImageID, test.field)
 			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 			request := httptest.NewRequestWithContext(ctx, http.MethodPut, "/", strings.NewReader(body))
 			response := httptest.NewRecorder()
@@ -1280,6 +1304,18 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 			stored := &regionv1.Server{}
 			require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKeyFromObject(resource), stored))
 			require.Equal(t, test.want, stored.Spec.UserData)
+
+			if test.metadata != "" {
+				require.Equal(t, unikornv1core.TagList{{Name: "reconcile", Value: "requested"}}, stored.Spec.Tags)
+			}
+
+			if test.status == http.StatusConflict {
+				var body coreapi.Error
+
+				require.NoError(t, json.Unmarshal(response.Body.Bytes(), &body))
+				require.Equal(t, coreapi.Conflict, body.Error)
+				require.Equal(t, "The server's existing user data has not been recorded, so it cannot be changed; if the server is in an error state, change its image or replace it. Otherwise, once it is in a normal state (unshelve or unrescue it if needed), change its tags or ask an operator to restart the controller before retrying.", body.ErrorDescription)
+			}
 		})
 	}
 }
@@ -2478,8 +2514,9 @@ func TestServerSatisfyProviderCreateGateRequiresPermission(t *testing.T) {
 	require.Empty(t, updated.Status.ProviderCreateGates)
 }
 
+// testServerV2 returns a Server whose user data the controller has recorded.
 func testServerV2(serverID string) *regionv1.Server {
-	return &regionv1.Server{
+	server := &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
@@ -2499,6 +2536,9 @@ func testServerV2(serverID string) *regionv1.Server {
 			Networks: []regionv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(srvNetworkID)}},
 		},
 	}
+	server.SetUserDataRecorded()
+
+	return server
 }
 
 func TestServerGetV2Raw_NotFound(t *testing.T) {
