@@ -94,6 +94,11 @@ func TestStringFormats(t *testing.T) {
 			fmt.Sprintf("%v", idstest.MustParseFileStorageSnapshotID(validUUID)),
 		},
 		{
+			"FileStorageDirectoryQuotaID",
+			fmt.Sprintf("%s", idstest.MustParseFileStorageDirectoryQuotaID(validUUID)), //nolint:staticcheck
+			fmt.Sprintf("%v", idstest.MustParseFileStorageDirectoryQuotaID(validUUID)),
+		},
+		{
 			"ImageID",
 			fmt.Sprintf("%s", idstest.MustParseImageID(validUUID)), //nolint:staticcheck
 			fmt.Sprintf("%v", idstest.MustParseImageID(validUUID)),
@@ -137,6 +142,7 @@ func TestMarshalText(t *testing.T) {
 		{"SSHCertificateAuthorityID", idstest.MustParseSSHCertificateAuthorityID(validUUID)},
 		{"FileStorageID", idstest.MustParseFileStorageID(validUUID)},
 		{"FileStorageSnapshotID", idstest.MustParseFileStorageSnapshotID(validUUID)},
+		{"FileStorageDirectoryQuotaID", idstest.MustParseFileStorageDirectoryQuotaID(validUUID)},
 		{"ImageID", idstest.MustParseImageID(validUUID)},
 		{"FlavorID", idstest.MustParseFlavorID(validUUID)},
 	}
@@ -219,6 +225,7 @@ func TestUnmarshalTextAcceptsValid(t *testing.T) {
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
 		{"FileStorageSnapshotID", new(ids.FileStorageSnapshotID)},
+		{"FileStorageDirectoryQuotaID", new(ids.FileStorageDirectoryQuotaID)},
 		{"ImageID", new(ids.ImageID)},
 		{"FlavorID", new(ids.FlavorID)},
 	}
@@ -259,6 +266,7 @@ func TestUnmarshalTextRejectsInvalid(t *testing.T) {
 		{"SSHCertificateAuthorityID", new(ids.SSHCertificateAuthorityID)},
 		{"FileStorageID", new(ids.FileStorageID)},
 		{"FileStorageSnapshotID", new(ids.FileStorageSnapshotID)},
+		{"FileStorageDirectoryQuotaID", new(ids.FileStorageDirectoryQuotaID)},
 		{"ImageID", new(ids.ImageID)},
 		{"FlavorID", new(ids.FlavorID)},
 	}
@@ -319,6 +327,10 @@ func TestParseRoundTrips(t *testing.T) {
 		}},
 		{"ParseFileStorageSnapshotID", func(s string) (string, error) {
 			v, err := ids.ParseFileStorageSnapshotID(s)
+			return v.String(), err
+		}},
+		{"ParseFileStorageDirectoryQuotaID", func(s string) (string, error) {
+			v, err := ids.ParseFileStorageDirectoryQuotaID(s)
 			return v.String(), err
 		}},
 		{"ParseImageID", func(s string) (string, error) {

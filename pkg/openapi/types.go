@@ -21,6 +21,12 @@ const (
 	ArchitectureX8664   Architecture = "x86_64"
 )
 
+// Defines values for FileStorageDirectoryQuotaSubjectKind.
+const (
+	FileStorageDirectoryQuotaSubjectKindGroup FileStorageDirectoryQuotaSubjectKind = "group"
+	FileStorageDirectoryQuotaSubjectKindUser  FileStorageDirectoryQuotaSubjectKind = "user"
+)
+
 // Defines values for GpuVendor.
 const (
 	GpuVendorAMD    GpuVendor = "AMD"
@@ -190,6 +196,156 @@ type ExternalNetwork struct {
 
 // ExternalNetworks A list of openstack external networks.
 type ExternalNetworks = []ExternalNetwork
+
+// FileStorageDirectoryQuotaDirectoryUsage Observed usage of the whole directory tree.
+type FileStorageDirectoryQuotaDirectoryUsage struct {
+	// UpdatedAt When usage was last refreshed.
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+
+	// UsedBytes Used capacity in bytes.
+	UsedBytes *int64 `json:"usedBytes,omitempty"`
+
+	// UsedInodes Used files and directories.
+	UsedInodes *int64 `json:"usedInodes,omitempty"`
+}
+
+// FileStorageDirectoryQuotaId A File Storage Directory Quota ID.
+type FileStorageDirectoryQuotaId = regionids.FileStorageDirectoryQuotaID
+
+// FileStorageDirectoryQuotaLimits Hard limits. At least one of capacityBytes or inodes is required.
+type FileStorageDirectoryQuotaLimits struct {
+	// CapacityBytes Hard capacity limit in bytes.
+	CapacityBytes *int64 `json:"capacityBytes,omitempty"`
+
+	// Inodes Hard limit on the number of files and directories.
+	Inodes *int64 `json:"inodes,omitempty"`
+}
+
+// FileStorageDirectoryQuotaPath Immutable canonical directory path relative to the File Storage root. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected, so the root cannot be targeted. It is unique within the File Storage.
+type FileStorageDirectoryQuotaPath = string
+
+// FileStorageDirectoryQuotaRule The hard limits of one user or group.
+type FileStorageDirectoryQuotaRule struct {
+	// Limits Hard limits. At least one of capacityBytes or inodes is required.
+	Limits FileStorageDirectoryQuotaLimits `json:"limits"`
+
+	// Subject A user or group, identified by exactly one of name or id.
+	Subject FileStorageDirectoryQuotaSubject `json:"subject"`
+}
+
+// FileStorageDirectoryQuotaRuleStatus Observed state of one spec rule.
+type FileStorageDirectoryQuotaRuleStatus struct {
+	// Message Why the rule is in error. Only set when provisioningStatus is error.
+	Message *string `json:"message,omitempty"`
+
+	// ProvisioningStatus The provisioning state of a resource.
+	ProvisioningStatus externalRef0.ResourceProvisioningStatus `json:"provisioningStatus"`
+
+	// Subject A user or group, identified by exactly one of name or id.
+	Subject FileStorageDirectoryQuotaSubject `json:"subject"`
+
+	// Usage Observed capacity and inode usage.
+	Usage *FileStorageDirectoryQuotaUsage `json:"usage,omitempty"`
+}
+
+// FileStorageDirectoryQuotaRules Per user and group hard limits. A subject appears at most once.
+type FileStorageDirectoryQuotaRules = []FileStorageDirectoryQuotaRule
+
+// FileStorageDirectoryQuotaSubject A user or group, identified by exactly one of name or id.
+type FileStorageDirectoryQuotaSubject struct {
+	// Id The uid or gid.
+	Id *int64 `json:"id,omitempty"`
+
+	// Kind The kind of subject.
+	Kind FileStorageDirectoryQuotaSubjectKind `json:"kind"`
+
+	// Name The user or group name.
+	Name *string `json:"name,omitempty"`
+}
+
+// FileStorageDirectoryQuotaSubjectKind The kind of subject.
+type FileStorageDirectoryQuotaSubjectKind string
+
+// FileStorageDirectoryQuotaUsage Observed capacity and inode usage.
+type FileStorageDirectoryQuotaUsage struct {
+	// UsedBytes Used capacity in bytes.
+	UsedBytes *int64 `json:"usedBytes,omitempty"`
+
+	// UsedInodes Used files and directories.
+	UsedInodes *int64 `json:"usedInodes,omitempty"`
+}
+
+// FileStorageDirectoryQuotaV2Read A File Storage Directory Quota.
+type FileStorageDirectoryQuotaV2Read struct {
+	// Metadata Metadata required by project scoped resource reads.
+	Metadata externalRef0.ProjectScopedResourceReadMetadata `json:"metadata"`
+
+	// Spec Directory Quota settings.
+	Spec FileStorageDirectoryQuotaV2Spec `json:"spec"`
+
+	// Status Observed Directory Quota state. Usage is refreshed periodically, so it lags writes. Usage is reported for the whole directory and for subjects with a rule only; subjects limited only by defaultUserLimits or defaultGroupLimits are not reported.
+	Status FileStorageDirectoryQuotaV2Status `json:"status"`
+}
+
+// FileStorageDirectoryQuotaV2Spec Directory Quota settings.
+type FileStorageDirectoryQuotaV2Spec struct {
+	// DefaultGroupLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DefaultGroupLimits *FileStorageDirectoryQuotaLimits `json:"defaultGroupLimits,omitempty"`
+
+	// DefaultUserLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DefaultUserLimits *FileStorageDirectoryQuotaLimits `json:"defaultUserLimits,omitempty"`
+
+	// DirectoryLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DirectoryLimits *FileStorageDirectoryQuotaLimits `json:"directoryLimits,omitempty"`
+
+	// FileStorageId A file storage ID.
+	FileStorageId FileStorageId `json:"fileStorageId"`
+
+	// Path Immutable canonical directory path relative to the File Storage root. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected, so the root cannot be targeted. It is unique within the File Storage.
+	Path FileStorageDirectoryQuotaPath `json:"path"`
+
+	// Rules Per user and group hard limits. A subject appears at most once.
+	Rules *FileStorageDirectoryQuotaRules `json:"rules,omitempty"`
+}
+
+// FileStorageDirectoryQuotaV2Status Observed Directory Quota state. Usage is refreshed periodically, so it lags writes. Usage is reported for the whole directory and for subjects with a rule only; subjects limited only by defaultUserLimits or defaultGroupLimits are not reported.
+type FileStorageDirectoryQuotaV2Status struct {
+	// Rules Observed state of each spec rule, matched by subject. Rules are checked after the request is accepted, so an unknown user or group never fails the request; it shows as that rule's error.
+	Rules *[]FileStorageDirectoryQuotaRuleStatus `json:"rules,omitempty"`
+
+	// Usage Observed usage of the whole directory tree.
+	Usage *FileStorageDirectoryQuotaDirectoryUsage `json:"usage,omitempty"`
+}
+
+// FileStorageDirectoryQuotaV2Write A Directory Quota create or update request.
+type FileStorageDirectoryQuotaV2Write struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec Directory Quota settings. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+	Spec FileStorageDirectoryQuotaV2WriteSpec `json:"spec"`
+}
+
+// FileStorageDirectoryQuotaV2WriteSpec Directory Quota settings. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+type FileStorageDirectoryQuotaV2WriteSpec struct {
+	// DefaultGroupLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DefaultGroupLimits *FileStorageDirectoryQuotaLimits `json:"defaultGroupLimits,omitempty"`
+
+	// DefaultUserLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DefaultUserLimits *FileStorageDirectoryQuotaLimits `json:"defaultUserLimits,omitempty"`
+
+	// DirectoryLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DirectoryLimits *FileStorageDirectoryQuotaLimits `json:"directoryLimits,omitempty"`
+
+	// Path Immutable canonical directory path relative to the File Storage root. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected, so the root cannot be targeted. It is unique within the File Storage.
+	Path FileStorageDirectoryQuotaPath `json:"path"`
+
+	// Rules Per user and group hard limits. A subject appears at most once.
+	Rules *FileStorageDirectoryQuotaRules `json:"rules,omitempty"`
+}
+
+// FileStorageDirectoryQuotasV2Read A list of File Storage Directory Quotas.
+type FileStorageDirectoryQuotasV2Read = []FileStorageDirectoryQuotaV2Read
 
 // FileStorageId A file storage ID.
 type FileStorageId = regionids.FileStorageID
@@ -1833,6 +1989,9 @@ type VolumeV2Update struct {
 // VolumesV2Read A list of volumes.
 type VolumesV2Read = []VolumeV2Read
 
+// FilestorageDirectoryQuotaIDParameter A File Storage Directory Quota ID.
+type FilestorageDirectoryQuotaIDParameter = FileStorageDirectoryQuotaId
+
 // FilestorageIDParameter A file storage ID.
 type FilestorageIDParameter = FileStorageId
 
@@ -1904,6 +2063,12 @@ type ConsoleSessionResponse = ConsoleSession
 
 // ExternalNetworksResponse A list of openstack external networks.
 type ExternalNetworksResponse = ExternalNetworks
+
+// FileStorageDirectoryQuotaV2Response A File Storage Directory Quota.
+type FileStorageDirectoryQuotaV2Response = FileStorageDirectoryQuotaV2Read
+
+// FileStorageDirectoryQuotasV2Response A list of File Storage Directory Quotas.
+type FileStorageDirectoryQuotasV2Response = FileStorageDirectoryQuotasV2Read
 
 // FileStorageSnapshotV2Response A manual file storage snapshot. Health and snapshot details record capture readiness, not current availability.
 type FileStorageSnapshotV2Response = FileStorageSnapshotV2Read
@@ -2001,6 +2166,12 @@ type VolumeV2Response = VolumeV2Read
 // VolumesV2Response A list of volumes.
 type VolumesV2Response = VolumesV2Read
 
+// FileStorageDirectoryQuotaV2CreateRequest A Directory Quota create or update request.
+type FileStorageDirectoryQuotaV2CreateRequest = FileStorageDirectoryQuotaV2Write
+
+// FileStorageDirectoryQuotaV2UpdateRequest A Directory Quota create or update request.
+type FileStorageDirectoryQuotaV2UpdateRequest = FileStorageDirectoryQuotaV2Write
+
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
 
@@ -2095,6 +2266,13 @@ type GetApiV2FilestorageParams struct {
 
 	// RegionID Allows resources to be filtered by region.
 	RegionID *RegionIDQueryParameter `form:"regionID,omitempty" json:"regionID,omitempty"`
+}
+
+// GetApiV2FilestorageFilestorageIDDirectoryquotasParams defines parameters for GetApiV2FilestorageFilestorageIDDirectoryquotas.
+type GetApiV2FilestorageFilestorageIDDirectoryquotasParams struct {
+	// Tag A set of tags to match against resources in the form "name=value",
+	// thus when encoded you get "?tag=foo%3Dcat&tag=bar%3Ddog".
+	Tag *externalRef0.TagSelectorParameter `form:"tag,omitempty" json:"tag,omitempty"`
 }
 
 // GetApiV2FilestorageFilestorageIDSnapshotsParams defines parameters for GetApiV2FilestorageFilestorageIDSnapshots.
@@ -2268,6 +2446,12 @@ type PostApiV2FilestorageJSONRequestBody = StorageV2Create
 
 // PutApiV2FilestorageFilestorageIDJSONRequestBody defines body for PutApiV2FilestorageFilestorageID for application/json ContentType.
 type PutApiV2FilestorageFilestorageIDJSONRequestBody = StorageV2Update
+
+// PostApiV2FilestorageFilestorageIDDirectoryquotasJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDDirectoryquotas for application/json ContentType.
+type PostApiV2FilestorageFilestorageIDDirectoryquotasJSONRequestBody = FileStorageDirectoryQuotaV2Write
+
+// PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaIDJSONRequestBody defines body for PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID for application/json ContentType.
+type PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaIDJSONRequestBody = FileStorageDirectoryQuotaV2Write
 
 // PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDSnapshots for application/json ContentType.
 type PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody = FileStorageSnapshotV2Create
