@@ -125,6 +125,21 @@ type ServerInterface interface {
 	// Update file storage
 	// (PUT /api/v2/filestorage/{filestorageID})
 	PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
+	// List file storage directory quotas
+	// (GET /api/v2/filestorage/{filestorageID}/directoryquotas)
+	GetApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, params GetApiV2FilestorageFilestorageIDDirectoryquotasParams)
+	// Create a file storage directory quota
+	// (POST /api/v2/filestorage/{filestorageID}/directoryquotas)
+	PostApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter)
+	// Delete a file storage directory quota
+	// (DELETE /api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID})
+	DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter)
+	// Get a file storage directory quota
+	// (GET /api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID})
+	GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter)
+	// Update a file storage directory quota
+	// (PUT /api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID})
+	PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter)
 	// List manual file storage snapshots
 	// (GET /api/v2/filestorage/{filestorageID}/snapshots)
 	GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, params GetApiV2FilestorageFilestorageIDSnapshotsParams)
@@ -466,6 +481,36 @@ func (_ Unimplemented) GetApiV2FilestorageFilestorageID(w http.ResponseWriter, r
 // Update file storage
 // (PUT /api/v2/filestorage/{filestorageID})
 func (_ Unimplemented) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List file storage directory quotas
+// (GET /api/v2/filestorage/{filestorageID}/directoryquotas)
+func (_ Unimplemented) GetApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, params GetApiV2FilestorageFilestorageIDDirectoryquotasParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a file storage directory quota
+// (POST /api/v2/filestorage/{filestorageID}/directoryquotas)
+func (_ Unimplemented) PostApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a file storage directory quota
+// (DELETE /api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID})
+func (_ Unimplemented) DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get a file storage directory quota
+// (GET /api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID})
+func (_ Unimplemented) GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Update a file storage directory quota
+// (PUT /api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID})
+func (_ Unimplemented) PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID FilestorageIDParameter, filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -2468,6 +2513,199 @@ func (siw *ServerInterfaceWrapper) PutApiV2FilestorageFilestorageID(w http.Respo
 	handler.ServeHTTP(w, r)
 }
 
+// GetApiV2FilestorageFilestorageIDDirectoryquotas operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetApiV2FilestorageFilestorageIDDirectoryquotasParams
+
+	// ------------- Optional query parameter "tag" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "tag", r.URL.Query(), &params.Tag)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2FilestorageFilestorageIDDirectoryquotas(w, r, filestorageID, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PostApiV2FilestorageFilestorageIDDirectoryquotas operation middleware
+func (siw *ServerInterfaceWrapper) PostApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PostApiV2FilestorageFilestorageIDDirectoryquotas(w, r, filestorageID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filestorageDirectoryQuotaID" -------------
+	var filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageDirectoryQuotaID", chi.URLParam(r, "filestorageDirectoryQuotaID"), &filestorageDirectoryQuotaID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageDirectoryQuotaID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, filestorageDirectoryQuotaID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID operation middleware
+func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filestorageDirectoryQuotaID" -------------
+	var filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageDirectoryQuotaID", chi.URLParam(r, "filestorageDirectoryQuotaID"), &filestorageDirectoryQuotaID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageDirectoryQuotaID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, filestorageDirectoryQuotaID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID operation middleware
+func (siw *ServerInterfaceWrapper) PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "filestorageID" -------------
+	var filestorageID FilestorageIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageID", chi.URLParam(r, "filestorageID"), &filestorageID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageID", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "filestorageDirectoryQuotaID" -------------
+	var filestorageDirectoryQuotaID FilestorageDirectoryQuotaIDParameter
+
+	err = runtime.BindStyledParameterWithOptions("simple", "filestorageDirectoryQuotaID", chi.URLParam(r, "filestorageDirectoryQuotaID"), &filestorageDirectoryQuotaID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "filestorageDirectoryQuotaID", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, Oauth2AuthenticationScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, filestorageDirectoryQuotaID)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetApiV2FilestorageFilestorageIDSnapshots operation middleware
 func (siw *ServerInterfaceWrapper) GetApiV2FilestorageFilestorageIDSnapshots(w http.ResponseWriter, r *http.Request) {
 
@@ -4371,6 +4609,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/api/v2/filestorage/{filestorageID}", wrapper.PutApiV2FilestorageFilestorageID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}/directoryquotas", wrapper.GetApiV2FilestorageFilestorageIDDirectoryquotas)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v2/filestorage/{filestorageID}/directoryquotas", wrapper.PostApiV2FilestorageFilestorageIDDirectoryquotas)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID}", wrapper.DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID}", wrapper.GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID}", wrapper.PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v2/filestorage/{filestorageID}/snapshots", wrapper.GetApiV2FilestorageFilestorageIDSnapshots)

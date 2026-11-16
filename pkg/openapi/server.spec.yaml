@@ -1921,6 +1921,129 @@ paths:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/filestorage/{filestorageID}/directoryquotas:
+    description: Directory quotas of a file storage resource.
+    parameters:
+    - $ref: '#/components/parameters/filestorageIDParameter'
+    post:
+      description: Create a Directory Quota under a File Storage. The directory is created if it does not exist. Returns the complete pending resource. A path already used by another quota of the File Storage, including one being deleted, or a deleting parent conflicts.
+      summary: Create a file storage directory quota
+      tags:
+      - File storage directory quotas
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/fileStorageDirectoryQuotaV2CreateRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/fileStorageDirectoryQuotaV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    get:
+      description: List Directory Quotas of a File Storage, ordered by name then ID. Inaccessible quotas are omitted.
+      summary: List file storage directory quotas
+      tags:
+      - File storage directory quotas
+      security:
+      - oauth2Authentication: []
+      parameters:
+      - $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/parameters/tagSelectorParameter'
+      responses:
+        '200':
+          $ref: '#/components/responses/fileStorageDirectoryQuotasV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+  /api/v2/filestorage/{filestorageID}/directoryquotas/{filestorageDirectoryQuotaID}:
+    description: A directory quota of a file storage resource.
+    parameters:
+    - $ref: '#/components/parameters/filestorageIDParameter'
+    - $ref: '#/components/parameters/filestorageDirectoryQuotaIDParameter'
+    get:
+      description: Get a Directory Quota. Missing and inaccessible quotas return not found.
+      summary: Get a file storage directory quota
+      tags:
+      - File storage directory quotas
+      security:
+      - oauth2Authentication: []
+      responses:
+        '200':
+          $ref: '#/components/responses/fileStorageDirectoryQuotaV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    put:
+      description: Update the limits, defaults, rules, name and tags of a Directory Quota. The path is immutable and must match the stored path. Omitted limits and rules are cleared, and spec.rules replaces the full rule list.
+      summary: Update a file storage directory quota
+      tags:
+      - File storage directory quotas
+      security:
+      - oauth2Authentication: []
+      requestBody:
+        $ref: '#/components/requestBodies/fileStorageDirectoryQuotaV2UpdateRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/fileStorageDirectoryQuotaV2Response'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '409':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/conflictResponse'
+        '422':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/unprocessableContentResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
+    delete:
+      description: Delete a Directory Quota. Only the limits are removed; the directory and its data are untouched.
+      summary: Delete a file storage directory quota
+      tags:
+      - File storage directory quotas
+      security:
+      - oauth2Authentication: []
+      responses:
+        '202':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/acceptedResponse'
+        '400':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/badRequestResponse'
+        '401':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/unauthorizedResponse'
+        '403':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/forbiddenResponse'
+        '404':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/notFoundResponse'
+        '500':
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
   /api/v2/filestorageclasses:
     description: |-
       Lists all available storage classes, detailing supported protocols, capacity limits, and service characteristics. Enables users to discover storage options suitable for their workloads.
@@ -2205,6 +2328,13 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/fileStorageSnapshotId'
+    filestorageDirectoryQuotaIDParameter:
+      name: filestorageDirectoryQuotaID
+      in: path
+      description: The Directory Quota unique identifier.
+      required: true
+      schema:
+        $ref: '#/components/schemas/fileStorageDirectoryQuotaId'
     projectIDQueryParameter:
       name: projectID
       in: query
@@ -2322,6 +2452,14 @@ components:
       type: string
       format: uuid
       x-go-type: regionids.FileStorageID
+      x-go-type-import:
+        name: regionids
+        path: github.com/unikorn-cloud/region/pkg/ids
+    fileStorageDirectoryQuotaId:
+      description: A File Storage Directory Quota ID.
+      type: string
+      format: uuid
+      x-go-type: regionids.FileStorageDirectoryQuotaID
       x-go-type-import:
         name: regionids
         path: github.com/unikorn-cloud/region/pkg/ids
@@ -4379,6 +4517,203 @@ components:
       type: array
       items:
         $ref: '#/components/schemas/fileStorageSnapshotV2Read'
+    fileStorageDirectoryQuotaPath:
+      description: Immutable canonical directory path relative to the File Storage root. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected, so the root cannot be targeted. It is unique within the File Storage.
+      type: string
+      maxLength: 1024
+      pattern: '^([^/]+/)*[^/]+$'
+      example: home/example-1
+    fileStorageDirectoryQuotaLimits:
+      description: Hard limits. At least one of capacityBytes or inodes is required.
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        capacityBytes:
+          description: Hard capacity limit in bytes.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 10737418240
+        inodes:
+          description: Hard limit on the number of files and directories.
+          type: integer
+          format: int64
+          minimum: 1
+          example: 1000000
+    fileStorageDirectoryQuotaSubject:
+      description: A user or group, identified by exactly one of name or id.
+      type: object
+      additionalProperties: false
+      # kind plus exactly one of name or id.
+      minProperties: 2
+      maxProperties: 2
+      required:
+      - kind
+      properties:
+        kind:
+          description: The kind of subject.
+          type: string
+          enum:
+          - user
+          - group
+        name:
+          description: The user or group name.
+          type: string
+          minLength: 1
+          maxLength: 256
+          example: user1
+        id:
+          description: The uid or gid.
+          type: integer
+          format: int64
+          minimum: 0
+          maximum: 4294967294
+          example: 65534
+    fileStorageDirectoryQuotaRule:
+      description: The hard limits of one user or group.
+      type: object
+      additionalProperties: false
+      required:
+      - subject
+      - limits
+      properties:
+        subject:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaSubject'
+        limits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+    fileStorageDirectoryQuotaRules:
+      description: Per user and group hard limits. A subject appears at most once.
+      type: array
+      maxItems: 20
+      items:
+        $ref: '#/components/schemas/fileStorageDirectoryQuotaRule'
+    fileStorageDirectoryQuotaV2WriteSpec:
+      description: Directory Quota settings. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      properties:
+        path:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaPath'
+        directoryLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        defaultUserLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        defaultGroupLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        rules:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaRules'
+    fileStorageDirectoryQuotaV2Write:
+      description: A Directory Quota create or update request.
+      type: object
+      additionalProperties: false
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaV2WriteSpec'
+    fileStorageDirectoryQuotaV2Spec:
+      description: Directory Quota settings.
+      type: object
+      required:
+      - fileStorageId
+      - path
+      properties:
+        fileStorageId:
+          $ref: '#/components/schemas/fileStorageId'
+        path:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaPath'
+        directoryLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        defaultUserLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        defaultGroupLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        rules:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaRules'
+    fileStorageDirectoryQuotaUsage:
+      description: Observed capacity and inode usage.
+      type: object
+      properties:
+        usedBytes:
+          description: Used capacity in bytes.
+          type: integer
+          format: int64
+          example: 2239325517172
+        usedInodes:
+          description: Used files and directories.
+          type: integer
+          format: int64
+          example: 4169748
+    fileStorageDirectoryQuotaDirectoryUsage:
+      description: Observed usage of the whole directory tree.
+      type: object
+      properties:
+        usedBytes:
+          description: Used capacity in bytes.
+          type: integer
+          format: int64
+          example: 2239325517172
+        usedInodes:
+          description: Used files and directories.
+          type: integer
+          format: int64
+          example: 4169748
+        updatedAt:
+          description: When usage was last refreshed.
+          type: string
+          format: date-time
+    fileStorageDirectoryQuotaRuleStatus:
+      description: Observed state of one spec rule.
+      type: object
+      required:
+      - subject
+      - provisioningStatus
+      properties:
+        subject:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaSubject'
+        provisioningStatus:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceProvisioningStatus'
+        message:
+          description: Why the rule is in error. Only set when provisioningStatus is error.
+          type: string
+        usage:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaUsage'
+    fileStorageDirectoryQuotaV2Status:
+      description: Observed Directory Quota state. Usage is refreshed periodically, so it lags writes. Usage is reported for the whole directory and for subjects with a rule only; subjects limited only by defaultUserLimits or defaultGroupLimits are not reported.
+      type: object
+      properties:
+        usage:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaDirectoryUsage'
+        rules:
+          description: Observed state of each spec rule, matched by subject. Rules are checked after the request is accepted, so an unknown user or group never fails the request; it shows as that rule's error.
+          type: array
+          items:
+            $ref: '#/components/schemas/fileStorageDirectoryQuotaRuleStatus'
+    fileStorageDirectoryQuotaV2Read:
+      description: A File Storage Directory Quota.
+      type: object
+      required:
+      - metadata
+      - spec
+      - status
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/schemas/projectScopedResourceReadMetadata'
+        spec:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Spec'
+        status:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Status'
+    fileStorageDirectoryQuotasV2Read:
+      description: A list of File Storage Directory Quotas.
+      type: array
+      items:
+        $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Read'
     storageClassListV2Read:
       description: A list of storage classes.
       type: array
@@ -4894,6 +5229,56 @@ components:
               storageType:
                 NFS:
                   rootSquash: true
+    fileStorageDirectoryQuotaV2CreateRequest:
+      description: A request to create a Directory Quota.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Write'
+          example:
+            metadata:
+              name: homedir-example-1
+            spec:
+              path: home/example-1
+              directoryLimits:
+                capacityBytes: 16363825397760
+              defaultUserLimits:
+                capacityBytes: 10737418240
+              rules:
+              - subject:
+                  kind: user
+                  name: user1
+                limits:
+                  capacityBytes: 38654705664
+              - subject:
+                  kind: user
+                  id: 65534
+                limits:
+                  capacityBytes: 1099511627776
+              - subject:
+                  kind: group
+                  name: ml-team
+                limits:
+                  capacityBytes: 2199023255552
+                  inodes: 1000000
+    fileStorageDirectoryQuotaV2UpdateRequest:
+      description: A request to update a Directory Quota.
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Write'
+          example:
+            metadata:
+              name: homedir-example-1
+            spec:
+              path: home/example-1
+              directoryLimits:
+                capacityBytes: 16363825397760
+                inodes: 100000000
+              defaultUserLimits:
+                capacityBytes: 10737418240
     storageV2UpdateRequest:
       description: A request to update a storage.
       content:
@@ -5658,6 +6043,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/fileStorageSnapshotsV2Read'
+    fileStorageDirectoryQuotaV2Response:
+      description: A File Storage Directory Quota.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Read'
+    fileStorageDirectoryQuotasV2Response:
+      description: A list of File Storage Directory Quotas.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/fileStorageDirectoryQuotasV2Read'
     storageV2Response:
       description: A storage.
       content:

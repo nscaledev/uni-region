@@ -455,6 +455,27 @@ func (h *Handler) GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
+// shortcut: directory quota endpoints return 501 until the handler lands.
+func (h *Handler) GetApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, params openapi.GetApiV2FilestorageFilestorageIDDirectoryquotasParams) {
+	openapi.Unimplemented{}.GetApiV2FilestorageFilestorageIDDirectoryquotas(w, r, filestorageID, params)
+}
+
+func (h *Handler) PostApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
+	openapi.Unimplemented{}.PostApiV2FilestorageFilestorageIDDirectoryquotas(w, r, filestorageID)
+}
+
+func (h *Handler) DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, directoryQuotaID openapi.FilestorageDirectoryQuotaIDParameter) {
+	openapi.Unimplemented{}.DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, directoryQuotaID)
+}
+
+func (h *Handler) GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, directoryQuotaID openapi.FilestorageDirectoryQuotaIDParameter) {
+	openapi.Unimplemented{}.GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, directoryQuotaID)
+}
+
+func (h *Handler) PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, directoryQuotaID openapi.FilestorageDirectoryQuotaIDParameter) {
+	openapi.Unimplemented{}.PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, directoryQuotaID)
+}
+
 func (h *Handler) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter) {
 	request := &openapi.StorageV2Update{}
 
