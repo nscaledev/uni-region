@@ -234,9 +234,14 @@ func validateSnapshotPolicyProtectedPath(protectedPath *string) error {
 		return nil
 	}
 
-	for _, component := range strings.Split(*protectedPath, "/") {
+	return validatePathComponents("protectedPath", *protectedPath)
+}
+
+// validatePathComponents rejects . and .. components in a relative path field.
+func validatePathComponents(field, path string) error {
+	for _, component := range strings.Split(path, "/") {
 		if component == "." || component == ".." {
-			return errors.HTTPUnprocessableContent("protectedPath must not contain . or .. path components")
+			return errors.HTTPUnprocessableContent(field + " must not contain . or .. path components")
 		}
 	}
 

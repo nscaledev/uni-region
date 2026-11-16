@@ -455,25 +455,65 @@ func (h *Handler) GetApiV2FilestorageFilestorageIDSnapshotsFilestorageSnapshotID
 	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
-// shortcut: directory quota endpoints return 501 until the handler lands.
 func (h *Handler) GetApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, params openapi.GetApiV2FilestorageFilestorageIDDirectoryquotasParams) {
-	openapi.Unimplemented{}.GetApiV2FilestorageFilestorageIDDirectoryquotas(w, r, filestorageID, params)
+	result, err := h.storageClient().ListDirectoryQuotas(r.Context(), filestorageID, params)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PostApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
-	openapi.Unimplemented{}.PostApiV2FilestorageFilestorageIDDirectoryquotas(w, r, filestorageID)
+	request := &openapi.FileStorageDirectoryQuotaV2Write{}
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.storageClient().CreateDirectoryQuota(r.Context(), filestorageID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, directoryQuotaID openapi.FilestorageDirectoryQuotaIDParameter) {
-	openapi.Unimplemented{}.DeleteApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, directoryQuotaID)
+	if err := h.storageClient().DeleteDirectoryQuota(r.Context(), filestorageID, directoryQuotaID); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *Handler) GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, directoryQuotaID openapi.FilestorageDirectoryQuotaIDParameter) {
-	openapi.Unimplemented{}.GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, directoryQuotaID)
+	result, err := h.storageClient().GetDirectoryQuota(r.Context(), filestorageID, directoryQuotaID)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusOK, result)
 }
 
 func (h *Handler) PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, directoryQuotaID openapi.FilestorageDirectoryQuotaIDParameter) {
-	openapi.Unimplemented{}.PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w, r, filestorageID, directoryQuotaID)
+	request := &openapi.FileStorageDirectoryQuotaV2Write{}
+	if err := util.ReadJSONBody(r, request); err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	result, err := h.storageClient().UpdateDirectoryQuota(r.Context(), filestorageID, directoryQuotaID, request)
+	if err != nil {
+		errors.HandleError(w, r, err)
+		return
+	}
+
+	util.WriteJSONResponse(w, r, http.StatusAccepted, result)
 }
 
 func (h *Handler) PutApiV2FilestorageFilestorageID(w http.ResponseWriter, r *http.Request, fileStorageID openapi.FilestorageIDParameter) {

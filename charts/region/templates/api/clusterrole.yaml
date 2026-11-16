@@ -25,6 +25,7 @@ rules:
   - servers
   - filestorages
   - filestoragesnapshots
+  - filestoragedirectoryquotas
   - volumes
   - sshcertificateauthorities
   verbs:

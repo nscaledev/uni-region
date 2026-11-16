@@ -35,7 +35,8 @@ server_verbs() {
 
 # Direct reads require get; list and watch cannot authorize an API-server GET.
 for resource in \
-	filestorageclasses filestorages filestoragesnapshots identities loadbalancers \
+	filestorageclasses filestoragedirectoryquotas filestorages filestoragesnapshots \
+	identities loadbalancers \
 	networks openstackidentities regions securitygroups servers \
 	sshcertificateauthorities volumes; do
 	[[ "$(server_verbs "$resource")" == *get* ]] || die "expected get on $resource for the server"

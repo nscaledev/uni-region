@@ -114,8 +114,10 @@ meaning of `metadata.healthStatus` is deliberately not specified yet, and usage
 of subjects limited only by the default limits is not reported: the CRD is not
 the place for unbounded per-subject data. POST and PUT return the
 complete resource with 202; PUT replaces limits and the whole rule list. The
-path is set on create only: the update request has no path. DELETE removes the limits only, never the directory or its
-data. The handler is not implemented yet: every operation returns 501.
+path is set on create only: the update request has no path. DELETE removes the
+limits only, never the directory or its data. The
+[storage handler](../handler/storage/README.md#directory-quotas) implements the
+operations; the `uni-storage` controller applies them.
 
 Keeping the schema unified matters because it allows:
 
