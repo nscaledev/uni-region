@@ -98,15 +98,7 @@ func (c *Client) CreateDirectoryQuota(ctx context.Context, storageID regionids.F
 	}
 
 	if err := c.Client.Create(ctx, resource); err != nil {
-		if kerrors.IsAlreadyExists(err) {
-			return nil, errors.HTTPConflict().WithError(err)
-		}
-
-		if kerrors.IsInvalid(err) {
-			return nil, errors.HTTPUnprocessableContent().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to create directory quota", err)
+		return nil, directoryQuotaWriteError(err, "create")
 	}
 
 	return convertDirectoryQuota(resource), nil
@@ -151,18 +143,23 @@ func (c *Client) UpdateDirectoryQuota(ctx context.Context, storageID regionids.F
 	updated.Spec = required.Spec
 
 	if err := c.Client.Patch(ctx, updated, client.MergeFromWithOptions(current, &client.MergeFromWithOptimisticLock{})); err != nil {
-		if kerrors.IsConflict(err) {
-			return nil, errors.HTTPConflict().WithError(err)
-		}
-
-		if kerrors.IsInvalid(err) {
-			return nil, errors.HTTPUnprocessableContent().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to update directory quota", err)
+		return nil, directoryQuotaWriteError(err, "update")
 	}
 
 	return convertDirectoryQuota(updated), nil
+}
+
+// directoryQuotaWriteError maps a create or update failure: an occupied path
+// or a stale optimistic lock is 409, and a CRD validation rejection is 422.
+func directoryQuotaWriteError(err error, action string) error {
+	switch {
+	case kerrors.IsAlreadyExists(err), kerrors.IsConflict(err):
+		return errors.HTTPConflict().WithError(err)
+	case kerrors.IsInvalid(err):
+		return errors.HTTPUnprocessableContent().WithError(err)
+	}
+
+	return fmt.Errorf("%w: unable to %s directory quota", err, action)
 }
 
 // DeleteDirectoryQuota removes the limits; the controller leaves the directory
@@ -361,6 +358,14 @@ func validateDirectoryQuota(spec *openapi.FileStorageDirectoryQuotaV2WriteSpec) 
 		return errors.HTTPUnprocessableContent("at least one of directoryLimits, defaultUserLimits, defaultGroupLimits or rules is required")
 	}
 
+	if err := validateDirectoryQuotaSubjects(rules); err != nil {
+		return err
+	}
+
+	return validateDirectoryQuotaCeiling(spec, rules)
+}
+
+func validateDirectoryQuotaSubjects(rules openapi.FileStorageDirectoryQuotaRules) error {
 	seen := make(map[directoryQuotaSubjectKey]bool, len(rules))
 
 	for _, rule := range rules {
@@ -372,6 +377,11 @@ func validateDirectoryQuota(spec *openapi.FileStorageDirectoryQuotaV2WriteSpec) 
 		seen[key] = true
 	}
 
+	return nil
+}
+
+// validateDirectoryQuotaCeiling rejects default and rule limits above directoryLimits.
+func validateDirectoryQuotaCeiling(spec *openapi.FileStorageDirectoryQuotaV2WriteSpec, rules openapi.FileStorageDirectoryQuotaRules) error {
 	if spec.DirectoryLimits == nil {
 		return nil
 	}
@@ -395,8 +405,8 @@ func exceedsLimit(in, ceiling *openapi.FileStorageDirectoryQuotaLimits) bool {
 		return false
 	}
 
-	exceeds := func(v, max *int64) bool {
-		return v != nil && max != nil && *v > *max
+	exceeds := func(v, ceiling *int64) bool {
+		return v != nil && ceiling != nil && *v > *ceiling
 	}
 
 	return exceeds(in.CapacityBytes, ceiling.CapacityBytes) || exceeds(in.Inodes, ceiling.Inodes)
@@ -428,22 +438,9 @@ func convertDirectoryQuota(in *regionv1.FileStorageDirectoryQuota) *openapi.File
 			DefaultUserLimits:  convertDirectoryQuotaLimits(in.Spec.DefaultUserLimits),
 			DefaultGroupLimits: convertDirectoryQuotaLimits(in.Spec.DefaultGroupLimits),
 		},
-	}
-
-	if usage := in.Status.Usage; usage != nil && (usage.Directory != nil || usage.Timestamp != nil) {
-		out.Status.Usage = &openapi.FileStorageDirectoryQuotaDirectoryUsage{}
-
-		if usage.Directory != nil {
-			out.Status.Usage.UsedInodes = usage.Directory.UsedInodes
-
-			if usage.Directory.UsedCapacity != nil {
-				out.Status.Usage.UsedBytes = ptr.To(usage.Directory.UsedCapacity.Value())
-			}
-		}
-
-		if usage.Timestamp != nil {
-			out.Status.Usage.UpdatedAt = &usage.Timestamp.Time
-		}
+		Status: openapi.FileStorageDirectoryQuotaV2Status{
+			Usage: convertDirectoryQuotaDirectoryUsage(in.Status.Usage),
+		},
 	}
 
 	if len(in.Spec.Rules) == 0 {
@@ -483,26 +480,8 @@ func convertDirectoryQuota(in *regionv1.FileStorageDirectoryQuota) *openapi.File
 			Limits:  *convertDirectoryQuotaLimits(&rule.Limits),
 		}
 
-		// A rule the controller has not observed yet is pending.
-		statusRules[i] = openapi.FileStorageDirectoryQuotaRuleStatus{
-			Subject:            subject,
-			ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
-		}
-
 		key := storedSubjectKey(rule.Subject)
-
-		if s, ok := ruleStatus[key]; ok {
-			switch s.ProvisioningStatus {
-			case regionv1.FileStorageDirectoryQuotaRuleProvisioned:
-				statusRules[i].ProvisioningStatus = coreopenapi.ResourceProvisioningStatusProvisioned
-			case regionv1.FileStorageDirectoryQuotaRuleErrored:
-				statusRules[i].ProvisioningStatus = coreopenapi.ResourceProvisioningStatusError
-				if s.Message != "" {
-					statusRules[i].Message = &s.Message
-				}
-			case regionv1.FileStorageDirectoryQuotaRulePending:
-			}
-		}
+		statusRules[i] = convertDirectoryQuotaRuleStatus(subject, ruleStatus[key])
 
 		if u, ok := ruleUsage[key]; ok {
 			statusRules[i].Usage = convertDirectoryQuotaUsage(u)
@@ -511,6 +490,49 @@ func convertDirectoryQuota(in *regionv1.FileStorageDirectoryQuota) *openapi.File
 
 	out.Spec.Rules = &specRules
 	out.Status.Rules = &statusRules
+
+	return out
+}
+
+// convertDirectoryQuotaRuleStatus projects stored rule status. A rule the
+// controller has not observed yet has a zero status and is pending.
+func convertDirectoryQuotaRuleStatus(subject openapi.FileStorageDirectoryQuotaSubject, in regionv1.FileStorageDirectoryQuotaRuleStatus) openapi.FileStorageDirectoryQuotaRuleStatus {
+	out := openapi.FileStorageDirectoryQuotaRuleStatus{
+		Subject:            subject,
+		ProvisioningStatus: coreopenapi.ResourceProvisioningStatusPending,
+	}
+
+	switch in.ProvisioningStatus {
+	case regionv1.FileStorageDirectoryQuotaRuleProvisioned:
+		out.ProvisioningStatus = coreopenapi.ResourceProvisioningStatusProvisioned
+	case regionv1.FileStorageDirectoryQuotaRuleErrored:
+		out.ProvisioningStatus = coreopenapi.ResourceProvisioningStatusError
+
+		if in.Message != "" {
+			out.Message = &in.Message
+		}
+	case regionv1.FileStorageDirectoryQuotaRulePending:
+	}
+
+	return out
+}
+
+func convertDirectoryQuotaDirectoryUsage(in *regionv1.FileStorageDirectoryQuotaUsage) *openapi.FileStorageDirectoryQuotaDirectoryUsage {
+	if in == nil || (in.Directory == nil && in.Timestamp == nil) {
+		return nil
+	}
+
+	out := &openapi.FileStorageDirectoryQuotaDirectoryUsage{}
+
+	if in.Directory != nil {
+		used := convertDirectoryQuotaUsage(*in.Directory)
+		out.UsedBytes = used.UsedBytes
+		out.UsedInodes = used.UsedInodes
+	}
+
+	if in.Timestamp != nil {
+		out.UpdatedAt = &in.Timestamp.Time
+	}
 
 	return out
 }
