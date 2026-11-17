@@ -76,7 +76,7 @@ func TestFileStorageUpdateDeclaresConflictResponse(t *testing.T) {
 	require.NotNil(t, resource.Put)
 	conflict := resource.Put.Responses.Value("409")
 	require.NotNil(t, conflict)
-	require.Equal(t, "#/components/responses/unikorn-cloud_core_v1.17.1_pkg_openapi_common_conflictResponse", conflict.Ref)
+	require.Equal(t, "#/components/responses/unikorn-cloud_core_v1.21.0_pkg_openapi_common_conflictResponse", conflict.Ref)
 }
 
 func TestFileStorageNFSPolicyGeneratedClientPreservesOmission(t *testing.T) {
