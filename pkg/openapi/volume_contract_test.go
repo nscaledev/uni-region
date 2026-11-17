@@ -103,7 +103,7 @@ func TestServerVolumeAttachmentStatusContract(t *testing.T) {
 	require.ElementsMatch(t, []string{"id", "provisioningStatus"}, status.Required)
 	require.Len(t, schemaProperty(t, status, "id").AllOf, 1)
 	require.Equal(t, "#/components/schemas/volumeId", schemaProperty(t, status, "id").AllOf[0].Ref)
-	requireSchemaPropertyRef(t, status, "provisioningStatus", "#/components/schemas/unikorn-cloud_core_v1.17.1_pkg_openapi_common_resourceProvisioningStatus")
+	requireSchemaPropertyRef(t, status, "provisioningStatus", "#/components/schemas/unikorn-cloud_core_v1.21.0_pkg_openapi_common_resourceProvisioningStatus")
 	requireSchemaPropertyRef(t, componentSchema(t, swagger, "serverV2Status"), "volumes", "#/components/schemas/serverV2VolumeStatusList")
 }
 
