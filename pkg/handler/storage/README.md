@@ -170,6 +170,44 @@ Path remain the last provisioning observation. They do not guarantee current
 provider existence or usability and never authorize provider mutation. GETs use
 the standard middleware stack and are excluded from mutation audit logging.
 
+### Directory Quotas
+
+`/api/v2/filestorage/{filestorageID}/directoryquotas` manages
+`FileStorageDirectoryQuota` children of a File Storage. Requests record intent
+and return `202 Accepted` with the complete resource; the `uni-storage`
+controller applies the limits.
+
+- Operations require the independent `region:filestoragedirectoryquotas:v2`
+  grant, following the [Manual Snapshot](#manual-snapshot-lifecycle) model:
+  create and list authorize against the parent's project, while get, update and
+  delete authorize the quota's own project without requiring the parent.
+  Missing, inaccessible and wrong-parent quotas return canonical 404.
+- The ID is a deterministic UUID derived from the parent ID and the path, so
+  Kubernetes rejects a second quota on the same path with 409, including while
+  the first is terminating. Creating under a deleting parent also returns 409.
+- Creation sets a blocking owner reference, so File Storage's foreground delete
+  removes its quotas first, and adds the core finalizer before the controller
+  can observe the CR. Until a controller removes that finalizer, deleted quotas
+  stay terminating, and so does a parent File Storage being deleted.
+- The handler enforces what the schema cannot: no `.`/`..` path components, at
+  least one limit or a non-empty rule list, no repeated subject (kind plus name
+  or id), and no default or rule limit above `directoryLimits`, compared per
+  dimension. Each failure returns 422, as does a CRD validation rejection on
+  create or update.
+- PUT replaces everything except the path, which the update request does not
+  carry: the stored path is kept. It preserves pause and the creator, records
+  the modifier, and uses an optimistic lock (409 on a concurrent change or while
+  deleting).
+- `capacityBytes` maps to a binary `resource.Quantity` and back as whole bytes.
+- Reads list `status.rules` in spec rule order, merging the stored rule status
+  and per-rule usage by subject. A rule with no stored status, or with status
+  from before the controller observed the current generation, is `pending`;
+  `message` is set only for errored rules with a stored message. List orders by
+  name, then ID.
+- DELETE removes the CR without foreground propagation; the controller removes
+  the limits and never the directory or its data. Deleting a quota already
+  being deleted returns 202.
+
 ### Parent File Storage
 
 - The parent File Storage is a `v2` resource with direct UUID lookup. Its
