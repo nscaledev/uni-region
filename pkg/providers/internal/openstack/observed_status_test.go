@@ -448,6 +448,7 @@ func TestUpdateServerStateWithClientsRecordsAbsentOnNotFound(t *testing.T) {
 
 	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound, "the error must surface for the create-retry confirmed-gone gate")
 	require.NotNil(t, server.Status.Observed)
+	require.True(t, server.Status.Observed.Absent, "absence is recorded as an observed fact")
 	require.False(t, server.Status.Observed.Errored, "absence is not a provider error, so the marker must clear")
 	require.Equal(t, int64(4), server.Status.Observed.Generation, "generation must be stamped from metadata.generation as on every successful read")
 	require.Equal(t, observedImagePointer(observedImageID), server.Status.Observed.Image, "the last-known image is sticky on the absent path")

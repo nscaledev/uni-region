@@ -29,7 +29,6 @@ import (
 
 	unikornv1core "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
-	coreerrors "github.com/unikorn-cloud/core/pkg/errors"
 	"github.com/unikorn-cloud/core/pkg/provisioninglog"
 	unikornv1 "github.com/unikorn-cloud/region/pkg/apis/unikorn/v1alpha1"
 	"github.com/unikorn-cloud/region/pkg/constants"
@@ -1007,28 +1006,48 @@ func TestCheckServerPersistsObservedStatusOnProviderAbsence(t *testing.T) {
 		Errored:    true,
 	}
 
-	k8sClient, _, err := runCheckFull(t, srv, func(s *unikornv1.Server) error {
-		// Simulates the observer on the not-found path: the project read has no
-		// row for this server, so the absent observation is recorded and Observe
-		// surfaces the not-found error.
-		if s.Status.Observed == nil {
-			s.Status.Observed = &unikornv1.ServerObservedStatus{}
-		}
-
-		s.Status.Observed.Generation = s.Generation
-		s.Status.Observed.Errored = false
-
-		return coreerrors.ErrResourceNotFound
-	})
+	k8sClient, _, err := runCheckFull(t, srv, observeAbsent)
 	require.NoError(t, err)
 
 	updated := &unikornv1.Server{}
 	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
 
 	require.NotNil(t, updated.Status.Observed)
+	require.True(t, updated.Status.Observed.Absent, "absence must be recorded as an observed fact")
 	require.False(t, updated.Status.Observed.Errored)
 	require.Equal(t, updated.Generation, updated.Status.Observed.Generation)
 	require.Equal(t, &imageID, updated.Status.Observed.Image)
+}
+
+// TestCheckServerPatchesAbsentObservationForHealthyServer pins that a healthy
+// server whose instance is deleted out of band gets a status write, which is
+// what wakes the reconciler to recreate it. Absent is the only field that
+// changes, so resourceVersion is the write witness.
+func TestCheckServerPatchesAbsentObservationForHealthyServer(t *testing.T) {
+	t.Parallel()
+
+	srv := serverFixture(unikornv1.ActiveConditionReasonRunning)
+	imageID := idstest.MustParseImageID("33333333-3333-4333-a333-333333333333")
+
+	srv.Generation = 10
+	srv.Status.Observed = &unikornv1.ServerObservedStatus{
+		Generation: 10,
+		Image:      &imageID,
+	}
+
+	k8sClient, _, err := runCheckFull(t, srv, observeAbsent)
+	require.NoError(t, err)
+
+	updated := &unikornv1.Server{}
+	require.NoError(t, k8sClient.Get(t.Context(), client.ObjectKey{Namespace: namespace, Name: serverID}, updated))
+
+	require.NotEqual(t, srv.ResourceVersion, updated.ResourceVersion,
+		"the absent observation must be written where it previously was not")
+	require.NotNil(t, updated.Status.Observed)
+	require.True(t, updated.Status.Observed.Absent)
+	require.Equal(t, &imageID, updated.Status.Observed.Image, "the last-known image is sticky on the absent path")
+	require.Equal(t, int64(10), updated.Status.Observed.Generation)
+	require.False(t, updated.Status.Observed.Errored)
 }
 
 // TestCheckServerPersistsObservedStatusClearsErrored pins the un-park trigger for a

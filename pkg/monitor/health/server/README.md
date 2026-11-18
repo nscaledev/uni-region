@@ -69,6 +69,9 @@ status/telemetry model.
   projected status: it is fetched and logged once, best-effort, on the transition
   into the errored state, and `fault.details` is excluded even from the log as an
   admin-only stack trace.
+  `absent` is live state too: set by a poll that finds no provider server,
+  cleared by the next one that does. Without it the absent recording of a
+  healthy server matches the stored observation and nothing wakes.
   A write to this region wakes the reconciler: the server manager's
   `serverObservedUpdate` predicate (`pkg/managers/server`) fires on any change to
   the subtree, so the reconciler sleeps until a provider fact moves rather than
@@ -203,7 +206,7 @@ The absent-server path is compared the same way, and this cannot lose the
 observed wake: the reconciler's wake predicate is itself a comparison of
 `status.observed` against its previous value, so an observation identical to the
 stored one never woke anything to begin with. The first cycle after an instance
-disappears does change the observation, is written, and does wake the reconciler.
+disappears sets `absent`, is written, and does wake the reconciler.
 
 ## Invariants And Guard Rails
 

@@ -231,8 +231,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   measured path as a foreign recovery, below — within one monitor period). Or
   the provider server disappears entirely — deleted out-of-band — in which case
   the monitor's `Observe` finds no row for it and `projectServerState`'s absent
-  path records an observation (errored cleared, generation stamped, image
-  sticky) before surfacing the not-found error — surfaced, not swallowed,
+  path records an observation (absent set, errored cleared, generation stamped,
+  image sticky) before surfacing the not-found error — surfaced, not swallowed,
   because the create-retry provisioner's confirmed-gone gate depends on
   `UpdateServerState` returning `ErrResourceNotFound`. The monitor persists the
   recorded observation anyway, firing the same observed wake; the reconciler's

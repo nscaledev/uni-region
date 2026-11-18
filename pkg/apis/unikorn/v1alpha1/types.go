@@ -1312,7 +1312,7 @@ type ServerObservedStatus struct {
 	// every poll, including a poll that finds no provider server at all, so a
 	// present subtree with no image means either the image was unreadable or there
 	// is no provider server to read one from. Those two are distinguished by the
-	// Active condition, not by this subtree.
+	// Absent fact, not by the image.
 	Generation int64 `json:"generation"`
 	// Image is the image the provider reports the server running, as of the last poll
 	// that could read it. An unreadable ref preserves the previous value.
@@ -1327,6 +1327,11 @@ type ServerObservedStatus struct {
 	// vocabulary, where operator detail belongs.
 	// +optional
 	Errored bool `json:"errored,omitempty"`
+	// Absent records that the last poll found no provider server for this
+	// resource. The next read that finds one clears it. Setting it is what wakes
+	// the reconciler to recreate the server.
+	// +optional
+	Absent bool `json:"absent,omitempty"`
 }
 
 type ServerVolumeStatus struct {

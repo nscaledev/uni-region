@@ -302,6 +302,12 @@ spec:
                   Observed carries the provider facts recorded from a provider read, normally
                   the monitor's poll — see ServerObservedStatus for the ownership rule.
                 properties:
+                  absent:
+                    description: |-
+                      Absent records that the last poll found no provider server for this
+                      resource. The next read that finds one clears it. Setting it is what wakes
+                      the reconciler to recreate the server.
+                    type: boolean
                   errored:
                     description: |-
                       Errored records that the provider reports the server in an error state, with
@@ -319,7 +325,7 @@ spec:
                       every poll, including a poll that finds no provider server at all, so a
                       present subtree with no image means either the image was unreadable or there
                       is no provider server to read one from. Those two are distinguished by the
-                      Active condition, not by this subtree.
+                      Absent fact, not by the image.
                     format: int64
                     type: integer
                   image:

@@ -2986,6 +2986,8 @@ func setServerObservedStatus(server *unikornv1.Server, openstackServer *servers.
 	observed := server.Status.Observed
 	observed.Generation = server.Generation
 
+	observed.Absent = false
+
 	// An unreadable ref preserves the previous image: a reader cannot tell an
 	// erased image from one never observed.
 	if imageID, ok := openstackServerImageID(openstackServer); ok {
@@ -3009,7 +3011,8 @@ func setServerObservedStatus(server *unikornv1.Server, openstackServer *servers.
 // setServerObservedStatus: it stamps the observed subtree for a server whose
 // Nova instance is gone. Generation is taken from metadata.generation as on
 // every successful read; errored is cleared (the absence is not a provider
-// error); the image is preserved as the last-known value. Unlike
+// error); the image is preserved as the last-known value; absent is set, so the
+// status write differs from a healthy observation and wakes the reconciler. Unlike
 // setServerObservedStatus it takes no observation client and performs no fault
 // fetch — there is no server to read one for.
 func recordAbsentServerObservation(server *unikornv1.Server) {
@@ -3020,6 +3023,7 @@ func recordAbsentServerObservation(server *unikornv1.Server) {
 	observed := server.Status.Observed
 	observed.Generation = server.Generation
 	observed.Errored = false
+	observed.Absent = true
 }
 
 // logServerFault writes the provider's fault detail to the observation log on
@@ -3702,7 +3706,7 @@ func (p *Provider) updateServerStateWithClients(
 	if err != nil {
 		// A server whose Nova instance is gone (deleted out-of-band, e.g. a
 		// parked server whose backing instance was removed) still gets the
-		// observed subtree stamped: errored is cleared (the absence is not a
+		// observed subtree stamped: absent is set, errored is cleared (the absence is not a
 		// provider error), generation is stamped as on every successful read,
 		// and the image is preserved as the documented sticky last-known
 		// value. No fault fetch happens — there is no server to read one for

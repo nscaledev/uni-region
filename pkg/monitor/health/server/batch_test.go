@@ -456,11 +456,7 @@ func TestCheckKeepsAbsentServersOutOfTheStateGauge(t *testing.T) {
 		map[string]*observation{
 			"identity-a": {observe: func(s *unikornv1.Server) error {
 				if s.Name == "server-absent" {
-					// The observer's contract: record the absent observation, then
-					// surface the absence.
-					s.Status.Observed = &unikornv1.ServerObservedStatus{Generation: 3}
-
-					return coreerrors.ErrResourceNotFound
+					return observeAbsent(s)
 				}
 
 				return setRunning(s)
@@ -482,7 +478,7 @@ func TestCheckKeepsAbsentServersOutOfTheStateGauge(t *testing.T) {
 	require.NoError(t, harness.client.Get(t.Context(),
 		client.ObjectKey{Namespace: namespace, Name: "server-absent"}, absent))
 	require.NotNil(t, absent.Status.Observed)
-	require.Equal(t, int64(3), absent.Status.Observed.Generation)
+	require.True(t, absent.Status.Observed.Absent)
 }
 
 // TestCheckCancelledContextAbortsTheCycle pins that the cycle's own context
@@ -554,7 +550,7 @@ func TestCheckLogsAbsenceWhenNothingWasWritten(t *testing.T) {
 
 	// Already recorded absent, so the projection matches and nothing is written.
 	settled := batchServer("server-gone", regionID, "identity-a", unikornv1.ActiveConditionReasonRunning)
-	settled.Status.Observed = &unikornv1.ServerObservedStatus{}
+	settled.Status.Observed = &unikornv1.ServerObservedStatus{Absent: true}
 
 	harness := runBatchCheck(t,
 		[]runtime.Object{batchIdentity("identity-a"), settled},
@@ -575,7 +571,9 @@ func observeAbsent(s *unikornv1.Server) error {
 		s.Status.Observed = &unikornv1.ServerObservedStatus{}
 	}
 
+	s.Status.Observed.Generation = s.Generation
 	s.Status.Observed.Errored = false
+	s.Status.Observed.Absent = true
 
 	return coreerrors.ErrResourceNotFound
 }

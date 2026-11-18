@@ -284,7 +284,9 @@ stored objects rely on for linkage, migration, and operational coordination.
   observation, where operator detail belongs. It is live state and does clear on
   an authoritative non-error read, which is safe only because an unreachable
   provider aborts the poll without writing at all — connectivity loss can never
-  be mistaken for a recovery.
+  be mistaken for a recovery. `Absent` is set by a poll that finds no provider
+  server and cleared by the next one that does; it is what makes an out-of-band
+  deletion wake the reconciler to recreate the server.
   The `Healthy` and `Active` conditions are deliberately not in this region: the API
   projects health from the condition, and the conditions array is shared with the
   reconciler either way — it writes both on create and on an accepted rebuild.
