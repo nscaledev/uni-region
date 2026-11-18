@@ -466,7 +466,7 @@ func (h *Handler) GetApiV2FilestorageFilestorageIDDirectoryquotas(w http.Respons
 }
 
 func (h *Handler) PostApiV2FilestorageFilestorageIDDirectoryquotas(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter) {
-	request := &openapi.FileStorageDirectoryQuotaV2Write{}
+	request := &openapi.FileStorageDirectoryQuotaV2Create{}
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
 		return
@@ -501,7 +501,7 @@ func (h *Handler) GetApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDire
 }
 
 func (h *Handler) PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID(w http.ResponseWriter, r *http.Request, filestorageID openapi.FilestorageIDParameter, directoryQuotaID openapi.FilestorageDirectoryQuotaIDParameter) {
-	request := &openapi.FileStorageDirectoryQuotaV2Write{}
+	request := &openapi.FileStorageDirectoryQuotaV2Update{}
 	if err := util.ReadJSONBody(r, request); err != nil {
 		errors.HandleError(w, r, err)
 		return

@@ -54,7 +54,7 @@ const directoryQuotaEndpoint = "region:filestoragedirectoryquotas:v2"
 // CreateDirectoryQuota records Directory Quota intent; the controller applies it.
 // The ID is derived from the parent and path, so Kubernetes rejects a second
 // quota on the same path, including while the first is terminating.
-func (c *Client) CreateDirectoryQuota(ctx context.Context, storageID regionids.FileStorageID, request *openapi.FileStorageDirectoryQuotaV2Write) (*openapi.FileStorageDirectoryQuotaV2Read, error) {
+func (c *Client) CreateDirectoryQuota(ctx context.Context, storageID regionids.FileStorageID, request *openapi.FileStorageDirectoryQuotaV2Create) (*openapi.FileStorageDirectoryQuotaV2Read, error) {
 	target := authz.Target{
 		Endpoint:   directoryQuotaEndpoint,
 		Operation:  authz.Create,
@@ -81,11 +81,13 @@ func (c *Client) CreateDirectoryQuota(ctx context.Context, storageID regionids.F
 		return nil, errors.HTTPConflict()
 	}
 
-	if err := validateDirectoryQuota(&request.Spec); err != nil {
+	spec := directoryQuotaLimitsSpec(&request.Spec)
+
+	if err := validateDirectoryQuotaCreate(request.Spec.Path, spec); err != nil {
 		return nil, err
 	}
 
-	resource, err := c.generateDirectoryQuota(ctx, parent, parent.Labels[constants.RegionLabel], storageID, request)
+	resource, err := c.generateDirectoryQuota(ctx, parent, parent.Labels[constants.RegionLabel], storageID, &request.Metadata, request.Spec.Path, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -104,8 +106,9 @@ func (c *Client) CreateDirectoryQuota(ctx context.Context, storageID regionids.F
 	return convertDirectoryQuota(resource), nil
 }
 
-// UpdateDirectoryQuota replaces everything but the immutable path.
-func (c *Client) UpdateDirectoryQuota(ctx context.Context, storageID regionids.FileStorageID, quotaID regionids.FileStorageDirectoryQuotaID, request *openapi.FileStorageDirectoryQuotaV2Write) (*openapi.FileStorageDirectoryQuotaV2Read, error) {
+// UpdateDirectoryQuota replaces everything but the path, which the request
+// cannot carry.
+func (c *Client) UpdateDirectoryQuota(ctx context.Context, storageID regionids.FileStorageID, quotaID regionids.FileStorageDirectoryQuotaID, request *openapi.FileStorageDirectoryQuotaV2Update) (*openapi.FileStorageDirectoryQuotaV2Read, error) {
 	current, err := c.getDirectoryQuota(ctx, storageID, quotaID, authz.Update)
 	if err != nil {
 		return nil, err
@@ -113,10 +116,6 @@ func (c *Client) UpdateDirectoryQuota(ctx context.Context, storageID regionids.F
 
 	if current.DeletionTimestamp != nil {
 		return nil, errors.HTTPConflict()
-	}
-
-	if request.Spec.Path != current.Spec.Path {
-		return nil, errors.HTTPUnprocessableContent("path is immutable")
 	}
 
 	if err := validateDirectoryQuota(&request.Spec); err != nil {
@@ -127,7 +126,7 @@ func (c *Client) UpdateDirectoryQuota(ctx context.Context, storageID regionids.F
 		return nil, fmt.Errorf("%w: unable to set directory quota principal scope", err)
 	}
 
-	required, err := c.generateDirectoryQuota(ctx, current, current.Labels[constants.RegionLabel], storageID, request)
+	required, err := c.generateDirectoryQuota(ctx, current, current.Labels[constants.RegionLabel], storageID, &request.Metadata, current.Spec.Path, &request.Spec)
 	if err != nil {
 		return nil, err
 	}
@@ -288,31 +287,32 @@ func (c *Client) getDirectoryQuota(ctx context.Context, storageID regionids.File
 }
 
 // generateDirectoryQuota builds the stored resource. scope supplies the
-// organization and project: the parent on create, the quota on update.
-func (c *Client) generateDirectoryQuota(ctx context.Context, scope identityids.ProjectScopeReader, regionID string, storageID regionids.FileStorageID, request *openapi.FileStorageDirectoryQuotaV2Write) (*regionv1.FileStorageDirectoryQuota, error) {
+// organization and project, and path the directory: the parent and the
+// request's path on create, the quota and its stored path on update.
+func (c *Client) generateDirectoryQuota(ctx context.Context, scope identityids.ProjectScopeReader, regionID string, storageID regionids.FileStorageID, metadata *coreopenapi.ResourceWriteMetadata, path string, spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec) (*regionv1.FileStorageDirectoryQuota, error) {
 	organizationID, projectID, err := scope.OrganizationAndProjectID()
 	if err != nil {
 		return nil, err
 	}
 
 	resource := &regionv1.FileStorageDirectoryQuota{
-		ObjectMeta: conversion.NewDeterministicObjectMetadata(&request.Metadata, c.Namespace,
-			uuid.UUID(storageID), request.Spec.Path).
+		ObjectMeta: conversion.NewDeterministicObjectMetadata(metadata, c.Namespace,
+			uuid.UUID(storageID), path).
 			WithLabel(constants.FileStorageLabel, storageID.String()).
 			WithLabel(constants.RegionLabel, regionID).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).
 			Get(),
 		Spec: regionv1.FileStorageDirectoryQuotaSpec{
 			FileStorageID:      storageID,
-			Path:               request.Spec.Path,
-			DirectoryLimits:    generateDirectoryQuotaLimits(request.Spec.DirectoryLimits),
-			DefaultUserLimits:  generateDirectoryQuotaLimits(request.Spec.DefaultUserLimits),
-			DefaultGroupLimits: generateDirectoryQuotaLimits(request.Spec.DefaultGroupLimits),
-			Tags:               conversion.GenerateTagList(request.Metadata.Tags),
+			Path:               path,
+			DirectoryLimits:    generateDirectoryQuotaLimits(spec.DirectoryLimits),
+			DefaultUserLimits:  generateDirectoryQuotaLimits(spec.DefaultUserLimits),
+			DefaultGroupLimits: generateDirectoryQuotaLimits(spec.DefaultGroupLimits),
+			Tags:               conversion.GenerateTagList(metadata.Tags),
 		},
 	}
 
-	for _, rule := range ptr.Deref(request.Spec.Rules, nil) {
+	for _, rule := range ptr.Deref(spec.Rules, nil) {
 		resource.Spec.Rules = append(resource.Spec.Rules, regionv1.FileStorageDirectoryQuotaRule{
 			Subject: regionv1.FileStorageDirectoryQuotaSubject{
 				Kind: regionv1.FileStorageDirectoryQuotaSubjectKind(rule.Subject.Kind),
@@ -346,12 +346,27 @@ func generateDirectoryQuotaLimits(in *openapi.FileStorageDirectoryQuotaLimits) *
 	return out
 }
 
-// validateDirectoryQuota enforces the rules the OpenAPI schema cannot express.
-func validateDirectoryQuota(spec *openapi.FileStorageDirectoryQuotaV2WriteSpec) error {
-	if err := validatePathComponents("path", spec.Path); err != nil {
+// directoryQuotaLimitsSpec drops the path, which only create sets, so create
+// and update share validation and generation.
+func directoryQuotaLimitsSpec(in *openapi.FileStorageDirectoryQuotaV2CreateSpec) *openapi.FileStorageDirectoryQuotaV2UpdateSpec {
+	return &openapi.FileStorageDirectoryQuotaV2UpdateSpec{
+		DirectoryLimits:    in.DirectoryLimits,
+		DefaultUserLimits:  in.DefaultUserLimits,
+		DefaultGroupLimits: in.DefaultGroupLimits,
+		Rules:              in.Rules,
+	}
+}
+
+func validateDirectoryQuotaCreate(path string, spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec) error {
+	if err := validatePathComponents("path", path); err != nil {
 		return err
 	}
 
+	return validateDirectoryQuota(spec)
+}
+
+// validateDirectoryQuota enforces the rules the OpenAPI schema cannot express.
+func validateDirectoryQuota(spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec) error {
 	rules := ptr.Deref(spec.Rules, nil)
 
 	if spec.DirectoryLimits == nil && spec.DefaultUserLimits == nil && spec.DefaultGroupLimits == nil && len(rules) == 0 {
@@ -381,7 +396,7 @@ func validateDirectoryQuotaSubjects(rules openapi.FileStorageDirectoryQuotaRules
 }
 
 // validateDirectoryQuotaCeiling rejects default and rule limits above directoryLimits.
-func validateDirectoryQuotaCeiling(spec *openapi.FileStorageDirectoryQuotaV2WriteSpec, rules openapi.FileStorageDirectoryQuotaRules) error {
+func validateDirectoryQuotaCeiling(spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec, rules openapi.FileStorageDirectoryQuotaRules) error {
 	if spec.DirectoryLimits == nil {
 		return nil
 	}
