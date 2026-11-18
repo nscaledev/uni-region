@@ -1048,6 +1048,11 @@ func TestCheckServerPatchesAbsentObservationForHealthyServer(t *testing.T) {
 	require.Equal(t, &imageID, updated.Status.Observed.Image, "the last-known image is sticky on the absent path")
 	require.Equal(t, int64(10), updated.Status.Observed.Generation)
 	require.False(t, updated.Status.Observed.Errored)
+
+	active, err := unikornv1.GetActiveCondition(updated)
+	require.NoError(t, err)
+	require.Equal(t, unikornv1.ActiveConditionReasonMissing, active.Reason)
+	require.Equal(t, corev1.ConditionFalse, active.Status)
 }
 
 // TestCheckServerPersistsObservedStatusClearsErrored pins the un-park trigger for a

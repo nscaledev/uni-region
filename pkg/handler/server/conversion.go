@@ -215,6 +215,8 @@ func serverPowerState(in *unikornv1.Server) *openapi.InstanceLifecyclePhase {
 		return ptr.To(openapi.InstanceLifecyclePhaseStopping)
 	case unikornv1.ActiveConditionReasonStopped:
 		return ptr.To(openapi.InstanceLifecyclePhaseStopped)
+	case unikornv1.ActiveConditionReasonMissing:
+		return ptr.To(openapi.InstanceLifecyclePhasePending)
 	case unikornv1.ActiveConditionReasonError:
 		return ptr.To(openapi.InstanceLifecyclePhaseError)
 	}

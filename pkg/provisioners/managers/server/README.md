@@ -44,6 +44,9 @@ That helper is genuinely shared — the provisioner makes the delete-and-retry
 decision through the same function the watch predicate fires on, so the trigger and
 the action cannot drift.
 
+A server whose instance vanished reads `Active=Missing`, not `Error`, so
+`ProviderCreateFailure` does not fire and the pass goes straight to the create.
+
 This is the clearest controller-side expression of the lifecycle DAG model:
 
 - network/security-group/SSH-CA edges are explicit and blocking

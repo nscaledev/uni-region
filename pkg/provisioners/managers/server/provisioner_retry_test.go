@@ -205,6 +205,28 @@ func TestProvision_ProviderCreateFailureDeletesAndYields(t *testing.T) {
 	requireEvent(t, recorder, corev1.EventTypeNormal, "ProviderCreateRetryReady", "attempt 1/3")
 }
 
+// TestProvision_MissingPreLaunchServerRecreatesDirectly pins that a server
+// reading Missing is recreated directly, without the delete-and-retry path or
+// a burned attempt.
+func TestProvision_MissingPreLaunchServerRecreatesDirectly(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	server := retryServer(withRuntimeStatus)
+	server.SetActiveCondition(regionv1.ActiveConditionReasonMissing)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(nil)
+
+	cli := retryClient(t, retryIdentity(), server)
+	prov := retryProvisioner(t, server, nil, provider)
+
+	require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
+	require.Zero(t, server.Status.ProviderCreateFailures)
+	require.False(t, server.Status.ProviderCreateRetrying)
+}
+
 func TestProvision_ProviderCreateRetryKeepsDeleting(t *testing.T) {
 	t.Parallel()
 

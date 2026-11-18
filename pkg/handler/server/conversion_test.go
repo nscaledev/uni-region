@@ -77,6 +77,11 @@ func TestServerPowerState(t *testing.T) {
 			want:  ptr.To(openapi.InstanceLifecyclePhaseStopped),
 		},
 		{
+			name:  "Missing",
+			input: serverWithReason(unikornv1.ActiveConditionReasonMissing),
+			want:  ptr.To(openapi.InstanceLifecyclePhasePending),
+		},
+		{
 			name:  "absent condition returns nil",
 			input: &unikornv1.Server{},
 			want:  nil,

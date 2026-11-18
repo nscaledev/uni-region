@@ -549,7 +549,7 @@ func TestCheckLogsAbsenceWhenNothingWasWritten(t *testing.T) {
 	const absent = "server not found in provider"
 
 	// Already recorded absent, so the projection matches and nothing is written.
-	settled := batchServer("server-gone", regionID, "identity-a", unikornv1.ActiveConditionReasonRunning)
+	settled := batchServer("server-gone", regionID, "identity-a", unikornv1.ActiveConditionReasonMissing)
 	settled.Status.Observed = &unikornv1.ServerObservedStatus{Absent: true}
 
 	harness := runBatchCheck(t,
@@ -574,6 +574,7 @@ func observeAbsent(s *unikornv1.Server) error {
 	s.Status.Observed.Generation = s.Generation
 	s.Status.Observed.Errored = false
 	s.Status.Observed.Absent = true
+	s.SetActiveCondition(unikornv1.ActiveConditionReasonMissing)
 
 	return coreerrors.ErrResourceNotFound
 }
