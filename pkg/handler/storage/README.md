@@ -194,9 +194,10 @@ controller applies the limits.
   or id), and no default or rule limit above `directoryLimits`, compared per
   dimension. Each failure returns 422, as does a CRD validation rejection on
   create or update.
-- PUT replaces everything except `spec.path`, which must match the stored path
-  (422 otherwise). It preserves pause and the creator, records the modifier, and
-  uses an optimistic lock (409 on a concurrent change or while deleting).
+- PUT replaces everything except the path, which the update request does not
+  carry: the stored path is kept. It preserves pause and the creator, records
+  the modifier, and uses an optimistic lock (409 on a concurrent change or while
+  deleting).
 - `capacityBytes` maps to a binary `resource.Quantity` and back as whole bytes.
 - Reads list `status.rules` in spec rule order, merging the stored rule status
   and per-rule usage by subject. A rule with no stored status, or with status

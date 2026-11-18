@@ -61,11 +61,23 @@ func allDirectoryQuotaOperations(ctx context.Context, sub string) context.Contex
 	return directoryQuotaContext(ctx, sub, identityapi.Create, identityapi.Read, identityapi.Update, identityapi.Delete)
 }
 
-func directoryQuotaRequest(path string) *openapi.FileStorageDirectoryQuotaV2Write {
-	return &openapi.FileStorageDirectoryQuotaV2Write{
-		Metadata: coreapi.ResourceWriteMetadata{Name: "home"},
-		Spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{
+func directoryQuotaRequest(path string) *openapi.FileStorageDirectoryQuotaV2Create {
+	update := directoryQuotaUpdateRequest()
+
+	return &openapi.FileStorageDirectoryQuotaV2Create{
+		Metadata: update.Metadata,
+		Spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{
 			Path:            path,
+			DirectoryLimits: update.Spec.DirectoryLimits,
+			Rules:           update.Spec.Rules,
+		},
+	}
+}
+
+func directoryQuotaUpdateRequest() *openapi.FileStorageDirectoryQuotaV2Update {
+	return &openapi.FileStorageDirectoryQuotaV2Update{
+		Metadata: coreapi.ResourceWriteMetadata{Name: "home"},
+		Spec: openapi.FileStorageDirectoryQuotaV2UpdateSpec{
 			DirectoryLimits: &openapi.FileStorageDirectoryQuotaLimits{CapacityBytes: ptr.To[int64](1 << 40), Inodes: ptr.To[int64](1000)},
 			Rules: &openapi.FileStorageDirectoryQuotaRules{{
 				Subject: openapi.FileStorageDirectoryQuotaSubject{Kind: openapi.FileStorageDirectoryQuotaSubjectKindUser, Name: ptr.To("alice")},
@@ -171,34 +183,34 @@ func TestCreateDirectoryQuotaValidation(t *testing.T) {
 
 	for _, test := range []struct {
 		name  string
-		spec  openapi.FileStorageDirectoryQuotaV2WriteSpec
+		spec  openapi.FileStorageDirectoryQuotaV2CreateSpec
 		valid bool
 	}{
-		{name: "dot component", spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home/./alice", DirectoryLimits: limits(ptr.To[int64](1), nil)}},
-		{name: "dot-dot component", spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "..", DirectoryLimits: limits(ptr.To[int64](1), nil)}},
-		{name: "no limits", spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home"}},
-		{name: "empty rules only", spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home", Rules: &openapi.FileStorageDirectoryQuotaRules{}}},
-		{name: "repeated subject", spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home", Rules: &openapi.FileStorageDirectoryQuotaRules{
+		{name: "dot component", spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home/./alice", DirectoryLimits: limits(ptr.To[int64](1), nil)}},
+		{name: "dot-dot component", spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "..", DirectoryLimits: limits(ptr.To[int64](1), nil)}},
+		{name: "no limits", spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home"}},
+		{name: "empty rules only", spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home", Rules: &openapi.FileStorageDirectoryQuotaRules{}}},
+		{name: "repeated subject", spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home", Rules: &openapi.FileStorageDirectoryQuotaRules{
 			rule(user, ptr.To("alice"), nil, limits(ptr.To[int64](1), nil)),
 			rule(user, ptr.To("alice"), nil, limits(ptr.To[int64](2), nil)),
 		}}},
-		{name: "same name and id differ by kind", valid: true, spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home", Rules: &openapi.FileStorageDirectoryQuotaRules{
+		{name: "same name and id differ by kind", valid: true, spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home", Rules: &openapi.FileStorageDirectoryQuotaRules{
 			rule(user, ptr.To("ml"), nil, limits(ptr.To[int64](1), nil)),
 			rule(group, ptr.To("ml"), nil, limits(ptr.To[int64](1), nil)),
 			rule(user, nil, ptr.To[int64](0), limits(ptr.To[int64](1), nil)),
 		}}},
-		{name: "rule capacity above directory", spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home", DirectoryLimits: limits(ptr.To[int64](10), nil), Rules: &openapi.FileStorageDirectoryQuotaRules{
+		{name: "rule capacity above directory", spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home", DirectoryLimits: limits(ptr.To[int64](10), nil), Rules: &openapi.FileStorageDirectoryQuotaRules{
 			rule(user, ptr.To("alice"), nil, limits(ptr.To[int64](11), nil)),
 		}}},
-		{name: "default inodes above directory", spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home", DirectoryLimits: limits(nil, ptr.To[int64](10)), DefaultGroupLimits: limits(nil, ptr.To[int64](11))}},
-		{name: "limits equal to directory", valid: true, spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home", DirectoryLimits: limits(ptr.To[int64](10), ptr.To[int64](10)), DefaultUserLimits: limits(ptr.To[int64](10), ptr.To[int64](10))}},
-		{name: "unbounded dimension is not compared", valid: true, spec: openapi.FileStorageDirectoryQuotaV2WriteSpec{Path: "home", DirectoryLimits: limits(nil, ptr.To[int64](10)), DefaultUserLimits: limits(ptr.To[int64](1<<50), nil)}},
+		{name: "default inodes above directory", spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home", DirectoryLimits: limits(nil, ptr.To[int64](10)), DefaultGroupLimits: limits(nil, ptr.To[int64](11))}},
+		{name: "limits equal to directory", valid: true, spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home", DirectoryLimits: limits(ptr.To[int64](10), ptr.To[int64](10)), DefaultUserLimits: limits(ptr.To[int64](10), ptr.To[int64](10))}},
+		{name: "unbounded dimension is not compared", valid: true, spec: openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: "home", DirectoryLimits: limits(nil, ptr.To[int64](10)), DefaultUserLimits: limits(ptr.To[int64](1<<50), nil)}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
 			c := snapshotReadClient(t, snapshotParent())
-			_, err := c.CreateDirectoryQuota(allDirectoryQuotaOperations(t.Context(), "creator@example.com"), idstest.MustParseFileStorageID(snapshotParentID), &openapi.FileStorageDirectoryQuotaV2Write{
+			_, err := c.CreateDirectoryQuota(allDirectoryQuotaOperations(t.Context(), "creator@example.com"), idstest.MustParseFileStorageID(snapshotParentID), &openapi.FileStorageDirectoryQuotaV2Create{
 				Metadata: coreapi.ResourceWriteMetadata{Name: "home"},
 				Spec:     test.spec,
 			})
@@ -382,11 +394,12 @@ func TestUpdateDirectoryQuota(t *testing.T) {
 		c := snapshotReadClient(t, quota)
 		ctx := allDirectoryQuotaOperations(t.Context(), "editor@example.com")
 
-		request := directoryQuotaRequest("home")
+		request := directoryQuotaUpdateRequest()
 		request.Metadata.Name = "renamed"
 		got, err := c.UpdateDirectoryQuota(ctx, parentID, quotaID, request)
 		require.NoError(t, err)
 		require.Equal(t, "renamed", got.Metadata.Name)
+		require.Equal(t, "home", got.Spec.Path)
 		require.Equal(t, ptr.To("creator@example.com"), got.Metadata.CreatedBy)
 		require.Equal(t, ptr.To("editor@example.com"), got.Metadata.ModifiedBy)
 		require.Nil(t, got.Spec.DefaultUserLimits)
@@ -395,15 +408,18 @@ func TestUpdateDirectoryQuota(t *testing.T) {
 		stored := &regionv1.FileStorageDirectoryQuota{}
 		require.NoError(t, c.Client.Get(ctx, client.ObjectKey{Namespace: snapshotNamespace, Name: snapshotID}, stored))
 		require.Equal(t, snapshotID, stored.Name)
+		require.Equal(t, "home", stored.Spec.Path)
 		require.Nil(t, stored.Spec.DefaultUserLimits)
 		require.Len(t, stored.Spec.Rules, 1)
 	})
 
-	t.Run("path mismatch", func(t *testing.T) {
+	t.Run("no limits", func(t *testing.T) {
 		t.Parallel()
 
 		c := snapshotReadClient(t, storedDirectoryQuota(snapshotID, "home", "home"))
-		_, err := c.UpdateDirectoryQuota(allDirectoryQuotaOperations(t.Context(), "editor@example.com"), parentID, quotaID, directoryQuotaRequest("other"))
+		request := directoryQuotaUpdateRequest()
+		request.Spec = openapi.FileStorageDirectoryQuotaV2UpdateSpec{}
+		_, err := c.UpdateDirectoryQuota(allDirectoryQuotaOperations(t.Context(), "editor@example.com"), parentID, quotaID, request)
 		requireHTTPStatus(t, err, coreerrors.IsUnprocessableContent)
 	})
 
@@ -414,7 +430,7 @@ func TestUpdateDirectoryQuota(t *testing.T) {
 		quota.DeletionTimestamp = ptr.To(metav1.Now())
 		quota.Finalizers = []string{coreconstants.Finalizer}
 		c := snapshotReadClient(t, quota)
-		_, err := c.UpdateDirectoryQuota(allDirectoryQuotaOperations(t.Context(), "editor@example.com"), parentID, quotaID, directoryQuotaRequest("home"))
+		_, err := c.UpdateDirectoryQuota(allDirectoryQuotaOperations(t.Context(), "editor@example.com"), parentID, quotaID, directoryQuotaUpdateRequest())
 		requireHTTPStatus(t, err, coreerrors.IsConflict)
 	})
 
@@ -422,7 +438,7 @@ func TestUpdateDirectoryQuota(t *testing.T) {
 		t.Parallel()
 
 		c := snapshotReadClient(t, storedDirectoryQuota(snapshotID, "home", "home"))
-		_, err := c.UpdateDirectoryQuota(directoryQuotaContext(t.Context(), "reader@example.com", identityapi.Read), parentID, quotaID, directoryQuotaRequest("home"))
+		_, err := c.UpdateDirectoryQuota(directoryQuotaContext(t.Context(), "reader@example.com", identityapi.Read), parentID, quotaID, directoryQuotaUpdateRequest())
 		requireHTTPStatus(t, err, coreerrors.IsHTTPNotFound)
 	})
 }
