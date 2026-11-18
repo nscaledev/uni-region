@@ -1999,7 +1999,7 @@ paths:
         '500':
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/responses/internalServerErrorResponse'
     put:
-      description: Update the limits, defaults, rules, name and tags of a Directory Quota. The path is immutable and must match the stored path. Omitted limits and rules are cleared, and spec.rules replaces the full rule list.
+      description: Update the limits, defaults, rules, name and tags of a Directory Quota. The path cannot change and is not part of the request. Omitted limits and rules are cleared, and spec.rules replaces the full rule list.
       summary: Update a file storage directory quota
       tags:
       - File storage directory quotas
@@ -4594,8 +4594,8 @@ components:
       maxItems: 20
       items:
         $ref: '#/components/schemas/fileStorageDirectoryQuotaRule'
-    fileStorageDirectoryQuotaV2WriteSpec:
-      description: Directory Quota settings. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+    fileStorageDirectoryQuotaV2CreateSpec:
+      description: Directory Quota settings on create. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
       type: object
       additionalProperties: false
       required:
@@ -4611,8 +4611,8 @@ components:
           $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
         rules:
           $ref: '#/components/schemas/fileStorageDirectoryQuotaRules'
-    fileStorageDirectoryQuotaV2Write:
-      description: A Directory Quota create or update request.
+    fileStorageDirectoryQuotaV2Create:
+      description: A Directory Quota create request.
       type: object
       additionalProperties: false
       required:
@@ -4622,7 +4622,32 @@ components:
         metadata:
           $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
         spec:
-          $ref: '#/components/schemas/fileStorageDirectoryQuotaV2WriteSpec'
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaV2CreateSpec'
+    fileStorageDirectoryQuotaV2UpdateSpec:
+      description: Directory Quota settings on update. The path cannot change, so it is not part of an update. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+      type: object
+      additionalProperties: false
+      properties:
+        directoryLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        defaultUserLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        defaultGroupLimits:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaLimits'
+        rules:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaRules'
+    fileStorageDirectoryQuotaV2Update:
+      description: A Directory Quota update request.
+      type: object
+      additionalProperties: false
+      required:
+      - metadata
+      - spec
+      properties:
+        metadata:
+          $ref: 'https://raw.githubusercontent.com/unikorn-cloud/core/v1.21.0/pkg/openapi/common.spec.yaml#/components/schemas/resourceWriteMetadata'
+        spec:
+          $ref: '#/components/schemas/fileStorageDirectoryQuotaV2UpdateSpec'
     fileStorageDirectoryQuotaV2Spec:
       description: Directory Quota settings.
       type: object
@@ -5241,7 +5266,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Write'
+            $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Create'
           example:
             metadata:
               name: homedir-example-1
@@ -5274,12 +5299,11 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Write'
+            $ref: '#/components/schemas/fileStorageDirectoryQuotaV2Update'
           example:
             metadata:
               name: homedir-example-1
             spec:
-              path: home/example-1
               directoryLimits:
                 capacityBytes: 16363825397760
                 inodes: 100000000
