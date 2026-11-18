@@ -262,6 +262,8 @@ func (r ActiveConditionReason) ConditionStatus() corev1.ConditionStatus {
 // condition's message is a pure function of its reason (the provisioning and
 // health axes, by contrast, carry independent operator detail), so it is derived
 // here rather than supplied by callers.
+//
+//nolint:cyclop // One case per ActiveConditionReason.
 func (r ActiveConditionReason) Message() string {
 	switch r {
 	case ActiveConditionReasonPending:
@@ -280,6 +282,8 @@ func (r ActiveConditionReason) Message() string {
 		return "the server is stopping"
 	case ActiveConditionReasonStopped:
 		return "the server is stopped"
+	case ActiveConditionReasonMissing:
+		return "the server is missing from the provider"
 	case ActiveConditionReasonError:
 		return "the server is in an error state"
 	}

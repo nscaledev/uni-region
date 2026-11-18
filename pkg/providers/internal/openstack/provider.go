@@ -2636,8 +2636,9 @@ func setServerActive(ctx context.Context, server *unikornv1.Server, openstackser
 		// one exception: Rebooting is a transient we stamp, and Nova only clears
 		// the reboot task once the driver reports the reboot done, so an ACTIVE
 		// server with no task has finished rebooting. Without this a baremetal
-		// node surfacing NOSTATE would be stuck reading Rebooting.
-		if rebootSettled(server, openstackserver) {
+		// node surfacing NOSTATE would be stuck reading Rebooting. Missing, the
+		// absent path's stamp, clears the same way.
+		if transientSettled(server, openstackserver) {
 			server.SetActiveCondition(unikornv1.ActiveConditionReasonRunning)
 		}
 	case servers.RUNNING:
@@ -2673,11 +2674,15 @@ func serverRebootInFlight(openstackserver *servers.Server) bool {
 	return strings.HasPrefix(openstackserver.TaskState, novaTaskStateRebootPrefix)
 }
 
-// rebootSettled reports whether a server last recorded as Rebooting is now
-// reported by Nova as ACTIVE with no task in flight, i.e. the reboot completed.
-func rebootSettled(server *unikornv1.Server, openstackserver *servers.Server) bool {
+// transientSettled reports whether a server last recorded as Rebooting or
+// Missing is now reported by Nova as ACTIVE with no task in flight.
+func transientSettled(server *unikornv1.Server, openstackserver *servers.Server) bool {
 	active, err := unikornv1.GetActiveCondition(server)
-	if err != nil || active.Reason != unikornv1.ActiveConditionReasonRebooting {
+	if err != nil {
+		return false
+	}
+
+	if active.Reason != unikornv1.ActiveConditionReasonRebooting && active.Reason != unikornv1.ActiveConditionReasonMissing {
 		return false
 	}
 
@@ -3024,6 +3029,8 @@ func recordAbsentServerObservation(server *unikornv1.Server) {
 	observed.Generation = server.Generation
 	observed.Errored = false
 	observed.Absent = true
+
+	server.SetActiveCondition(unikornv1.ActiveConditionReasonMissing)
 }
 
 // logServerFault writes the provider's fault detail to the observation log on

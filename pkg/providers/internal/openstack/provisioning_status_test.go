@@ -641,6 +641,21 @@ func TestSetServerPhaseRebootCompletes(t *testing.T) {
 	}
 }
 
+// TestSetServerPhaseMissingSettles proves Missing clears once a read finds the
+// server ACTIVE with no task, including under the NOSTATE baremetal reports.
+func TestSetServerPhaseMissingSettles(t *testing.T) {
+	t.Parallel()
+
+	for _, power := range []servers.PowerState{servers.RUNNING, servers.NOSTATE} {
+		server := &unikornv1.Server{}
+		server.SetActiveCondition(unikornv1.ActiveConditionReasonMissing)
+
+		setServerActive(t.Context(), server, &servers.Server{Status: novaStatusActive, PowerState: power}, nil)
+
+		require.Equal(t, unikornv1.ActiveConditionReasonRunning, activeReason(t, server), "power %s", power)
+	}
+}
+
 // TestSetServerPhaseNoStateKeepsNonRebootState proves the reboot-settled
 // exception is narrow: NOSTATE still leaves any other state alone, and a
 // Rebooting stamp holds while Nova has a task in flight.

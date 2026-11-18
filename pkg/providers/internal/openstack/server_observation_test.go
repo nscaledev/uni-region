@@ -136,6 +136,7 @@ func TestServerObserverAbsentRecordsObservation(t *testing.T) {
 	require.True(t, server.Status.Observed.Absent, "absence is recorded as an observed fact")
 	require.False(t, server.Status.Observed.Errored, "absence is not a provider error")
 	require.Equal(t, int64(7), server.Status.Observed.Generation)
+	require.Equal(t, unikornv1.ActiveConditionReasonMissing, activeReason(t, server))
 }
 
 // TestServerObserverAbsentThenPresentClearsAbsent pins that the read that finds

@@ -1238,6 +1238,9 @@ const (
 	ActiveConditionReasonStopping ActiveConditionReason = "Stopping"
 	// ActiveConditionReasonStopped means the server is stopped.
 	ActiveConditionReasonStopped ActiveConditionReason = "Stopped"
+	// ActiveConditionReasonMissing means the provider has no server for this
+	// resource. The reconciler recreates it.
+	ActiveConditionReasonMissing ActiveConditionReason = "Missing"
 	// ActiveConditionReasonError means the provider reported the server in a
 	// terminal error state (e.g. Nova ERROR). It is a lifecycle state, not a
 	// health verdict: it is the axis the provider-create-failure guard keys off to
