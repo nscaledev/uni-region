@@ -113,8 +113,8 @@ rule status and the usage monitor's per-rule usage into `status.rules`. The
 meaning of `metadata.healthStatus` is deliberately not specified yet, and usage
 of subjects limited only by the default limits is not reported: the CRD is not
 the place for unbounded per-subject data. POST and PUT return the
-complete resource with 202; PUT replaces limits and the whole rule list, and the
-path is immutable. DELETE removes the limits only, never the directory or its
+complete resource with 202; PUT replaces limits and the whole rule list. The
+path is set on create only: the update request has no path. DELETE removes the limits only, never the directory or its
 data. The handler is not implemented yet: every operation returns 501.
 
 Keeping the schema unified matters because it allows:

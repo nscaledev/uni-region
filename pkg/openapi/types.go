@@ -275,6 +275,33 @@ type FileStorageDirectoryQuotaUsage struct {
 	UsedInodes *int64 `json:"usedInodes,omitempty"`
 }
 
+// FileStorageDirectoryQuotaV2Create A Directory Quota create request.
+type FileStorageDirectoryQuotaV2Create struct {
+	// Metadata Metadata required for all API resource reads and writes.
+	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
+
+	// Spec Directory Quota settings on create. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+	Spec FileStorageDirectoryQuotaV2CreateSpec `json:"spec"`
+}
+
+// FileStorageDirectoryQuotaV2CreateSpec Directory Quota settings on create. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+type FileStorageDirectoryQuotaV2CreateSpec struct {
+	// DefaultGroupLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DefaultGroupLimits *FileStorageDirectoryQuotaLimits `json:"defaultGroupLimits,omitempty"`
+
+	// DefaultUserLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DefaultUserLimits *FileStorageDirectoryQuotaLimits `json:"defaultUserLimits,omitempty"`
+
+	// DirectoryLimits Hard limits. At least one of capacityBytes or inodes is required.
+	DirectoryLimits *FileStorageDirectoryQuotaLimits `json:"directoryLimits,omitempty"`
+
+	// Path Immutable canonical directory path relative to the File Storage root. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected, so the root cannot be targeted. It is unique within the File Storage.
+	Path FileStorageDirectoryQuotaPath `json:"path"`
+
+	// Rules Per user and group hard limits. A subject appears at most once.
+	Rules *FileStorageDirectoryQuotaRules `json:"rules,omitempty"`
+}
+
 // FileStorageDirectoryQuotaV2Read A File Storage Directory Quota.
 type FileStorageDirectoryQuotaV2Read struct {
 	// Metadata Metadata required by project scoped resource reads.
@@ -317,17 +344,17 @@ type FileStorageDirectoryQuotaV2Status struct {
 	Usage *FileStorageDirectoryQuotaDirectoryUsage `json:"usage,omitempty"`
 }
 
-// FileStorageDirectoryQuotaV2Write A Directory Quota create or update request.
-type FileStorageDirectoryQuotaV2Write struct {
+// FileStorageDirectoryQuotaV2Update A Directory Quota update request.
+type FileStorageDirectoryQuotaV2Update struct {
 	// Metadata Metadata required for all API resource reads and writes.
 	Metadata externalRef0.ResourceWriteMetadata `json:"metadata"`
 
-	// Spec Directory Quota settings. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
-	Spec FileStorageDirectoryQuotaV2WriteSpec `json:"spec"`
+	// Spec Directory Quota settings on update. The path cannot change, so it is not part of an update. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+	Spec FileStorageDirectoryQuotaV2UpdateSpec `json:"spec"`
 }
 
-// FileStorageDirectoryQuotaV2WriteSpec Directory Quota settings. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
-type FileStorageDirectoryQuotaV2WriteSpec struct {
+// FileStorageDirectoryQuotaV2UpdateSpec Directory Quota settings on update. The path cannot change, so it is not part of an update. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+type FileStorageDirectoryQuotaV2UpdateSpec struct {
 	// DefaultGroupLimits Hard limits. At least one of capacityBytes or inodes is required.
 	DefaultGroupLimits *FileStorageDirectoryQuotaLimits `json:"defaultGroupLimits,omitempty"`
 
@@ -336,9 +363,6 @@ type FileStorageDirectoryQuotaV2WriteSpec struct {
 
 	// DirectoryLimits Hard limits. At least one of capacityBytes or inodes is required.
 	DirectoryLimits *FileStorageDirectoryQuotaLimits `json:"directoryLimits,omitempty"`
-
-	// Path Immutable canonical directory path relative to the File Storage root. Empty, absolute, repeated or trailing slashes and exact dot or dot-dot components are rejected, so the root cannot be targeted. It is unique within the File Storage.
-	Path FileStorageDirectoryQuotaPath `json:"path"`
 
 	// Rules Per user and group hard limits. A subject appears at most once.
 	Rules *FileStorageDirectoryQuotaRules `json:"rules,omitempty"`
@@ -2158,11 +2182,11 @@ type VolumeV2Response = VolumeV2Read
 // VolumesV2Response A list of volumes.
 type VolumesV2Response = VolumesV2Read
 
-// FileStorageDirectoryQuotaV2CreateRequest A Directory Quota create or update request.
-type FileStorageDirectoryQuotaV2CreateRequest = FileStorageDirectoryQuotaV2Write
+// FileStorageDirectoryQuotaV2CreateRequest A Directory Quota create request.
+type FileStorageDirectoryQuotaV2CreateRequest = FileStorageDirectoryQuotaV2Create
 
-// FileStorageDirectoryQuotaV2UpdateRequest A Directory Quota create or update request.
-type FileStorageDirectoryQuotaV2UpdateRequest = FileStorageDirectoryQuotaV2Write
+// FileStorageDirectoryQuotaV2UpdateRequest A Directory Quota update request.
+type FileStorageDirectoryQuotaV2UpdateRequest = FileStorageDirectoryQuotaV2Update
 
 // IdentityRequest An identity request.
 type IdentityRequest = IdentityWrite
@@ -2440,10 +2464,10 @@ type PostApiV2FilestorageJSONRequestBody = StorageV2Create
 type PutApiV2FilestorageFilestorageIDJSONRequestBody = StorageV2Update
 
 // PostApiV2FilestorageFilestorageIDDirectoryquotasJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDDirectoryquotas for application/json ContentType.
-type PostApiV2FilestorageFilestorageIDDirectoryquotasJSONRequestBody = FileStorageDirectoryQuotaV2Write
+type PostApiV2FilestorageFilestorageIDDirectoryquotasJSONRequestBody = FileStorageDirectoryQuotaV2Create
 
 // PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaIDJSONRequestBody defines body for PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaID for application/json ContentType.
-type PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaIDJSONRequestBody = FileStorageDirectoryQuotaV2Write
+type PutApiV2FilestorageFilestorageIDDirectoryquotasFilestorageDirectoryQuotaIDJSONRequestBody = FileStorageDirectoryQuotaV2Update
 
 // PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody defines body for PostApiV2FilestorageFilestorageIDSnapshots for application/json ContentType.
 type PostApiV2FilestorageFilestorageIDSnapshotsJSONRequestBody = FileStorageSnapshotV2Create
