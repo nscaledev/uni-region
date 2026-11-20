@@ -179,6 +179,19 @@ func TestServerObservedUpdate(t *testing.T) {
 		}))
 	})
 
+	// A healthy server whose instance is deleted out of band changes only Absent.
+	t.Run("AbsentAppears", func(t *testing.T) {
+		t.Parallel()
+
+		require.True(t, serverObservedUpdate(event.TypedUpdateEvent[*unikornv1.Server]{
+			ObjectOld: serverWithObserved(&unikornv1.ServerObservedStatus{Generation: 1}),
+			ObjectNew: serverWithObserved(&unikornv1.ServerObservedStatus{
+				Generation: 1,
+				Absent:     true,
+			}),
+		}))
+	})
+
 	// The reconciler's own status write carries the region back unchanged. If that
 	// woke the reconciler the controller would spin against itself.
 	t.Run("UnchangedObservation", func(t *testing.T) {

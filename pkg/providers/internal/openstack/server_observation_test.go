@@ -133,8 +133,31 @@ func TestServerObserverAbsentRecordsObservation(t *testing.T) {
 
 	require.ErrorIs(t, err, coreerrors.ErrResourceNotFound)
 	require.NotNil(t, server.Status.Observed)
+	require.True(t, server.Status.Observed.Absent, "absence is recorded as an observed fact")
 	require.False(t, server.Status.Observed.Errored, "absence is not a provider error")
 	require.Equal(t, int64(7), server.Status.Observed.Generation)
+}
+
+// TestServerObserverAbsentThenPresentClearsAbsent pins that the read that finds
+// the server again clears Absent.
+func TestServerObserverAbsentThenPresentClearsAbsent(t *testing.T) {
+	t.Parallel()
+
+	provider := observerProvider()
+
+	absent := provider.newServerObserver(&unikornv1.Identity{}, &stubComputeClient{}, nil)
+
+	server := observedServer("server-a")
+
+	require.ErrorIs(t, absent.Observe(t.Context(), server), coreerrors.ErrResourceNotFound)
+	require.True(t, server.Status.Observed.Absent)
+
+	present := provider.newServerObserver(&unikornv1.Identity{}, &stubComputeClient{}, []servers.Server{
+		{ID: "id-a", Name: "server-a", Status: "ACTIVE", PowerState: servers.RUNNING},
+	})
+
+	require.NoError(t, present.Observe(t.Context(), server))
+	require.False(t, server.Status.Observed.Absent)
 }
 
 // TestServerObserverEmptyNameIsAbsent pins that a server with no name label

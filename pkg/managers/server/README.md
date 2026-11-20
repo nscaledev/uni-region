@@ -53,7 +53,7 @@ write amplification, not just controller CPU. The unconditional `generation`
 stamp guarantees one redundant wake per spec edit — the generation predicate
 already woke the reconciler for that edit. If wake volume ever becomes a
 problem, the knob is comparing only the fields a woken pass acts on (`image`,
-`errored`); deferred until it is one.
+`errored`, `absent`); deferred until it is one.
 
 The "pre-launch" test is the shared `ProviderCreateFailure` predicate exported by
 [`pkg/provisioners/managers/server`](../../provisioners/managers/server/README.md),
