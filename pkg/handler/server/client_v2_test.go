@@ -1253,8 +1253,8 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 		want   []byte
 		status int
 	}{
-		{name: "omitted preserves legacy bytes", want: legacy, status: http.StatusAccepted},
-		{name: "null preserves legacy bytes", field: `,"userData":null`, want: legacy, status: http.StatusAccepted},
+		{name: "omitted clears", status: http.StatusAccepted},
+		{name: "null clears", field: `,"userData":null`, status: http.StatusAccepted},
 		{name: "empty value clears", field: `,"userData":""`, status: http.StatusAccepted},
 		{name: "value replaces", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: replacement, status: http.StatusAccepted},
 		{name: "unchanged legacy skips validation", field: `,"userData":"` + base64.StdEncoding.EncodeToString(legacy) + `"`, want: legacy, status: http.StatusAccepted},

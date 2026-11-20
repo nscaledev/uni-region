@@ -1265,9 +1265,10 @@ type ServerV2CreateSpec struct {
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
-	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
-	// value, and an empty string clears it. A changed value is not applied to the running guest —
-	// it takes effect only when the server is next rebuilt (image change) or recreated.
+	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
+	// it, or supplying null or an empty string, clears the stored value. A changed value is not
+	// applied to the running guest — it takes effect only when the server is next rebuilt
+	// (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 
 	// Volumes Complete desired set of existing Volumes to attach to the Server.
@@ -1319,9 +1320,10 @@ type ServerV2Spec struct {
 	// UserData Contains base64-encoded configuration information or scripts to use upon launch.
 	// The format of the data is governed by the cloud-init standard, and may be a script,
 	// a MIME multipart archive, etc. Cloud-init part-handlers (#part-handler) are rejected,
-	// as the payload or as a top-level MIME part. On update, omitting the field keeps the stored
-	// value, and an empty string clears it. A changed value is not applied to the running guest —
-	// it takes effect only when the server is next rebuilt (image change) or recreated.
+	// as the payload or as a top-level MIME part. On update the field is replaced wholesale: omitting
+	// it, or supplying null or an empty string, clears the stored value. A changed value is not
+	// applied to the running guest — it takes effect only when the server is next rebuilt
+	// (image change) or recreated.
 	UserData *[]byte `json:"userData,omitempty"`
 
 	// Volumes Complete desired set of existing Volumes to attach to the Server.
