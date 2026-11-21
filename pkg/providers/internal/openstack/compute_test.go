@@ -216,8 +216,7 @@ func (f *faultReadNovaServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 // TestGetServerDoesNotReRead pins that GetServer is one Nova call, whatever the
 // listed status. The fault enrichment is deliberately not folded into GetServer:
 // the per-ID fault read belongs to the errored transition alone, so list reads
-// stay one call on both the monitor and reconciler paths, exactly when Nova is
-// degraded.
+// stay one call per pass, exactly when Nova is degraded.
 func TestGetServerDoesNotReRead(t *testing.T) {
 	t.Parallel()
 

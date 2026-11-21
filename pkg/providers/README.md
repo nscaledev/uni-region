@@ -65,31 +65,36 @@ packages are the concrete provider implementations.
     the real backing resources
   - mirrored provider-state records are not the preferred answer unless the
     state cannot be reconstructed safely enough by other means
-- `types.Volume` is the focused create/delete/state-update capability embedded in the full
+- `types.Volume` is the focused create/delete capability embedded in the full
   `types.Provider` contract and consumed through `LookupCloud` by the Volume
   controller. Discovery-only providers remain on `types.CommonProvider` and do
   not implement workload lifecycle:
   - lifecycle intent is the native Region `Volume` CRD
   - provider implementations rediscover their backing object internally before
-    create, delete, or state update; `UpdateVolumeState` mutates the CRD status
-    without exposing provider SDK types
+    create or delete, and project what they read onto the CRD status without
+    exposing provider SDK types
   - create success means the rediscovered backing volume is usable, not merely
     that an asynchronous provider request was accepted. Providers return
-    `provisioners.ErrYield` while creation is still converging and a safe typed
-    terminal provisioning error when the backing object has entered an
-    unrecoverable error state
+    `provisioners.ErrYield` while creation is still converging and a typed
+    recheck while the backing object is in an error state it may leave
   - delete success means rediscovery confirms the backing volume is absent, not
     merely that an asynchronous provider request was accepted. Accepted delete
     requests return `provisioners.ErrYield` so allocation cleanup and finalizer
     removal wait for provider convergence
-  - `UpdateVolumeState` projects observed size and health directly onto the
-    native Region `Volume` status for the Volume monitor
+  - the same pass projects observed size and health directly onto the native
+    Region `Volume` status
   - no backing resource maps to the shared `ErrResourceNotFound` sentinel;
     client/request failures remain Go errors, while successfully observed
     provider `error` and unrecognized/empty `unknown` lifecycle values remain
     successful observations
   - VolumeClass inventory remains on `CommonProvider`; Server attach and
     Volume-based detach are separate capabilities
+- `providers.Transient` is the classifier a polling controller passes to core's
+  `WithTransient`. It says whether an error means a provider could not be reached
+  (network error, timeout, unexpected EOF, 429, any 5xx) rather than gave an
+  answer. The server controller uses it, so an outage
+  leaves the `Available` condition as it was. The rule lives in
+  [`internal/openstack`](./internal/openstack/README.md).
 - Provider `Delete*` methods must be idempotent and must tolerate an unrealized
   identity as a no-op. Callers delegate unconditionally; the provider
   self-gates on realized identity rather than the caller gating on readiness or
@@ -140,6 +145,29 @@ packages are the concrete provider implementations.
   - the failure is not remembered, so a region whose substrate is permanently
     misconfigured is re-initialized on every lookup. That is the accepted cost
     of self-healing without a restart
+  - a build runs outside the cache lock, and concurrent lookups of one missing
+    region wait for a single build: the region's entry goes in the cache before
+    its build starts, and comes out again if the build fails. Building a
+    provider authenticates against the cloud, so a build held under the lock
+    made every region's lookup, in the controllers and the API server, wait out
+    one unreachable region's build each time that region was looked up: the dial
+    timeout, about 30 seconds, for an endpoint that does not answer, and up to
+    the 60 second request timeout for each of the build's requests to one that
+    accepts and then hangs
+  - a region is built successfully at most once per process, and a build on
+    lookup runs on a background context, never a caller's. Builds at startup run
+    on the context `New` is given, which lives as long as the process, so the
+    difference only shows at shutdown. In the API server a build starts an image
+    refresher that runs until the process exits: a second successful build would
+    leave one polling the image service every minute with nothing holding it,
+    and a caller's context would stop it when that caller returned. A failed
+    build is retried on the next lookup, which leaks nothing only because the
+    refresher starts after the build's first image fetch succeeds
+  - a lookup cannot give up on a build: lookups take no context, so every lookup
+    of a region waits out its build, even after an API client has gone. That is
+    the accepted cost of not tying a provider to any caller. Lookups that wait
+    on one build also share its result: if it fails, they all get its error,
+    where before each waiter tried again in turn
   - callers that want startup to gate on more than this own that policy
     themselves; see `Options.WarmImageCache`
 - The provider layer is allowed to carry compensating local mechanisms where the

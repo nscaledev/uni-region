@@ -98,7 +98,7 @@ func newTeardownOpenstack(t *testing.T, steps ...teardownRequest) string {
 }
 
 func novaLookup(body string) teardownRequest {
-	return teardownRequest{http.MethodGet, "/servers/detail?name=server-1", http.StatusOK, body}
+	return teardownRequest{http.MethodGet, "/servers/detail?limit=250", http.StatusOK, body}
 }
 
 func novaServer(status, task string) teardownRequest {

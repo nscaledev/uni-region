@@ -28,5 +28,27 @@ releasing its claim.
 
 `VolumeStatus.ProvisionedAt` records the first successful discovery of backing
 storage. Later generation events continue reconciliation, but a missing
-backing volume is never recreated under the same Region Volume ID. The health
-monitor reports provider loss separately through `Healthy`.
+backing volume is never recreated under the same Region Volume ID. Provider loss
+is reported through `Healthy` by the pass that observed it.
+
+## Polling
+
+The controller polls. Cinder moves a volume underneath us — size, attachment
+state, and the `error` family — and none of that writes to the CRD, so no watch
+can fire for it. Each pass observes from its own fresh read; there is no separate
+observer.
+
+Core decides the next pass from the outcome: a volume still moving yields and
+is read again in ten seconds; everything else, success and every failure,
+waits for the poll slot. Nothing parks, so a volume whose backing storage has
+gone keeps reporting it until it is replaced. Cinder's error family, a bare
+`error` included, is a recheck: reported, and read again at the next poll. A
+bare `error` is not treated as a failed create because, once the controller has
+restarted, a failed create cannot be told from a working volume gone to `error`
+(`ProvisionedAt` stamps on first sight), and the second may hold data an
+operator can recover; telling its owner to replace it would lose that data.
+
+The controller passes `WithTransient(providers.Transient)`, as the server
+controller does: a pass that cannot reach the cloud leaves the condition as it
+was. See
+[`pkg/providers/internal/openstack`](../../providers/internal/openstack/README.md).
