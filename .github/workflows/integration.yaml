@@ -69,6 +69,10 @@ jobs:
     - name: Run API integration tests
       run: make test-api-ci
 
+    - name: Check Region pods stayed up
+      if: ${{ !cancelled() }}
+      run: hack/ci/check-pods "unikorn-region-${{ steps.rand.outputs.suffix }}"
+
     - name: Capture Region diagnostics
       if: failure()
       env:
