@@ -2792,7 +2792,8 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 	return openstackSecurityGroup, nil
 }
 
-func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
+//nolint:cyclop
+func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server, projectID string) (*ports.Port, error) {
 	log := log.FromContext(ctx)
 
 	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID.String())
@@ -2820,15 +2821,15 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		}
 	}
 
-	port, err := client.GetServerPort(ctx, server)
+	serverPorts, err := client.FindServerPorts(ctx, projectID, server)
 	if err != nil {
-		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, err
-		}
+		return nil, err
+	}
 
+	if len(serverPorts) == 0 {
 		log.V(1).Info("creating port")
 
-		port, err = client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, addressPairs)
+		port, err := client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, addressPairs)
 		if err != nil {
 			return nil, err
 		}
@@ -2836,6 +2837,11 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
 
 		return port, nil
+	}
+
+	port, err := keepOneServerPort(ctx, client, server, serverPorts)
+	if err != nil {
+		return nil, err
 	}
 
 	if serverPortRequiresUpdate(port, securityGroupIDs, addressPairs) {
@@ -2850,6 +2856,94 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
 
 	return port, nil
+}
+
+// keepOneServerPort returns the port the server keeps and deletes the others.
+// Several ports exist when a create committed after the client timed out. The
+// kept port is the one attached to a device, else the one holding the server's
+// recorded private IP, else the oldest, so the choice is stable across
+// reconciles and a late port never replaces one in use.
+func keepOneServerPort(ctx context.Context, networking NetworkingInterface, server *unikornv1.Server, serverPorts []ports.Port) (*ports.Port, error) {
+	if len(serverPorts) == 1 {
+		return &serverPorts[0], nil
+	}
+
+	log := log.FromContext(ctx)
+
+	keep := chooseServerPort(server, serverPorts)
+
+	for i := range serverPorts {
+		// An attached port is in use, so it is never deleted here.
+		if i == keep || serverPorts[i].DeviceID != "" {
+			continue
+		}
+
+		log.Info("deleting duplicate server port", "portID", serverPorts[i].ID, "keptPortID", serverPorts[keep].ID)
+
+		if err := deleteServerPort(ctx, networking, &serverPorts[i]); err != nil {
+			return nil, err
+		}
+	}
+
+	return &serverPorts[keep], nil
+}
+
+// chooseServerPort returns the index of the port to keep: the one attached to
+// a device, else the one holding the server's recorded private IP, else the
+// oldest.
+func chooseServerPort(server *unikornv1.Server, serverPorts []ports.Port) int {
+	if i := slices.IndexFunc(serverPorts, func(x ports.Port) bool { return x.DeviceID != "" }); i >= 0 {
+		return i
+	}
+
+	if server.Status.PrivateIP != nil {
+		hasPrivateIP := func(x ports.Port) bool {
+			return slices.ContainsFunc(x.FixedIPs, func(ip ports.IP) bool {
+				return ip.IPAddress == *server.Status.PrivateIP
+			})
+		}
+
+		if i := slices.IndexFunc(serverPorts, hasPrivateIP); i >= 0 {
+			return i
+		}
+	}
+
+	oldest := 0
+
+	for i := range serverPorts {
+		if serverPorts[i].CreatedAt.Before(serverPorts[oldest].CreatedAt) {
+			oldest = i
+		}
+	}
+
+	return oldest
+}
+
+// deleteServerPort deletes a server port's floating IP and then the port,
+// treating anything already gone as deleted.
+func deleteServerPort(ctx context.Context, networking NetworkingInterface, port *ports.Port) error {
+	log := log.FromContext(ctx)
+
+	floatingip, err := networking.GetFloatingIP(ctx, port.ID)
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return err
+	}
+
+	if floatingip != nil {
+		log.V(1).Info("deleting floating ip", "floatingIPID", floatingip.ID)
+
+		if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+	}
+
+	log.V(1).Info("deleting port", "portID", port.ID)
+
+	if err := networking.DeletePort(ctx, port.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return err
+	}
+
+	return nil
 }
 
 func sliceSetsEqual[T comparable](a, b []T) bool {
@@ -3387,7 +3481,7 @@ func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerIn
 // found server or creates a missing one via the augmented copy. The result
 // reports whether the port converged. See reconcileServerForCreate and the
 // README's Server Observation section.
-func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) (types.ServerCreateResult, error) {
+func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName, projectID string, preflight serverCreatePreflight) (types.ServerCreateResult, error) {
 	var result types.ServerCreateResult
 
 	// Observe first, so a Neutron fault cannot stop the projection, the
@@ -3402,7 +3496,7 @@ func (p *Provider) createServer(ctx context.Context, networking NetworkingInterf
 		return result, err
 	}
 
-	port, err := p.reconcileServerPort(ctx, networking, server)
+	port, err := p.reconcileServerPort(ctx, networking, server, projectID)
 	if err != nil {
 		return result, err
 	}
@@ -3438,7 +3532,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return types.ServerCreateResult{}, err
 	}
 
-	return p.createServer(ctx, networking, compute, identity, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
+	return p.createServer(ctx, networking, compute, identity, server, options, resolveServerKeyName(server, openstackIdentity), ptr.Deref(openstackIdentity.Spec.ProjectID, ""), p.serverCreatePlacementPreflight(identity, compute))
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
@@ -3540,41 +3634,36 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	port, err := networking.GetServerPort(ctx, server)
-	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
 		return err
 	}
 
-	//nolint:nestif
-	if port != nil {
-		floatingip, err := networking.GetFloatingIP(ctx, port.ID)
-		if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return err
-		}
+	serverPorts, err := networking.FindServerPorts(ctx, ptr.Deref(openstackIdentity.Spec.ProjectID, ""), server)
+	if err != nil {
+		return err
+	}
 
-		if floatingip != nil {
-			log.V(1).Info("deleting floating ip")
-
-			if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				return err
-			}
-		}
-
-		log.V(1).Info("deleting port")
-
-		if err := networking.DeletePort(ctx, port.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+	for i := range serverPorts {
+		if err := deleteServerPort(ctx, networking, &serverPorts[i]); err != nil {
 			return err
 		}
 	}
 
 	// A create can become visible while networking is removed. Keep ownership
-	// until a lookup after port removal confirms no matching server remains.
+	// until a lookup after port removal confirms no matching server remains,
+	// and until a pass finds no ports, so a port create that commits late is
+	// still deleted.
 	if _, err := compute.GetServer(ctx, server); err != nil {
-		if errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return err
 		}
 
-		return err
+		if len(serverPorts) > 0 {
+			return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a fresh lookup to find no server ports")
+		}
+
+		return nil
 	}
 
 	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a provider server discovered during network cleanup")

@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/gophercloud/gophercloud/v2"
 	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
@@ -1729,7 +1730,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(nil, coreerrors.ErrResourceNotFound)
+		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return(nil, nil)
 		networking.EXPECT().CreateServerPort(t.Context(), server, openstackNetwork.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1753,7 +1754,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1795,7 +1796,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup2)).Return(openstackSecurityGroup2, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1825,7 +1826,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1848,7 +1849,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup2)).Return(openstackSecurityGroup2, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
 		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID, openstackSecurityGroup2.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1874,7 +1875,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(&currentPort, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
 		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID}, desiredAddressPairs).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1921,6 +1922,100 @@ func TestTransient(t *testing.T) {
 			t.Parallel()
 
 			require.Equal(t, tc.transient, openstack.Transient(tc.err))
+		})
+	}
+}
+
+// TestReconcileServerPortConvergesDuplicates verifies that when a create
+// committed after the client timed out, leaving several ports for one server,
+// reconcile keeps a stable port and deletes the others with their floating IPs.
+func TestReconcileServerPortConvergesDuplicates(t *testing.T) {
+	t.Parallel()
+
+	network := networkFixture()
+	securityGroup := securityGroupFixture()
+	client := getClient(t, []client.Object{network, securityGroup})
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+
+	server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup))
+
+	older := time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+
+	port := func(id, ip, deviceID string, createdAt time.Time) ports.Port {
+		p := *openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+		p.ID = id
+		p.FixedIPs[0].IPAddress = ip
+		p.DeviceID = deviceID
+		p.CreatedAt = createdAt
+		p.SecurityGroups = []string{openstackSecurityGroup.ID}
+
+		return p
+	}
+
+	tests := []struct {
+		name      string
+		privateIP *string
+		ports     []ports.Port
+		wantKept  string
+		deleted   []string
+	}{
+		{
+			name:     "KeepsTheAttachedPort",
+			ports:    []ports.Port{port("late", "10.0.0.1", "", older), port("attached", "10.0.0.2", "nova-1", newer)},
+			wantKept: "attached",
+			deleted:  []string{"late"},
+		},
+		{
+			name:      "KeepsThePortHoldingThePrivateIP",
+			privateIP: ptr.To("10.0.0.2"),
+			ports:     []ports.Port{port("late", "10.0.0.1", "", older), port("recorded", "10.0.0.2", "", newer)},
+			wantKept:  "recorded",
+			deleted:   []string{"late"},
+		},
+		{
+			name:     "KeepsTheOldestPort",
+			ports:    []ports.Port{port("late", "10.0.0.2", "", newer), port("first", "10.0.0.1", "", older)},
+			wantKept: "first",
+			deleted:  []string{"late"},
+		},
+		{
+			name:     "NeverDeletesAnAttachedPort",
+			ports:    []ports.Port{port("attached-1", "10.0.0.1", "nova-1", older), port("attached-2", "10.0.0.2", "nova-2", newer)},
+			wantKept: "attached-1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			server := server.DeepCopy()
+			server.Status.PrivateIP = test.privateIP
+
+			c := gomock.NewController(t)
+
+			networking := mock.NewMockNetworkingInterface(c)
+			networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+			networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+			networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return(test.ports, nil)
+
+			for _, id := range test.deleted {
+				floatingIP := &floatingips.FloatingIP{ID: "fip-" + id, PortID: id}
+				networking.EXPECT().GetFloatingIP(t.Context(), id).Return(floatingIP, nil)
+				networking.EXPECT().DeleteFloatingIP(t.Context(), floatingIP.ID).Return(nil)
+				networking.EXPECT().DeletePort(t.Context(), id).Return(nil)
+			}
+
+			p := openstack.NewTestProvider(client, regionFixture())
+
+			kept, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+			require.NoError(t, err)
+			require.Equal(t, test.wantKept, kept.ID)
+			require.Equal(t, ptr.To(kept.FixedIPs[0].IPAddress), server.Status.PrivateIP)
 		})
 	}
 }
@@ -2581,7 +2676,7 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
-	networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
+	networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{*openstackServerPort}, nil)
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 	compute := mock.NewMockServerObservationInterface(c)
@@ -2666,7 +2761,7 @@ func TestCreateServerObservesFirst(t *testing.T) {
 
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
-		networking.EXPECT().GetServerPort(t.Context(), server).Return(openstackServerPort, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{*openstackServerPort}, nil)
 		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(nil, coreerrors.ErrResourceNotFound)
 
 		p := openstack.NewTestProvider(client, regionFixture())

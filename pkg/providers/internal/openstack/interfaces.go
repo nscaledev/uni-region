@@ -91,7 +91,7 @@ type PortInterface interface {
 	ListServerPorts(ctx context.Context, serverID string) ([]ports.Port, error)
 	ListRouterPorts(ctx context.Context, routerID string) ([]ports.Port, error)
 	ListSecurityGroupPorts(ctx context.Context, projectID, securityGroupID string) ([]ports.Port, error)
-	GetServerPort(ctx context.Context, server *unikornv1.Server) (*ports.Port, error)
+	FindServerPorts(ctx context.Context, projectID string, server *unikornv1.Server) ([]ports.Port, error)
 	CreateServerPort(ctx context.Context, server *unikornv1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error)
 	UpdatePort(ctx context.Context, portID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error)
 	DeletePort(ctx context.Context, portID string) error
