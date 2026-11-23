@@ -6,8 +6,9 @@ name: Run API Suite
 #
 # Release-evidence behaviour is inert unless `expected_version` is set: when set, the
 # resolver gates on the deployed version matching it and a versions-summary artifact is
-# produced (even on gate failure). Callers must pass `secrets: inherit` and grant
-# `id-token: write` (the test jobs need it for Teleport/Grafana).
+# produced (even on gate failure). The version is checked again after the tests, report
+# steps cannot fail the test job, and no test history is written. Callers must pass
+# `secrets: inherit` and grant `id-token: write` (the test jobs need it for Teleport/Grafana).
 on:
   workflow_call:
     inputs:
@@ -211,6 +212,17 @@ jobs:
       if: inputs.smoke != true && inputs.focus != '' && inputs.focus != 'All'
       run: make test-api-focus FOCUS="$FOCUS"
 
+    # shortcut: a version that moves and comes back during the run is not seen; check per spec if the smoke run grows past seconds.
+    - name: Check the deployed version after the tests
+      if: inputs.expected_version != ''
+      env:
+        EXPECTED: ${{ inputs.expected_version }}
+      run: |
+        got="$(curl -fsS --max-time 10 --retry 3 --retry-all-errors -H "Authorization: Bearer $API_AUTH_TOKEN" "$REGION_BASE_URL/api/version" | jq -r '.version // empty' || true)"
+        if [ "${got#v}" != "${EXPECTED#v}" ]; then
+          echo "::error::deployed version is '${got#v}' after the tests, expected '${EXPECTED#v}'"; exit 1
+        fi
+
     - name: Archive API Test Results
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
@@ -230,6 +242,8 @@ jobs:
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
       if: ${{ !cancelled() }}
+      # The evidence result is the test job's conclusion; a report step must not change it.
+      continue-on-error: ${{ inputs.expected_version != '' }}
       with:
         test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -243,12 +257,14 @@ jobs:
     - name: Report API Test Results
       uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
       if: ${{ !cancelled() }}
+      continue-on-error: ${{ inputs.expected_version != '' }}
       with:
         test-results-path: test-results.json
         format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         send-slack: ${{ inputs.skip_slack_notifications != true && 'true' || 'false' }}
+        publish-test-history: ${{ inputs.expected_version == '' && 'true' || 'false' }}
         environment: dev
         deployed-version: ${{ needs.find-dev-deployed-version.outputs.version || needs.find-dev-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
@@ -435,6 +451,17 @@ jobs:
       if: inputs.smoke != true && inputs.focus != '' && inputs.focus != 'All'
       run: make test-api-focus FOCUS="$FOCUS"
 
+    # shortcut: a version that moves and comes back during the run is not seen; check per spec if the smoke run grows past seconds.
+    - name: Check the deployed version after the tests
+      if: inputs.expected_version != ''
+      env:
+        EXPECTED: ${{ inputs.expected_version }}
+      run: |
+        got="$(curl -fsS --max-time 10 --retry 3 --retry-all-errors -H "Authorization: Bearer $API_AUTH_TOKEN" "$REGION_BASE_URL/api/version" | jq -r '.version // empty' || true)"
+        if [ "${got#v}" != "${EXPECTED#v}" ]; then
+          echo "::error::deployed version is '${got#v}' after the tests, expected '${EXPECTED#v}'"; exit 1
+        fi
+
     - name: Archive API Test Results
       if: ${{ !cancelled() }}
       uses: actions/upload-artifact@v4
@@ -454,6 +481,8 @@ jobs:
     - name: Create Linear Issues for Test Failures
       uses: nscaledev/quality-tooling/.github/actions/linear-test-failures@main
       if: ${{ !cancelled() }}
+      # The evidence result is the test job's conclusion; a report step must not change it.
+      continue-on-error: ${{ inputs.expected_version != '' }}
       with:
         test-results-path: test-results.json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -467,12 +496,14 @@ jobs:
     - name: Report API Test Results
       uses: nscaledev/quality-tooling/.github/actions/test-results-report@main
       if: ${{ !cancelled() }}
+      continue-on-error: ${{ inputs.expected_version != '' }}
       with:
         test-results-path: test-results.json
         format: ginkgo-json
         workflow-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
         send-slack: ${{ inputs.skip_slack_notifications != true && 'true' || 'false' }}
+        publish-test-history: ${{ inputs.expected_version == '' && 'true' || 'false' }}
         environment: uat
         deployed-version: ${{ needs.find-uat-deployed-version.outputs.version || needs.find-uat-deployed-version.outputs.ref }}
         title: 'Region API Test Results'
