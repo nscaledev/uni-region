@@ -603,12 +603,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   port is reused without a `PUT`, while private-IP status projection still runs.
 - Neutron can commit a server port create long after the client timed out,
   even after the Server was deleted, so a server port can outlive its Server
-  and block its security group's delete with `SecurityGroupInUse`. Security
-  group delete therefore first lists the ports in the identity's project that
-  use the group, then deletes each one that is named `server-<id>`, has no
-  device, and has no Server `<id>`. Neutron filters the list by project and
-  group; the other checks run per port. The project filter is required,
-  because this path uses the admin credential.
+  and block deleting its security group with `SecurityGroupInUse`, and its
+  subnet, whose IP it holds. Security group delete and network delete
+  therefore first list the ports in the identity's project that use the group,
+  or sit on the network, then delete each one that is named `server-<id>`, has
+  no device, and has no Server `<id>`; network delete does this before the
+  subnet delete. Neutron filters the list by project and group or network; the
+  other checks run per port. The project filter is required, because security
+  group delete uses the admin credential and network delete the manager
+  credential.
 - For the same reason a Server can have several ports named `server-<id>`.
   Port lookup returns every exact match in the identity's project, and fails
   rather than list without a project ID. Reconcile keeps one port, the one

@@ -1907,16 +1907,37 @@ func (p *Provider) DeleteNetwork(ctx context.Context, identity *unikornv1.Identi
 		return err
 	}
 
-	return p.deleteNetwork(ctx, networking, network)
+	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
+	if err != nil {
+		return err
+	}
+
+	return p.deleteNetwork(ctx, networking, network, ptr.Deref(openstackIdentity.Spec.ProjectID, ""))
 }
 
 //nolint:cyclop
-func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInterface, network *unikornv1.Network) error {
+func (p *Provider) deleteNetwork(ctx context.Context, networking NetworkingInterface, network *unikornv1.Network, projectID string) error {
 	log := log.FromContext(ctx)
 
 	openstackNetwork, err := networking.GetNetwork(ctx, network)
 	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
+	}
+
+	// An orphaned server port keeps an IP on the subnet, so it must go before
+	// the subnet delete.
+	if openstackNetwork != nil {
+		listPorts := func(projectID string) ([]ports.Port, error) {
+			return networking.ListNetworkPorts(ctx, projectID, openstackNetwork.ID)
+		}
+
+		onNetwork := func(port *ports.Port) bool {
+			return port.NetworkID == openstackNetwork.ID
+		}
+
+		if err := p.deleteOrphanedServerPorts(ctx, networking, network.Namespace, projectID, listPorts, onNetwork); err != nil {
+			return err
+		}
 	}
 
 	subnet, err := networking.GetSubnet(ctx, network)
@@ -2414,7 +2435,15 @@ func (p *Provider) deleteSecurityGroup(ctx context.Context, networking Networkin
 		return nil
 	}
 
-	if err := p.deleteOrphanedServerPorts(ctx, networking, securityGroup.Namespace, projectID, openstackSecurityGroup.ID); err != nil {
+	listPorts := func(projectID string) ([]ports.Port, error) {
+		return networking.ListSecurityGroupPorts(ctx, projectID, openstackSecurityGroup.ID)
+	}
+
+	usesSecurityGroup := func(port *ports.Port) bool {
+		return slices.Contains(port.SecurityGroups, openstackSecurityGroup.ID)
+	}
+
+	if err := p.deleteOrphanedServerPorts(ctx, networking, securityGroup.Namespace, projectID, listPorts, usesSecurityGroup); err != nil {
 		return err
 	}
 
@@ -2424,27 +2453,33 @@ func (p *Provider) deleteSecurityGroup(ctx context.Context, networking Networkin
 }
 
 // deleteOrphanedServerPorts deletes server ports that outlived their Server and
-// still use the security group. Neutron can commit a port create long after the
-// client timed out and the Server was deleted; nothing else would ever delete
-// that port, and it blocks the security group delete with SecurityGroupInUse.
-func (p *Provider) deleteOrphanedServerPorts(ctx context.Context, networking PortInterface, namespace, projectID, securityGroupID string) error {
+// still use a resource being deleted. Neutron can commit a port create long
+// after the client timed out and the Server was deleted; nothing else would
+// ever delete that port, and it blocks deleting its security group, subnet and
+// network. listPorts lists the project's ports filtered to the resource, and
+// usesResource checks each port again in case Neutron ignores the filter.
+func (p *Provider) deleteOrphanedServerPorts(ctx context.Context, networking PortInterface, namespace, projectID string, listPorts func(projectID string) ([]ports.Port, error), usesResource func(*ports.Port) bool) error {
 	log := log.FromContext(ctx)
 
-	// This path uses admin credentials, so without a project filter the list
-	// would cover every project.
+	// Callers may hold admin credentials, so without a project filter the
+	// list could cover every project.
 	if projectID == "" {
-		return fmt.Errorf("%w: project ID not set for security group %s", coreerrors.ErrConsistency, securityGroupID)
+		return fmt.Errorf("%w: project ID not set for orphaned server port cleanup", coreerrors.ErrConsistency)
 	}
 
-	securityGroupPorts, err := networking.ListSecurityGroupPorts(ctx, projectID, securityGroupID)
+	candidates, err := listPorts(projectID)
 	if err != nil {
 		return err
 	}
 
-	for i := range securityGroupPorts {
-		port := &securityGroupPorts[i]
+	for i := range candidates {
+		port := &candidates[i]
 
-		orphaned, err := p.serverPortOrphaned(ctx, namespace, securityGroupID, port)
+		if !usesResource(port) {
+			continue
+		}
+
+		orphaned, err := p.serverPortOrphaned(ctx, namespace, port)
 		if err != nil {
 			return err
 		}
@@ -2464,11 +2499,10 @@ func (p *Provider) deleteOrphanedServerPorts(ctx context.Context, networking Por
 }
 
 // serverPortOrphaned reports whether a port is an unattached server port whose
-// Server no longer exists. The security group is checked again in case Neutron
-// ignores the list filter.
-func (p *Provider) serverPortOrphaned(ctx context.Context, namespace, securityGroupID string, port *ports.Port) (bool, error) {
+// Server no longer exists.
+func (p *Provider) serverPortOrphaned(ctx context.Context, namespace string, port *ports.Port) (bool, error) {
 	serverID, ok := strings.CutPrefix(port.Name, serverPortNamePrefix)
-	if !ok || serverID == "" || port.DeviceID != "" || !slices.Contains(port.SecurityGroups, securityGroupID) {
+	if !ok || serverID == "" || port.DeviceID != "" {
 		return false, nil
 	}
 

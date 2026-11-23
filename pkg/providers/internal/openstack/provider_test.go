@@ -391,6 +391,7 @@ func TestDeleteNetworkPreservesVLANWhenDeleteNetworkFails(t *testing.T) {
 	openstackNetwork := openstackNetworkFixture(network)
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), network).Return(openstackNetwork, nil)
+	networking.EXPECT().ListNetworkPorts(t.Context(), openstack.TestProjectID, openstackNetwork.ID).Return(nil, nil)
 	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 	networking.EXPECT().DeleteNetwork(t.Context(), openstackNetwork.ID).Return(errNeutronConflict)
@@ -478,6 +479,7 @@ func TestDeleteNetworkFreesVLANAfterSuccessfulDeleteNetwork(t *testing.T) {
 	openstackNetwork := openstackNetworkFixture(network)
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), network).Return(openstackNetwork, nil)
+	networking.EXPECT().ListNetworkPorts(t.Context(), openstack.TestProjectID, openstackNetwork.ID).Return(nil, nil)
 	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 	// The network is deleted from Neutron first; the VLAN is only freed afterwards.
@@ -495,6 +497,47 @@ func TestDeleteNetworkFreesVLANAfterSuccessfulDeleteNetwork(t *testing.T) {
 		Name:      region.StaticName(),
 	}, result))
 	assert.Empty(t, result.Spec.Allocations)
+}
+
+// TestDeleteNetworkDeletesOrphanedServerPorts verifies a network delete first
+// removes unattached server ports on the network whose Server no longer exists,
+// because their IPs would block the subnet delete, and keeps every other port.
+func TestDeleteNetworkDeletesOrphanedServerPorts(t *testing.T) {
+	t.Parallel()
+
+	network := networkFixture()
+	openstackNetwork := openstackNetworkFixture(network)
+	liveServer := serverFixture()
+
+	port := func(id, name, deviceID string) ports.Port {
+		return ports.Port{ID: id, Name: name, DeviceID: deviceID, NetworkID: openstackNetwork.ID}
+	}
+
+	otherNetworkPort := port("other-network", "server-gone-too", "")
+	otherNetworkPort.NetworkID = "another-network"
+
+	networkPorts := []ports.Port{
+		port("orphaned", "server-gone", ""),
+		port("live-server", "server-"+liveServer.Name, ""),
+		port("attached", "server-gone-attached", "nova-server-id"),
+		port("router-interface", "", "router-id"),
+		otherNetworkPort,
+	}
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), network).Return(openstackNetwork, nil)
+	networking.EXPECT().ListNetworkPorts(t.Context(), openstack.TestProjectID, openstackNetwork.ID).Return(networkPorts, nil)
+	networking.EXPECT().DeletePort(t.Context(), "orphaned").Return(nil)
+	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().DeleteNetwork(t.Context(), openstackNetwork.ID).Return(nil)
+
+	p := openstack.NewTestProvider(getClient(t, []client.Object{liveServer}), regionFixture())
+
+	require.NoError(t, openstack.DeleteNetworkWithClient(t.Context(), p, networking, network))
 }
 
 // TestDeleteNetworkSkipsVLANFreeWithoutProviderNetworks verifies that for a
@@ -537,6 +580,7 @@ func TestDeleteNetworkSkipsVLANFreeWithoutProviderNetworks(t *testing.T) {
 	openstackNetwork := openstackNetworkFixture(network)
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), network).Return(openstackNetwork, nil)
+	networking.EXPECT().ListNetworkPorts(t.Context(), openstack.TestProjectID, openstackNetwork.ID).Return(nil, nil)
 	networking.EXPECT().GetSubnet(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 	networking.EXPECT().GetRouter(t.Context(), network).Return(nil, coreerrors.ErrResourceNotFound)
 	networking.EXPECT().DeleteNetwork(t.Context(), openstackNetwork.ID).Return(nil)

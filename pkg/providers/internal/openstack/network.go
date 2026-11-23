@@ -753,6 +753,29 @@ func (c *NetworkClient) ListSecurityGroupPorts(ctx context.Context, projectID, s
 	return allPorts, nil
 }
 
+// ListNetworkPorts returns the ports in a project on a network.
+func (c *NetworkClient) ListNetworkPorts(ctx context.Context, projectID, networkID string) ([]ports.Port, error) {
+	_, span := traceStart(ctx, "GET /network/v2.0/ports")
+	defer span.End()
+
+	listOpts := ports.ListOpts{
+		ProjectID: projectID,
+		NetworkID: networkID,
+	}
+
+	allPages, err := ports.List(c.client, listOpts).AllPages(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	allPorts, err := ports.ExtractPorts(allPages)
+	if err != nil {
+		return nil, err
+	}
+
+	return allPorts, nil
+}
+
 const serverPortNamePrefix = "server-"
 
 func serverName(server *unikornv1.Server) string {

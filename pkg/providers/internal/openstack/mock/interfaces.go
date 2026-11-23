@@ -563,6 +563,21 @@ func (mr *MockPortInterfaceMockRecorder) FindServerPorts(ctx, projectID, server 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindServerPorts", reflect.TypeOf((*MockPortInterface)(nil).FindServerPorts), ctx, projectID, server)
 }
 
+// ListNetworkPorts mocks base method.
+func (m *MockPortInterface) ListNetworkPorts(ctx context.Context, projectID, networkID string) ([]ports.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListNetworkPorts", ctx, projectID, networkID)
+	ret0, _ := ret[0].([]ports.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListNetworkPorts indicates an expected call of ListNetworkPorts.
+func (mr *MockPortInterfaceMockRecorder) ListNetworkPorts(ctx, projectID, networkID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNetworkPorts", reflect.TypeOf((*MockPortInterface)(nil).ListNetworkPorts), ctx, projectID, networkID)
+}
+
 // ListRouterPorts mocks base method.
 func (m *MockPortInterface) ListRouterPorts(ctx context.Context, routerID string) ([]ports.Port, error) {
 	m.ctrl.T.Helper()
@@ -966,6 +981,21 @@ func (m *MockNetworkingInterface) GetSubnet(ctx context.Context, network *v1alph
 func (mr *MockNetworkingInterfaceMockRecorder) GetSubnet(ctx, network any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSubnet", reflect.TypeOf((*MockNetworkingInterface)(nil).GetSubnet), ctx, network)
+}
+
+// ListNetworkPorts mocks base method.
+func (m *MockNetworkingInterface) ListNetworkPorts(ctx context.Context, projectID, networkID string) ([]ports.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListNetworkPorts", ctx, projectID, networkID)
+	ret0, _ := ret[0].([]ports.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListNetworkPorts indicates an expected call of ListNetworkPorts.
+func (mr *MockNetworkingInterfaceMockRecorder) ListNetworkPorts(ctx, projectID, networkID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListNetworkPorts", reflect.TypeOf((*MockNetworkingInterface)(nil).ListNetworkPorts), ctx, projectID, networkID)
 }
 
 // ListRouterPorts mocks base method.

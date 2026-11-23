@@ -301,7 +301,7 @@ func ReconcileRouterInterface(ctx context.Context, p *Provider, client Networkin
 }
 
 func DeleteNetworkWithClient(ctx context.Context, p *Provider, client NetworkingInterface, network *unikornv1.Network) error {
-	return p.deleteNetwork(ctx, client, network)
+	return p.deleteNetwork(ctx, client, network, TestProjectID)
 }
 
 func DeleteSecurityGroupWithClient(ctx context.Context, p *Provider, client NetworkingInterface, securityGroup *unikornv1.SecurityGroup, projectID string) error {
