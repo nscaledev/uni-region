@@ -2376,8 +2376,6 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 
 // DeleteSecurityGroup deletes a security group.
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	log := log.FromContext(ctx)
-
 	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
 	if err != nil {
 		return err
@@ -2401,20 +2399,90 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 		return err
 	}
 
+	return p.deleteSecurityGroup(ctx, networking, securityGroup, *openstackIdentity.Spec.ProjectID)
+}
+
+func (p *Provider) deleteSecurityGroup(ctx context.Context, networking NetworkingInterface, securityGroup *unikornv1.SecurityGroup, projectID string) error {
+	log := log.FromContext(ctx)
+
 	openstackSecurityGroup, err := networking.GetSecurityGroup(ctx, securityGroup)
 	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
 	}
 
-	if openstackSecurityGroup != nil {
-		log.V(1).Info("deleting security group")
+	if openstackSecurityGroup == nil {
+		return nil
+	}
 
-		if err := networking.DeleteSecurityGroup(ctx, openstackSecurityGroup.ID); err != nil {
+	if err := p.deleteOrphanedServerPorts(ctx, networking, securityGroup.Namespace, projectID, openstackSecurityGroup.ID); err != nil {
+		return err
+	}
+
+	log.V(1).Info("deleting security group")
+
+	return networking.DeleteSecurityGroup(ctx, openstackSecurityGroup.ID)
+}
+
+// deleteOrphanedServerPorts deletes server ports that outlived their Server and
+// still use the security group. Neutron can commit a port create long after the
+// client timed out and the Server was deleted; nothing else would ever delete
+// that port, and it blocks the security group delete with SecurityGroupInUse.
+func (p *Provider) deleteOrphanedServerPorts(ctx context.Context, networking PortInterface, namespace, projectID, securityGroupID string) error {
+	log := log.FromContext(ctx)
+
+	// This path uses admin credentials, so without a project filter the list
+	// would cover every project.
+	if projectID == "" {
+		return fmt.Errorf("%w: project ID not set for security group %s", coreerrors.ErrConsistency, securityGroupID)
+	}
+
+	securityGroupPorts, err := networking.ListSecurityGroupPorts(ctx, projectID, securityGroupID)
+	if err != nil {
+		return err
+	}
+
+	for i := range securityGroupPorts {
+		port := &securityGroupPorts[i]
+
+		orphaned, err := p.serverPortOrphaned(ctx, namespace, securityGroupID, port)
+		if err != nil {
+			return err
+		}
+
+		if !orphaned {
+			continue
+		}
+
+		log.Info("deleting orphaned server port", "portID", port.ID, "portName", port.Name)
+
+		if err := networking.DeletePort(ctx, port.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// serverPortOrphaned reports whether a port is an unattached server port whose
+// Server no longer exists. The security group is checked again in case Neutron
+// ignores the list filter.
+func (p *Provider) serverPortOrphaned(ctx context.Context, namespace, securityGroupID string, port *ports.Port) (bool, error) {
+	serverID, ok := strings.CutPrefix(port.Name, serverPortNamePrefix)
+	if !ok || serverID == "" || port.DeviceID != "" || !slices.Contains(port.SecurityGroups, securityGroupID) {
+		return false, nil
+	}
+
+	var server unikornv1.Server
+
+	if err := p.client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: serverID}, &server); err != nil {
+		if kerrors.IsNotFound(err) {
+			return true, nil
+		}
+
+		return false, err
+	}
+
+	return false, nil
 }
 
 // Nova server display statuses, as compared throughout server health conversion

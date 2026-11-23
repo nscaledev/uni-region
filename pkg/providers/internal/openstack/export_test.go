@@ -304,6 +304,10 @@ func DeleteNetworkWithClient(ctx context.Context, p *Provider, client Networking
 	return p.deleteNetwork(ctx, client, network)
 }
 
+func DeleteSecurityGroupWithClient(ctx context.Context, p *Provider, client NetworkingInterface, securityGroup *unikornv1.SecurityGroup, projectID string) error {
+	return p.deleteSecurityGroup(ctx, client, securityGroup, projectID)
+}
+
 func ReconcileSecurityGroup(ctx context.Context, p *Provider, client SecurityGroupInterface, securityGroup *unikornv1.SecurityGroup) (*groups.SecGroup, error) {
 	return p.reconcileSecurityGroup(ctx, client, securityGroup)
 }

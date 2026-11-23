@@ -624,6 +624,93 @@ func TestDeleteSecurityGroupNoopsWhenIdentityUnrealized(t *testing.T) {
 	require.NoError(t, p.DeleteSecurityGroup(t.Context(), identity, securityGroup))
 }
 
+// TestDeleteSecurityGroupDeletesOrphanedServerPorts verifies a security group
+// delete first removes unattached server ports whose Server no longer exists,
+// such as a port Neutron committed after its create timed out, and keeps every
+// other port that uses the group.
+func TestDeleteSecurityGroupDeletesOrphanedServerPorts(t *testing.T) {
+	t.Parallel()
+
+	const project = "tenant"
+
+	securityGroup := securityGroupFixture()
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+	liveServer := serverFixture()
+
+	port := func(id, name, deviceID string) ports.Port {
+		return ports.Port{
+			ID:             id,
+			Name:           name,
+			DeviceID:       deviceID,
+			SecurityGroups: []string{openstackSecurityGroup.ID},
+		}
+	}
+
+	otherGroupPort := port("other-group", "server-gone-too", "")
+	otherGroupPort.SecurityGroups = []string{"another-group"}
+
+	securityGroupPorts := []ports.Port{
+		port("orphaned", "server-gone", ""),
+		port("orphaned-already-deleted", "server-gone-twice", ""),
+		port("live-server", "server-"+liveServer.Name, ""),
+		port("attached", "server-gone-attached", "nova-server-id"),
+		port("not-a-server-port", "loadbalancer-port", ""),
+		otherGroupPort,
+	}
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
+	networking.EXPECT().ListSecurityGroupPorts(t.Context(), project, openstackSecurityGroup.ID).Return(securityGroupPorts, nil)
+	networking.EXPECT().DeletePort(t.Context(), "orphaned").Return(nil)
+	networking.EXPECT().DeletePort(t.Context(), "orphaned-already-deleted").Return(gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusNotFound})
+	networking.EXPECT().DeleteSecurityGroup(t.Context(), openstackSecurityGroup.ID).Return(nil)
+
+	p := openstack.NewTestProvider(getClient(t, []client.Object{liveServer}), regionFixture())
+
+	require.NoError(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, project))
+}
+
+// TestDeleteSecurityGroupRequiresProjectID verifies the orphan cleanup refuses
+// to list ports without a project filter, which the admin credential would
+// otherwise widen to every project.
+func TestDeleteSecurityGroupRequiresProjectID(t *testing.T) {
+	t.Parallel()
+
+	securityGroup := securityGroupFixture()
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
+
+	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+	require.ErrorIs(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, ""), coreerrors.ErrConsistency)
+}
+
+// TestDeleteSecurityGroupNoopsWhenAlreadyDeleted verifies nothing is listed or
+// deleted once the security group is gone from Neutron.
+func TestDeleteSecurityGroupNoopsWhenAlreadyDeleted(t *testing.T) {
+	t.Parallel()
+
+	securityGroup := securityGroupFixture()
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(nil, coreerrors.ErrResourceNotFound)
+
+	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
+
+	require.NoError(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, "tenant"))
+}
+
 // TestDeleteServerNoopsWhenIdentityUnrealized verifies the delete is a clean
 // no-op when the backing identity has no project allocated yet.
 func TestDeleteServerNoopsWhenIdentityUnrealized(t *testing.T) {

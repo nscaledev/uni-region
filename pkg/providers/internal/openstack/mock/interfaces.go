@@ -578,6 +578,21 @@ func (mr *MockPortInterfaceMockRecorder) ListRouterPorts(ctx, routerID any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRouterPorts", reflect.TypeOf((*MockPortInterface)(nil).ListRouterPorts), ctx, routerID)
 }
 
+// ListSecurityGroupPorts mocks base method.
+func (m *MockPortInterface) ListSecurityGroupPorts(ctx context.Context, projectID, securityGroupID string) ([]ports.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSecurityGroupPorts", ctx, projectID, securityGroupID)
+	ret0, _ := ret[0].([]ports.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSecurityGroupPorts indicates an expected call of ListSecurityGroupPorts.
+func (mr *MockPortInterfaceMockRecorder) ListSecurityGroupPorts(ctx, projectID, securityGroupID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSecurityGroupPorts", reflect.TypeOf((*MockPortInterface)(nil).ListSecurityGroupPorts), ctx, projectID, securityGroupID)
+}
+
 // ListServerPorts mocks base method.
 func (m *MockPortInterface) ListServerPorts(ctx context.Context, serverID string) ([]ports.Port, error) {
 	m.ctrl.T.Helper()
@@ -966,6 +981,21 @@ func (m *MockNetworkingInterface) ListRouterPorts(ctx context.Context, routerID 
 func (mr *MockNetworkingInterfaceMockRecorder) ListRouterPorts(ctx, routerID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListRouterPorts", reflect.TypeOf((*MockNetworkingInterface)(nil).ListRouterPorts), ctx, routerID)
+}
+
+// ListSecurityGroupPorts mocks base method.
+func (m *MockNetworkingInterface) ListSecurityGroupPorts(ctx context.Context, projectID, securityGroupID string) ([]ports.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSecurityGroupPorts", ctx, projectID, securityGroupID)
+	ret0, _ := ret[0].([]ports.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSecurityGroupPorts indicates an expected call of ListSecurityGroupPorts.
+func (mr *MockNetworkingInterfaceMockRecorder) ListSecurityGroupPorts(ctx, projectID, securityGroupID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSecurityGroupPorts", reflect.TypeOf((*MockNetworkingInterface)(nil).ListSecurityGroupPorts), ctx, projectID, securityGroupID)
 }
 
 // ListSecurityGroupRules mocks base method.

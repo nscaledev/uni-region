@@ -601,6 +601,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   issuing an update. An omitted desired address-pair MAC is compared as the
   port's current MAC, matching Neutron's materialized response. A converged
   port is reused without a `PUT`, while private-IP status projection still runs.
+- Neutron can commit a server port create long after the client timed out,
+  even after the Server was deleted, so a server port can outlive its Server
+  and block its security group's delete with `SecurityGroupInUse`. Security
+  group delete therefore first deletes the ports in the identity's project
+  that use the group, are named `server-<id>`, have no device, and have no
+  Server `<id>`. The port list is always filtered by project, because this
+  path uses the admin credential.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
 - Subnet updates always send both the DNS nameserver and host route lists, so
