@@ -634,8 +634,6 @@ func TestDeleteSecurityGroupNoopsWhenIdentityUnrealized(t *testing.T) {
 func TestDeleteSecurityGroupDeletesOrphanedServerPorts(t *testing.T) {
 	t.Parallel()
 
-	const project = "tenant"
-
 	securityGroup := securityGroupFixture()
 	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
 	liveServer := serverFixture()
@@ -666,14 +664,14 @@ func TestDeleteSecurityGroupDeletesOrphanedServerPorts(t *testing.T) {
 
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
-	networking.EXPECT().ListSecurityGroupPorts(t.Context(), project, openstackSecurityGroup.ID).Return(securityGroupPorts, nil)
+	networking.EXPECT().ListSecurityGroupPorts(t.Context(), openstack.TestProjectID, openstackSecurityGroup.ID).Return(securityGroupPorts, nil)
 	networking.EXPECT().DeletePort(t.Context(), "orphaned").Return(nil)
 	networking.EXPECT().DeletePort(t.Context(), "orphaned-already-deleted").Return(gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusNotFound})
 	networking.EXPECT().DeleteSecurityGroup(t.Context(), openstackSecurityGroup.ID).Return(nil)
 
 	p := openstack.NewTestProvider(getClient(t, []client.Object{liveServer}), regionFixture())
 
-	require.NoError(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, project))
+	require.NoError(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, openstack.TestProjectID))
 }
 
 // TestDeleteSecurityGroupRequiresProjectID verifies the orphan cleanup refuses
@@ -710,7 +708,7 @@ func TestDeleteSecurityGroupKeepsPortsWhenServerLookupFails(t *testing.T) {
 
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
-	networking.EXPECT().ListSecurityGroupPorts(t.Context(), "tenant", openstackSecurityGroup.ID).Return([]ports.Port{
+	networking.EXPECT().ListSecurityGroupPorts(t.Context(), openstack.TestProjectID, openstackSecurityGroup.ID).Return([]ports.Port{
 		{ID: "port", Name: "server-gone", SecurityGroups: []string{openstackSecurityGroup.ID}},
 	}, nil)
 
@@ -725,7 +723,7 @@ func TestDeleteSecurityGroupKeepsPortsWhenServerLookupFails(t *testing.T) {
 
 	p := openstack.NewTestProvider(kube, regionFixture())
 
-	require.ErrorIs(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, "tenant"), errServerLookupFailed)
+	require.ErrorIs(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, openstack.TestProjectID), errServerLookupFailed)
 }
 
 // TestDeleteSecurityGroupNoopsWhenAlreadyDeleted verifies nothing is listed or
@@ -743,7 +741,7 @@ func TestDeleteSecurityGroupNoopsWhenAlreadyDeleted(t *testing.T) {
 
 	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
 
-	require.NoError(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, "tenant"))
+	require.NoError(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, openstack.TestProjectID))
 }
 
 // TestDeleteServerNoopsWhenIdentityUnrealized verifies the delete is a clean
