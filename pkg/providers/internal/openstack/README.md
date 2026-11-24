@@ -612,8 +612,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - For the same reason a Server can have several ports named `server-<id>`.
   Port lookup returns every exact match in the identity's project, and fails
   rather than list without a project ID. Reconcile keeps one port, the one
-  attached to a device, else the one holding `Status.PrivateIP`, else the
-  oldest, and deletes the others with their floating IPs, never deleting an
+  attached to a device, else the oldest, choosing from what Neutron reports
+  rather than from status, and deletes the others with their floating IPs, never deleting an
   attached port. Server delete deletes every match, and keeps ownership for
   another pass after deleting any, until a pass finds none. A Server ID reused
   by a later Server is on the same network, so that Server cleans up ports the

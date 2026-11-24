@@ -2839,7 +2839,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		return port, nil
 	}
 
-	port, err := keepOneServerPort(ctx, client, server, serverPorts)
+	port, err := keepOneServerPort(ctx, client, serverPorts)
 	if err != nil {
 		return nil, err
 	}
@@ -2860,17 +2860,16 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 
 // keepOneServerPort returns the port the server keeps and deletes the others.
 // Several ports exist when a create committed after the client timed out. The
-// kept port is the one attached to a device, else the one holding the server's
-// recorded private IP, else the oldest, so the choice is stable across
-// reconciles and a late port never replaces one in use.
-func keepOneServerPort(ctx context.Context, networking NetworkingInterface, server *unikornv1.Server, serverPorts []ports.Port) (*ports.Port, error) {
+// kept port is the one attached to a device, else the oldest, so the choice is
+// stable across reconciles and a late port never replaces one in use.
+func keepOneServerPort(ctx context.Context, networking NetworkingInterface, serverPorts []ports.Port) (*ports.Port, error) {
 	if len(serverPorts) == 1 {
 		return &serverPorts[0], nil
 	}
 
 	log := log.FromContext(ctx)
 
-	keep := chooseServerPort(server, serverPorts)
+	keep := chooseServerPort(serverPorts)
 
 	for i := range serverPorts {
 		// An attached port is in use, so it is never deleted here.
@@ -2889,23 +2888,10 @@ func keepOneServerPort(ctx context.Context, networking NetworkingInterface, serv
 }
 
 // chooseServerPort returns the index of the port to keep: the one attached to
-// a device, else the one holding the server's recorded private IP, else the
-// oldest.
-func chooseServerPort(server *unikornv1.Server, serverPorts []ports.Port) int {
+// a device, else the oldest. It reads only what Neutron reports, never status.
+func chooseServerPort(serverPorts []ports.Port) int {
 	if i := slices.IndexFunc(serverPorts, func(x ports.Port) bool { return x.DeviceID != "" }); i >= 0 {
 		return i
-	}
-
-	if server.Status.PrivateIP != nil {
-		hasPrivateIP := func(x ports.Port) bool {
-			return slices.ContainsFunc(x.FixedIPs, func(ip ports.IP) bool {
-				return ip.IPAddress == *server.Status.PrivateIP
-			})
-		}
-
-		if i := slices.IndexFunc(serverPorts, hasPrivateIP); i >= 0 {
-			return i
-		}
 	}
 
 	oldest := 0

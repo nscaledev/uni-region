@@ -1968,11 +1968,11 @@ func TestReconcileServerPortConvergesDuplicates(t *testing.T) {
 			deleted:  []string{"late"},
 		},
 		{
-			name:      "KeepsThePortHoldingThePrivateIP",
+			name:      "IgnoresTheRecordedPrivateIP",
 			privateIP: ptr.To("10.0.0.2"),
-			ports:     []ports.Port{port("late", "10.0.0.1", "", older), port("recorded", "10.0.0.2", "", newer)},
-			wantKept:  "recorded",
-			deleted:   []string{"late"},
+			ports:     []ports.Port{port("first", "10.0.0.1", "", older), port("recorded", "10.0.0.2", "", newer)},
+			wantKept:  "first",
+			deleted:   []string{"recorded"},
 		},
 		{
 			name:     "KeepsTheOldestPort",
