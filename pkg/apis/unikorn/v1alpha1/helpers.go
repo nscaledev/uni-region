@@ -178,8 +178,21 @@ func (c *Volume) ResourceLabels() (labels.Set, error) {
 const ConditionUserDataRecorded unikornv1core.ConditionType = "UserDataRecorded"
 
 // SetUserDataRecorded marks knowledge of the provider's durable user-data record.
-func (c *Server) SetUserDataRecorded() {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, ConditionUserDataRecorded, corev1.ConditionTrue, "Recorded", "the provider holds the user-data record")
+// When current, the record holds the spec's user data, and the condition is
+// stamped with the spec generation; otherwise the stamp is zero.
+func (c *Server) SetUserDataRecorded(current bool) {
+	var observed int64
+	if current {
+		observed = c.Generation
+	}
+
+	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
+		Type:               string(ConditionUserDataRecorded),
+		Status:             metav1.ConditionTrue,
+		ObservedGeneration: observed,
+		Reason:             "Recorded",
+		Message:            "the provider holds the user-data record",
+	})
 }
 
 // UserDataRecorded reports whether the provider's user-data record is known.

@@ -552,7 +552,7 @@ func TestUserDataBaselineRefreshesKeptServer(t *testing.T) {
 			t.Parallel()
 
 			// An error response does not prove Nova failed to commit the write.
-			nova := newListNova(t, listBody("server-1"), `{"servers":[{"id":"nova-1","name":"server-1","status":"ACTIVE","metadata":{"region:system:user_data_hash":"digest"}}]}`)
+			nova := newListNova(t, listBody("server-1"), `{"servers":[{"id":"nova-1","name":"server-1","status":"ACTIVE","metadata":{"region:system:user_data_baseline_hash":"digest/7"}}]}`)
 			nova.metadataStatus = status
 			nova.release()
 
@@ -568,7 +568,7 @@ func TestUserDataBaselineRefreshesKeptServer(t *testing.T) {
 			require.EqualValues(t, 1, nova.lists.Load(), "the pre-write row must be cached")
 
 			err := client.UpdateServerMetadata(t.Context(), "nova-1", map[string]string{
-				"region:system:user_data_hash": "digest",
+				"region:system:user_data_baseline_hash": "digest/7",
 			})
 			if status == http.StatusOK {
 				require.NoError(t, err)
@@ -578,7 +578,7 @@ func TestUserDataBaselineRefreshesKeptServer(t *testing.T) {
 
 			after, err := client.GetServer(t.Context(), server)
 			require.NoError(t, err)
-			require.Equal(t, "digest", after.Metadata["region:system:user_data_hash"])
+			require.Equal(t, "digest/7", after.Metadata["region:system:user_data_baseline_hash"])
 			require.EqualValues(t, 2, nova.lists.Load())
 		})
 	}

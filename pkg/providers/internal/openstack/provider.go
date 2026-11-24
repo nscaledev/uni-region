@@ -3084,9 +3084,16 @@ func markServerRebuildAccepted(server *unikornv1.Server) {
 const serverUserDataHashMetadataKey = "region:system:user_data_hash"
 
 // serverUserDataGenerationMetadataKey holds the Server generation written with
-// serverUserDataHashMetadataKey on create. Generations only
+// serverUserDataHashMetadataKey on create and every rebuild. Generations only
 // increase, so unlike the digest it never returns to an earlier value.
 const serverUserDataGenerationMetadataKey = "region:system:user_data_generation"
+
+// serverUserDataBaselineMetadataKey holds a record written outside a rebuild,
+// as "<digest>/<generation>": the digest, then the value of
+// serverUserDataGenerationMetadataKey it supersedes, empty where there is
+// none. Nova's metadata write is unconditional, so a write that commits after
+// a rebuild names an earlier generation and is ignored.
+const serverUserDataBaselineMetadataKey = "region:system:user_data_baseline_hash"
 
 // setServerUserDataRecord adds the record Nova accepts with a create or a
 // rebuild.
@@ -3095,16 +3102,30 @@ func setServerUserDataRecord(metadata map[string]string, server *unikornv1.Serve
 	metadata[serverUserDataGenerationMetadataKey] = strconv.FormatInt(server.Generation, 10)
 }
 
-// markUserDataRecorded reports Nova's durable record in Server status.
-func markUserDataRecorded(server *unikornv1.Server) {
-	server.SetUserDataRecorded()
+// serverUserDataBaseline is the baseline value recording digest over the
+// server's current record.
+func serverUserDataBaseline(metadata map[string]string, digest string) string {
+	return digest + "/" + metadata[serverUserDataGenerationMetadataKey]
+}
+
+// serverUserDataRecord returns the customer user-data digest Nova last
+// accepted and whether there is one.
+func serverUserDataRecord(metadata map[string]string) (string, bool) {
+	if baseline, ok := metadata[serverUserDataBaselineMetadataKey]; ok {
+		if digest, over, ok := strings.Cut(baseline, "/"); ok && over == metadata[serverUserDataGenerationMetadataKey] {
+			return digest, true
+		}
+	}
+
+	record, recorded := metadata[serverUserDataHashMetadataKey]
+
+	return record, recorded
 }
 
 // serverMetadataWritable reports whether to write the record now. The vm
-// states are those Nova's update_instance_metadata accepts. Nova does not
-// check the task state; waiting for a running task to finish is our choice.
+// states are those Nova's update_instance_metadata accepts.
 func serverMetadataWritable(openstackServer *servers.Server) bool {
-	if serverTaskActive(openstackServer) {
+	if openstackServer.Locked != nil && *openstackServer.Locked {
 		return false
 	}
 
@@ -3116,16 +3137,18 @@ func serverMetadataWritable(openstackServer *servers.Server) bool {
 	return false
 }
 
-// recordLegacyUserData writes the record without reimaging the server, for a
-// server created before the record existed, or whose user data changed while
-// user-data rebuilds are off. It reports whether Nova now holds the record.
-// A refused write yields for retry.
+// recordLegacyUserData writes a baseline record without reimaging the server,
+// for a server created before the record existed, or whose user data changed
+// while user-data rebuilds are off. It reports whether Nova now holds the
+// record. A refused write yields for retry.
 func recordLegacyUserData(ctx context.Context, client ServerInterface, openstackServer *servers.Server, desiredUserDataHash string) (bool, error) {
 	if !serverMetadataWritable(openstackServer) {
 		return false, nil
 	}
 
-	if err := client.UpdateServerMetadata(ctx, openstackServer.ID, map[string]string{serverUserDataHashMetadataKey: desiredUserDataHash}); err != nil {
+	if err := client.UpdateServerMetadata(ctx, openstackServer.ID, map[string]string{
+		serverUserDataBaselineMetadataKey: serverUserDataBaseline(openstackServer.Metadata, desiredUserDataHash),
+	}); err != nil {
 		if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
 			return false, provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
 				"waiting for the provider to accept the user-data record")
@@ -3139,14 +3162,15 @@ func recordLegacyUserData(ctx context.Context, client ServerInterface, openstack
 
 // serverRebuildMetadata records the customer user-data intent. Sending
 // metadata makes Nova replace the whole set, so the existing metadata is
-// resent with it.
-func serverRebuildMetadata(openstackServer *servers.Server, desiredUserDataHash string) map[string]string {
+// resent with it, less the baseline the new record supersedes.
+func serverRebuildMetadata(server *unikornv1.Server, openstackServer *servers.Server, desiredUserDataHash string) map[string]string {
 	metadata := maps.Clone(openstackServer.Metadata)
 	if metadata == nil {
 		metadata = map[string]string{}
 	}
 
-	metadata[serverUserDataHashMetadataKey] = desiredUserDataHash
+	delete(metadata, serverUserDataBaselineMetadataKey)
+	setServerUserDataRecord(metadata, server, desiredUserDataHash)
 
 	return metadata
 }
@@ -3218,7 +3242,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 		return err
 	}
 
-	markUserDataRecorded(server)
+	server.SetUserDataRecorded(true)
 	markServerRebuildAccepted(server)
 
 	// An accepted rebuild is in flight, so completing here would report the server
@@ -3229,7 +3253,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 // reconcileServerImage decides from the provider read used for this pass.
 // With rebuilds disabled, changed user data is recorded without applying it.
 //
-//nolint:cyclop // One branch per row of the pass order above.
+//nolint:cyclop // One branch per decision row in the package README.
 func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredUserDataHash string, rebuildOnUserData bool) error {
 	// R1: the spec names no image. Image is in the CRD's required list, so this
 	// is dead code in practice, but completing would report a server provisioned
@@ -3253,9 +3277,9 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 			"the provider cannot report the server's image, so the desired image cannot be verified")
 	}
 
-	recordedUserDataHash, recorded := openstackServer.Metadata[serverUserDataHashMetadataKey]
+	recordedUserDataHash, recorded := serverUserDataRecord(openstackServer.Metadata)
 	if recorded {
-		markUserDataRecorded(server)
+		server.SetUserDataRecorded(recordedUserDataHash == desiredUserDataHash)
 	}
 
 	// R3: accepted but unfinished.
@@ -3277,7 +3301,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		}
 
 		if written {
-			markUserDataRecorded(server)
+			server.SetUserDataRecorded(true)
 		}
 	}
 
@@ -3305,7 +3329,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 			ImageID:     desiredImageID,
 			UserData:    server.Spec.UserData,
 			UseUserData: rebuildOnUserData && recordedUserDataHash != desiredUserDataHash,
-			Metadata:    serverRebuildMetadata(openstackServer, desiredUserDataHash),
+			Metadata:    serverRebuildMetadata(server, openstackServer, desiredUserDataHash),
 		})
 	}
 
@@ -3402,7 +3426,7 @@ func (p *Provider) reconcileServer(ctx context.Context, client ServerInterface, 
 		return err
 	}
 
-	markUserDataRecorded(server)
+	server.SetUserDataRecorded(true)
 
 	setServerHealthStatus(server, openstackServer)
 	// No Ironic lookup at create time — the next pass's projection

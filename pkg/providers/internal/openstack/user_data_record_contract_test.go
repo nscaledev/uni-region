@@ -109,6 +109,7 @@ func TestUserDataRecordSurvivesStatusWriteFailure(t *testing.T) {
 			server.Name = contractServerID
 			server.Namespace = contractNamespace
 			server.Labels = contractServerLabels()
+			server.Generation = 3
 			server.Spec.UserData = []byte("#cloud-config\nusers: []\n")
 			nova := withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), "")
 
@@ -117,15 +118,21 @@ func TestUserDataRecordSurvivesStatusWriteFailure(t *testing.T) {
 			if rebuild {
 				nova = withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), "old")
 
-				compute.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptionsFor(server.Spec.UserData)).
+				options := rebuildOptionsFor(server.Spec.UserData)
+				options.Metadata["region:system:user_data_generation"] = "3"
+
+				compute.EXPECT().RebuildServer(gomock.Any(), "server-1", options).
 					DoAndReturn(func(_ context.Context, _ string, options openstack.ServerRebuildOptions) (*servers.Server, error) {
-						nova = withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), options.Metadata["region:system:user_data_hash"])
+						nova = novaRebuildServer("ACTIVE", rebuildNewImageID)
+						nova.Metadata = options.Metadata
 
 						return nova, nil
 					})
 			} else {
+				nova.TaskState = taskStateRebooting
+
 				compute.EXPECT().UpdateServerMetadata(gomock.Any(), "server-1", map[string]string{
-					"region:system:user_data_hash": "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2",
+					"region:system:user_data_baseline_hash": "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2/",
 				}).DoAndReturn(func(_ context.Context, _ string, metadata map[string]string) error {
 					nova.Metadata = metadata
 
@@ -161,6 +168,13 @@ func TestUserDataRecordSurvivesStatusWriteFailure(t *testing.T) {
 					},
 				}).Build()
 			key := client.ObjectKeyFromObject(server)
+			record := map[bool]map[string]string{
+				false: {"region:system:user_data_baseline_hash": "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2/"},
+				true: {
+					"region:system:user_data_hash":       "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2",
+					"region:system:user_data_generation": "3",
+				},
+			}[rebuild]
 			ctx := coreclient.NewContext(t.Context(), cli)
 
 			first := serverprovisioner.New(nil, providers)
@@ -177,7 +191,7 @@ func TestUserDataRecordSurvivesStatusWriteFailure(t *testing.T) {
 			require.True(t, ok)
 			require.Equal(t, &privateIP, firstServer.Status.PrivateIP)
 			require.True(t, kerrors.IsConflict(cli.Status().Update(ctx, first.Object())))
-			require.Equal(t, "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2", nova.Metadata["region:system:user_data_hash"])
+			require.Subset(t, nova.Metadata, record)
 
 			stored := &regionv1.Server{}
 			require.NoError(t, cli.Get(ctx, key, stored))
@@ -192,8 +206,10 @@ func TestUserDataRecordSurvivesStatusWriteFailure(t *testing.T) {
 			condition := meta.FindStatusCondition(stored.Status.Conditions, "UserDataRecorded")
 			require.NotNil(t, condition)
 			require.Equal(t, metav1.ConditionTrue, condition.Status)
+			require.Equal(t, int64(3), stored.Generation)
+			require.Equal(t, int64(3), condition.ObservedGeneration)
 			require.Equal(t, &privateIP, stored.Status.PrivateIP)
-			require.Equal(t, "a8cc7f5ccfcf822d62581acaa581743e4396c6487b0048fddbdc0233d2892fd2", nova.Metadata["region:system:user_data_hash"])
+			require.Subset(t, nova.Metadata, record)
 			require.Equal(t, 2, writes)
 			requireNoImageRowStamp(t, stored)
 		})

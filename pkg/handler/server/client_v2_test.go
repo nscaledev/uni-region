@@ -361,7 +361,6 @@ func testServerWithSSHCertificateAuthority() *regionv1.Server {
 			SSHCertificateAuthorityID: ptr.To(caID),
 		},
 	}
-	server.SetUserDataRecorded()
 
 	return server
 }
@@ -2506,7 +2505,6 @@ func testServerV2(serverID string) *regionv1.Server {
 			Networks: []regionv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(srvNetworkID)}},
 		},
 	}
-	server.SetUserDataRecorded()
 
 	return server
 }

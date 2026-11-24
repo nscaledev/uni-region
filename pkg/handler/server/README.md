@@ -213,8 +213,7 @@ related dependencies rather than from nested path scope.
   names and are not covered by it; deduplication applies only to resources
   created after deployment.
 - Rebuild submits at most one Nova-accepted action per target image and customer
-  user-data, except in one unguarded race for servers created before the
-  user-data record (see the provider's
+  user-data (see the provider's
   [user-data record](../../providers/internal/openstack/README.md#user-data-record)).
   A rebuild that fails leaves the server in `ERROR`; there is no
   automatic retry. Available remedies depend on the user-data record; see the

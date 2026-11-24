@@ -2259,7 +2259,7 @@ func TestReconcileVolume(t *testing.T) {
 		})
 	}
 
-	// The monitor cleared the size for a volume whose backing storage has gone;
+	// Reconciliation cleared the size for a volume whose backing storage has gone;
 	// the pass must too, or a stale size outlives the volume it described.
 	t.Run("ItClearsTheSizeWhenMissing", func(t *testing.T) {
 		t.Parallel()
