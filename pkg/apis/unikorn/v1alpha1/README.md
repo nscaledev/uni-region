@@ -241,7 +241,10 @@ stored objects rely on for linkage, migration, and operational coordination.
   Provider-specific controllers resolve this path against their backing storage
   hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
-  authoritative for live state. A rebuild failure is not attributable: an
+  authoritative for live state. The customer user-data digest is recorded in Nova.
+  `UserDataRecorded=True` reports knowledge of that record; see the
+  [user-data record](../../../providers/internal/openstack/README.md#user-data-record).
+  A rebuild failure is not attributable: an
   unrelated host failure on the desired image is indistinguishable from a failed
   rebuild, so the provider reports the error state without naming a cause.
   Recovery is another image or a replacement server, never data restoration.

@@ -61,7 +61,8 @@ type listNova struct {
 
 	// mutations counts requests that change a server: anything but a GET under
 	// /servers.
-	mutations atomic.Int64
+	mutations      atomic.Int64
+	metadataStatus int
 
 	// With holdMutations, the next mutation closes mutating and waits for
 	// releaseMutations.
@@ -75,12 +76,13 @@ func newListNova(t *testing.T, first, later string) *listNova {
 
 	nova := &listNova{
 		// Unique per run, because the list registry is process wide.
-		project: fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano()),
-		first:   first,
-		later:   later,
-		entered: make(chan struct{}),
-		hold:    make(chan struct{}),
-		another: make(chan struct{}),
+		project:        fmt.Sprintf("%s-%d", t.Name(), time.Now().UnixNano()),
+		first:          first,
+		later:          later,
+		entered:        make(chan struct{}),
+		hold:           make(chan struct{}),
+		another:        make(chan struct{}),
+		metadataStatus: http.StatusNotFound,
 	}
 
 	mux := http.NewServeMux()
@@ -117,6 +119,12 @@ func newListNova(t *testing.T, first, later string) *listNova {
 
 	mux.HandleFunc("/compute/v2.1/servers/nova-1/action", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
+	})
+
+	mux.HandleFunc("/compute/v2.1/servers/nova-1/metadata", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(nova.metadataStatus)
+		_, _ = fmt.Fprint(w, `{"metadata":{}}`)
 	})
 
 	nova.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -536,6 +544,46 @@ func TestGetServerRunsOneListPerProject(t *testing.T) {
 	require.EqualValues(t, 2, nova.lists.Load(), "the reads behind the first list must share one list")
 }
 
+func TestUserDataBaselineRefreshesKeptServer(t *testing.T) {
+	t.Parallel()
+
+	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			t.Parallel()
+
+			// An error response does not prove Nova failed to commit the write.
+			nova := newListNova(t, listBody("server-1"), `{"servers":[{"id":"nova-1","name":"server-1","status":"ACTIVE","metadata":{"region:system:user_data_hash":"digest"}}]}`)
+			nova.metadataStatus = status
+			nova.release()
+
+			client := nova.client(t, "user")
+			server := namedServer("server-1")
+
+			for range 2 {
+				before, err := client.GetServer(t.Context(), server)
+				require.NoError(t, err)
+				require.Empty(t, before.Metadata)
+			}
+
+			require.EqualValues(t, 1, nova.lists.Load(), "the pre-write row must be cached")
+
+			err := client.UpdateServerMetadata(t.Context(), "nova-1", map[string]string{
+				"region:system:user_data_hash": "digest",
+			})
+			if status == http.StatusOK {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+
+			after, err := client.GetServer(t.Context(), server)
+			require.NoError(t, err)
+			require.Equal(t, "digest", after.Metadata["region:system:user_data_hash"])
+			require.EqualValues(t, 2, nova.lists.Load())
+		})
+	}
+}
+
 // TestServerMutationRetiresOnlyOnceReturned pins the ordering the freshness rule
 // rests on, for every mutation that retires: lists retire after the request has
 // returned. Retired before it, a list could open after the line while the
@@ -589,6 +637,7 @@ func TestServerMutationRetiresOnlyOnceReturned(t *testing.T) {
 var listMutations = []string{
 	"CreateServer", "DeleteServer", "RebootServer", "RebuildServer", "StartServer", "StopServer",
 	"CreateImageFromServer", "CreateVolumeAttachment", "DeleteVolumeAttachment",
+	"UpdateServerMetadata",
 }
 
 // clientMethodCall prepares a call of the named client method with arguments
@@ -685,6 +734,8 @@ func mutationArgument(t *testing.T, kind reflect.Type, server *unikornv1.Server)
 		return reflect.ValueOf(server)
 	case reflect.TypeFor[*servers.CreateImageOpts]():
 		return reflect.ValueOf(&servers.CreateImageOpts{Name: "image"})
+	case reflect.TypeFor[map[string]string]():
+		return reflect.ValueOf(map[string]string{"region:system:user_data_hash": "digest"})
 	}
 
 	if kind.Kind() == reflect.Pointer {
