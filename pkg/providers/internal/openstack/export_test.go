@@ -445,3 +445,7 @@ var BuildMonitorCreateOpts = buildMonitorCreateOpts
 
 //nolint:gochecknoglobals
 var BuildMemberOpts = buildMemberOpts
+
+func DeleteSecurityGroupWithClient(ctx context.Context, client NetworkingInterface, securityGroup *unikornv1.SecurityGroup) error {
+	return deleteSecurityGroup(ctx, client, securityGroup)
+}
