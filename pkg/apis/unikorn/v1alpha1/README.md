@@ -241,13 +241,16 @@ stored objects rely on for linkage, migration, and operational coordination.
   Provider-specific controllers resolve this path against their backing storage
   hierarchy in a later implementation.
 - `Server.Spec.Image` is desired state; Nova's observed image and status remain
-  authoritative for live state. The customer user-data digest is recorded in Nova.
-  `UserDataRecorded=True` reports knowledge of that record; see the
+  authoritative for live state.
+  `Server.Spec.UserData` changes are applied by rebuild too, where enabled. The
+  accepted value is recorded in Nova. Server status condition `UserDataRecorded=True`
+  reports knowledge of that record for the rollout check; see the OpenStack
   [user-data record](../../../providers/internal/openstack/README.md#user-data-record).
   A rebuild failure is not attributable: an
   unrelated host failure on the desired image is indistinguishable from a failed
   rebuild, so the provider reports the error state without naming a cause.
-  Recovery is another image or a replacement server, never data restoration.
+  See the provider's [ERROR recovery guidance](../../../providers/internal/openstack/README.md#user-data-record)
+  for the remedies available with and without a user-data record.
 - `Server` status has one writer, the reconciler. Each pass reads the provider
   once and projects that read onto `Active`, `Healthy`, the MAC and the latches.
   **An observation never authorizes an action against the provider.** Actions

@@ -117,7 +117,11 @@ var CreateImageMetadata = createImageMetadata
 var ServerForCreate = serverForCreate
 
 func ReconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) error {
-	return reconcileServerImage(ctx, client, server, openstackServer, types.UserDataHash(server.Spec.UserData))
+	return reconcileServerImage(ctx, client, server, openstackServer, types.UserDataHash(server.Spec.UserData), true)
+}
+
+func ReconcileServerImageWithoutUserDataRebuild(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server) error {
+	return reconcileServerImage(ctx, client, server, openstackServer, types.UserDataHash(server.Spec.UserData), false)
 }
 
 //nolint:gochecknoglobals

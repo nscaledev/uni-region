@@ -3116,8 +3116,9 @@ func serverMetadataWritable(openstackServer *servers.Server) bool {
 	return false
 }
 
-// recordLegacyUserData writes the record onto a server created before it
-// existed, without reimaging it. It reports whether Nova now holds the record.
+// recordLegacyUserData writes the record without reimaging the server, for a
+// server created before the record existed, or whose user data changed while
+// user-data rebuilds are off. It reports whether Nova now holds the record.
 // A refused write yields for retry.
 func recordLegacyUserData(ctx context.Context, client ServerInterface, openstackServer *servers.Server, desiredUserDataHash string) (bool, error) {
 	if !serverMetadataWritable(openstackServer) {
@@ -3136,7 +3137,7 @@ func recordLegacyUserData(ctx context.Context, client ServerInterface, openstack
 	return true, nil
 }
 
-// serverRebuildMetadata records the customer user-data digest. Sending
+// serverRebuildMetadata records the customer user-data intent. Sending
 // metadata makes Nova replace the whole set, so the existing metadata is
 // resent with it.
 func serverRebuildMetadata(openstackServer *servers.Server, desiredUserDataHash string) map[string]string {
@@ -3148,6 +3149,10 @@ func serverRebuildMetadata(openstackServer *servers.Server, desiredUserDataHash 
 	metadata[serverUserDataHashMetadataKey] = desiredUserDataHash
 
 	return metadata
+}
+
+func serverRequiresRebuild(currentImageID, desiredImageID regionids.ImageID, recordedUserDataHash, desiredUserDataHash string) bool {
+	return currentImageID != desiredImageID || recordedUserDataHash != desiredUserDataHash
 }
 
 // novaRebuildImageNotFoundMessage is the fixed explanation Nova's rebuild
@@ -3200,7 +3205,7 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 				"server", server.Name, "novaServerID", openstackServer.ID)
 
 			return provisioners.Recheck(unikornv1core.ConditionReasonProvisioning,
-				"another operation is in progress on the server; the requested image will be applied once it completes")
+				"another operation is in progress on the server; the requested changes will be applied once it completes")
 		}
 
 		log.FromContext(ctx).Info("the provider rejected the server rebuild",
@@ -3222,10 +3227,10 @@ func submitServerRebuild(ctx context.Context, client ServerInterface, server *un
 }
 
 // reconcileServerImage decides from the provider read used for this pass.
-// A converged legacy server gets a user-data record when writable.
+// With rebuilds disabled, changed user data is recorded without applying it.
 //
 //nolint:cyclop // One branch per row of the pass order above.
-func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredUserDataHash string) error {
+func reconcileServerImage(ctx context.Context, client ServerInterface, server *unikornv1.Server, openstackServer *servers.Server, desiredUserDataHash string, rebuildOnUserData bool) error {
 	// R1: the spec names no image. Image is in the CRD's required list, so this
 	// is dead code in practice, but completing would report a server provisioned
 	// onto no image. The only remedy is a spec edit, which is the park contract.
@@ -3239,8 +3244,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 	currentImageID, refReadable := openstackServerImageID(openstackServer)
 
 	// R2: every server this provider creates is image-booted, so an unreadable ref
-	// is abnormal and must not be reported as success. The park is re-derived per
-	// pass, so a later readable ref un-parks it without any spec change.
+	// is abnormal and must not be reported as success. Polling checks it again.
 	if !refReadable {
 		log.FromContext(ctx).Info("cannot read the server image from the provider, image convergence cannot be checked",
 			"server", server.Name, "novaServerID", openstackServer.ID)
@@ -3249,7 +3253,7 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 			"the provider cannot report the server's image, so the desired image cannot be verified")
 	}
 
-	_, recorded := openstackServer.Metadata[serverUserDataHashMetadataKey]
+	recordedUserDataHash, recorded := openstackServer.Metadata[serverUserDataHashMetadataKey]
 	if recorded {
 		markUserDataRecorded(server)
 	}
@@ -3259,12 +3263,14 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		markServerRebuildAccepted(server)
 
 		return provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
-			"the provider is rebuilding the server onto the requested image")
+			"the provider is applying the requested changes")
 	}
 
 	// A server created before the record is treated as converged on user data.
 	// On a drifted image the rebuild writes the record instead.
-	if !recorded && currentImageID == desiredImageID {
+	rebaseline := !recorded || (!rebuildOnUserData && recordedUserDataHash != desiredUserDataHash)
+
+	if rebaseline && currentImageID == desiredImageID {
 		written, err := recordLegacyUserData(ctx, client, openstackServer, desiredUserDataHash)
 		if err != nil {
 			return err
@@ -3275,34 +3281,44 @@ func reconcileServerImage(ctx context.Context, client ServerInterface, server *u
 		}
 	}
 
-	if currentImageID != desiredImageID {
+	if rebaseline {
+		recordedUserDataHash = desiredUserDataHash
+	}
+
+	if serverRequiresRebuild(currentImageID, desiredImageID, recordedUserDataHash, desiredUserDataHash) {
 		if openstackServer.LaunchedAt.IsZero() {
-			log.FromContext(ctx).Info("image change deferred until first launch",
-				"server", server.Name, "novaServerID", openstackServer.ID)
+			if currentImageID != desiredImageID {
+				log.FromContext(ctx).Info("image change deferred until first launch",
+					"server", server.Name, "novaServerID", openstackServer.ID)
+			}
 
 			return provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
-				"the requested image differs from the running one; it will be applied once the server has booted")
+				"the requested server changes will be applied once the server has booted")
 		}
 
 		if serverTaskActive(openstackServer) {
-			log.FromContext(ctx).Info("image change deferred while another operation holds the server",
-				"server", server.Name, "novaServerID", openstackServer.ID,
-				"novaStatus", openstackServer.Status, "novaTaskState", openstackServer.TaskState)
-
 			return provisioners.Yield(unikornv1core.ConditionReasonProvisioning,
-				"another operation is in progress on the server; the requested image will be applied once it completes")
+				"another operation is in progress on the server; the requested changes will be applied once it completes")
 		}
 
 		return submitServerRebuild(ctx, client, server, openstackServer, ServerRebuildOptions{
-			ImageID:  desiredImageID,
-			Metadata: serverRebuildMetadata(openstackServer, desiredUserDataHash),
+			ImageID:     desiredImageID,
+			UserData:    server.Spec.UserData,
+			UseUserData: rebuildOnUserData && recordedUserDataHash != desiredUserDataHash,
+			Metadata:    serverRebuildMetadata(openstackServer, desiredUserDataHash),
 		})
 	}
 
 	// R3′: a launched server in ERROR is checked again at the poll slot.
 	if openstackServer.Status == novaStatusError && !openstackServer.LaunchedAt.IsZero() {
+		message := "the provider reports the server in an error state; change the image or replace the server"
+		// Without a record, a user-data change is baselined rather than applied.
+		if rebuildOnUserData && server.UserDataRecorded() {
+			message = "the provider reports the server in an error state; change the image or user data, or replace the server"
+		}
+
 		return provisioners.Recheck(unikornv1core.ConditionReasonErrored,
-			"the provider reports the server in an error state")
+			message)
 	}
 
 	// R3″: converged. Other tasks and non-writable states are observed on subsequent polls.
@@ -3461,7 +3477,7 @@ func (p *Provider) createServer(ctx context.Context, networking NetworkingInterf
 	if openstackServer != nil {
 		desiredUserDataHash := types.UserDataHash(server.Spec.UserData)
 		serverForRebuild := serverForCreate(server, options)
-		err := reconcileServerImage(ctx, compute, serverForRebuild, openstackServer, desiredUserDataHash)
+		err := reconcileServerImage(ctx, compute, serverForRebuild, openstackServer, desiredUserDataHash, options != nil && options.RebuildOnUserData)
 
 		if serverForRebuild != server {
 			server.Status = *serverForRebuild.Status.DeepCopy()

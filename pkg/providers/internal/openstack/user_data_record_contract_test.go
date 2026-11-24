@@ -115,7 +115,7 @@ func TestUserDataRecordSurvivesStatusWriteFailure(t *testing.T) {
 			compute := mock.NewMockServerInterface(ctrl)
 
 			if rebuild {
-				nova = withUserDataHash(novaRebuildServer("ACTIVE", rebuildOldImageID), "old")
+				nova = withUserDataHash(novaRebuildServer("ACTIVE", rebuildNewImageID), "old")
 
 				compute.EXPECT().RebuildServer(gomock.Any(), "server-1", rebuildOptionsFor(server.Spec.UserData)).
 					DoAndReturn(func(_ context.Context, _ string, options openstack.ServerRebuildOptions) (*servers.Server, error) {

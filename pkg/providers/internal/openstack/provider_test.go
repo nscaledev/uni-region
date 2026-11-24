@@ -2661,7 +2661,7 @@ func TestRebuildCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
 	openstackFloatingIP := openstackFloatingIPFixture(openstackServerPort)
 
-	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n")}
+	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n"), RebuildOnUserData: true}
 
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
@@ -2669,6 +2669,7 @@ func TestRebuildCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 	rebuild := rebuildOptionsFor(options.UserData)
+	rebuild.UseUserData = false
 	rebuild.Metadata = rebuildMetadata(server.Spec.UserData)
 
 	compute := mock.NewMockServerObservationInterface(c)

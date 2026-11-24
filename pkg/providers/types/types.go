@@ -309,6 +309,9 @@ type ServerCreateResult struct {
 type ServerCreateOptions struct {
 	// UserData overrides the user data passed to the provider when specified.
 	UserData []byte
+	// RebuildOnUserData makes a user-data change rebuild the server. When
+	// false, a changed user data is recorded without being applied.
+	RebuildOnUserData bool
 }
 
 // ServerVolumeAttachment is the provider-neutral result of attaching a volume

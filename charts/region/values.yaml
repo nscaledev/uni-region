@@ -200,6 +200,10 @@ serverController:
   image: ~
   # An array of extra flags to append to the server controller configuration.
   extraFlags: ~
+  # Rebuild servers when their user data changes. Turn on only once every
+  # Server's current user data is recorded, as checked in the OpenStack
+  # provider README's User-Data Record section.
+  userDataRebuild: false
   # Allows resource limits to be set.
   resources:
     limits:

@@ -67,7 +67,8 @@ func DetectContentTypeForTest(userData []byte) string {
 
 func ServerCreateOptionsForTest(ctx context.Context, server *unikornv1.Server, cli client.Client) (*types.ServerCreateOptions, error) {
 	provisioner := &Provisioner{
-		server: server,
+		server:  server,
+		options: NewOptions(),
 	}
 
 	return provisioner.serverCreateOptions(ctx, cli)

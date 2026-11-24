@@ -35,7 +35,7 @@ Distinctive behaviour:
 
 Create recovery and rebuild recovery deliberately use different state:
 
-| Initial create failure | Image rebuild failure |
+| Initial create failure | Image or user-data rebuild failure |
 |---|---|
 | Server never launched | Server previously launched |
 | Delete/recreate, bounded by the existing flag | Nothing to recover |
@@ -105,12 +105,14 @@ it, and returning one would show a booted server as errored for a pass.
 
 After boot the CA may therefore be deleted, as it could between passes before
 servers polled. Deleting it does not revoke it: the booted guest keeps the key it
-was given, and a rebuild keeps the stored user data, CA part included, because
-it leaves the user data as Nova holds it. A booted server whose CA is gone
+was given, and an image-only rebuild keeps the stored user data, CA part included
+(see the provider's [payload policy](../../../providers/internal/openstack/README.md#user-data-record)).
+A booted server whose CA is gone
 builds its create options without the CA part instead of failing, so it is not
 `Errored` for ever; a server Nova lost is then re-created without CA logins,
-because its user deleted the CA. The CA is still read on every pass, from the
-informer cache, so a re-create picks it up while it exists. Before boot a
+because its user deleted the CA. A user-data change after that deletion also
+rebuilds without the CA part, as a re-create does. The CA is still read on every
+pass, from the informer cache, so a re-create picks it up while it exists. Before boot a
 missing CA stays an error.
 
 Deprovisioning retains consumed-resource references and the Server's finalizer
