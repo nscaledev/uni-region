@@ -69,12 +69,14 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 var (
 	errNeutronConflict    = errors.New("409 Conflict: port still attached")
 	errNeutronServerError = errors.New("500 Internal Server Error")
 	errNovaListFailed     = errors.New("503 Service Unavailable")
+	errServerLookupFailed = errors.New("apiserver unavailable")
 )
 
 func mustConvertImage(t *testing.T, in *images.Image) *types.Image {
@@ -691,6 +693,38 @@ func TestDeleteSecurityGroupRequiresProjectID(t *testing.T) {
 	p := openstack.NewTestProvider(getClient(t, nil), regionFixture())
 
 	require.ErrorIs(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, ""), coreerrors.ErrConsistency)
+}
+
+// TestDeleteSecurityGroupKeepsPortsWhenServerLookupFails verifies a failed
+// Server lookup is returned rather than treated as an orphan, so no port is
+// deleted on a guess.
+func TestDeleteSecurityGroupKeepsPortsWhenServerLookupFails(t *testing.T) {
+	t.Parallel()
+
+	securityGroup := securityGroupFixture()
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
+	networking.EXPECT().ListSecurityGroupPorts(t.Context(), "tenant", openstackSecurityGroup.ID).Return([]ports.Port{
+		{ID: "port", Name: "server-gone", SecurityGroups: []string{openstackSecurityGroup.ID}},
+	}, nil)
+
+	base, ok := getClient(t, nil).(client.WithWatch)
+	require.True(t, ok)
+
+	kube := interceptor.NewClient(base, interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return errServerLookupFailed
+		},
+	})
+
+	p := openstack.NewTestProvider(kube, regionFixture())
+
+	require.ErrorIs(t, openstack.DeleteSecurityGroupWithClient(t.Context(), p, networking, securityGroup, "tenant"), errServerLookupFailed)
 }
 
 // TestDeleteSecurityGroupNoopsWhenAlreadyDeleted verifies nothing is listed or
