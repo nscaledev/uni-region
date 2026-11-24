@@ -48,6 +48,7 @@ type TestConfig struct {
 	ServerFlavorID          string
 	ServerImageID           string
 	ServerRebuildImageID    string
+	ServerUserDataRebuild   bool
 	ServerInfrastructureRef string
 	FileStorageSnapshotDir  string
 	RegionNamespace         string
@@ -66,6 +67,7 @@ func LoadTestConfig() (*TestConfig, error) {
 		"REQUEST_TIMEOUT":                "60s",
 		"TEST_TIMEOUT":                   "20m",
 		"SKIP_INTEGRATION":               false,
+		"TEST_SERVER_USER_DATA_REBUILD":  false,
 		"DEBUG_LOGGING":                  false,
 		"LOG_REQUESTS":                   false,
 		"LOG_RESPONSES":                  false,
@@ -122,6 +124,7 @@ func LoadTestConfig() (*TestConfig, error) {
 		ServerFlavorID:          v.GetString("TEST_SERVER_FLAVOR_ID"),
 		ServerImageID:           v.GetString("TEST_SERVER_IMAGE_ID"),
 		ServerRebuildImageID:    v.GetString("TEST_SERVER_REBUILD_IMAGE_ID"),
+		ServerUserDataRebuild:   v.GetBool("TEST_SERVER_USER_DATA_REBUILD"),
 		ServerInfrastructureRef: v.GetString("TEST_SERVER_INFRASTRUCTURE_REF"),
 		FileStorageSnapshotDir:  v.GetString("TEST_FILE_STORAGE_SNAPSHOT_DIR"),
 		RegionNamespace:         v.GetString("TEST_REGION_NAMESPACE"),
