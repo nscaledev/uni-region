@@ -14,6 +14,14 @@ rules:
   verbs:
   - list
   - watch
+# Orphaned server port cleanup checks whether the port's Server still exists.
+- apiGroups:
+  - region.unikorn-cloud.org
+  resources:
+  - servers
+  verbs:
+  - list
+  - watch
 - apiGroups:
   - region.unikorn-cloud.org
   resources:
