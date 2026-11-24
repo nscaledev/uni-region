@@ -2020,6 +2020,46 @@ func TestReconcileServerPortConvergesDuplicates(t *testing.T) {
 	}
 }
 
+// TestReconcileServerPortReturnsDuplicateDeleteErrors verifies a duplicate that
+// fails to delete for any reason but 404 fails the reconcile, so the next pass
+// retries rather than carrying on with an extra port.
+func TestReconcileServerPortReturnsDuplicateDeleteErrors(t *testing.T) {
+	t.Parallel()
+
+	network := networkFixture()
+	securityGroup := securityGroupFixture()
+	client := getClient(t, []client.Object{network, securityGroup})
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+
+	server := serverFixture(withNetwork(network), withSecurityGroup(securityGroup))
+
+	attached := *openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	attached.ID = "attached"
+	attached.DeviceID = "nova-1"
+
+	late := *openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	late.ID = "late"
+
+	errDelete := gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusInternalServerError}
+
+	c := gomock.NewController(t)
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+	networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+	networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{late, attached}, nil)
+	networking.EXPECT().GetFloatingIP(t.Context(), "late").Return(nil, coreerrors.ErrResourceNotFound)
+	networking.EXPECT().DeletePort(t.Context(), "late").Return(errDelete)
+
+	p := openstack.NewTestProvider(client, regionFixture())
+
+	_, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+	require.ErrorAs(t, err, &gophercloud.ErrUnexpectedResponseCode{})
+}
+
 // TestReconcileFloatingIP tests a resource is created when one isn't present.
 func TestReconcileFloatingIP(t *testing.T) {
 	t.Parallel()
