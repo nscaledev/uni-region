@@ -312,8 +312,12 @@ func ReconcileSecurityGroupRules(ctx context.Context, p *Provider, client Securi
 	return p.reconcileSecurityGroupRules(ctx, client, securityGroup, openstackSecurityGroup)
 }
 
+// TestProjectID is the OpenStack project the client-independent test entry
+// points pass to port lookups.
+const TestProjectID = "tenant"
+
 func ReconcileServerPort(ctx context.Context, p *Provider, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
-	return p.reconcileServerPort(ctx, client, server)
+	return p.reconcileServerPort(ctx, client, server, TestProjectID)
 }
 
 func ReconcileFloatingIP(ctx context.Context, p *Provider, client FloatingIPInterface, server *unikornv1.Server, port *ports.Port) error {
@@ -349,7 +353,7 @@ func ReconcileServerForCreate(ctx context.Context, p *Provider, client ServerInt
 // then the image rows for a found server or the augmented-copy create for a
 // missing one — pinning the production order of those steps.
 func CreateServerWithClients(ctx context.Context, p *Provider, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string) (types.ServerCreateResult, error) {
-	return p.createServer(ctx, networking, compute, identity, server, options, keyName, nil)
+	return p.createServer(ctx, networking, compute, identity, server, options, keyName, TestProjectID, nil)
 }
 
 func ServerDeleteHeld(openstackServer *servers.Server) bool {

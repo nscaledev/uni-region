@@ -115,7 +115,7 @@ func portLookup(present bool) teardownRequest {
 		body = `{"ports":[{"id":"port-1","name":"server-server-1"}]}`
 	}
 
-	return teardownRequest{http.MethodGet, "/v2.0/ports?name=server-server-1", http.StatusOK, body}
+	return teardownRequest{http.MethodGet, "/v2.0/ports?name=server-server-1&project_id=test-project-id", http.StatusOK, body}
 }
 
 func floatingIPLookup(present bool) teardownRequest {
@@ -240,11 +240,37 @@ func TestDeleteServerNetworkCleanup(t *testing.T) {
 			)
 			cli := contractRetryClient(t, contractOpenstackIdentity())
 
-			for range 2 {
-				require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()))
-			}
+			// Deleting a port keeps ownership for one more pass, which finds none.
+			require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()), provisioners.ErrYield)
+			require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer()))
 		})
 	}
+}
+
+// TestDeleteServerDeletesEveryPort verifies delete removes every port named for
+// the server, not only the first, and keeps ownership until a later pass finds
+// none, so ports from creates that committed late cannot outlive the Server.
+func TestDeleteServerDeletesEveryPort(t *testing.T) {
+	t.Parallel()
+
+	twoPorts := portLookup(true)
+	twoPorts.body = `{"ports":[{"id":"port-1","name":"server-server-1"},{"id":"port-2","name":"server-server-1"}]}`
+
+	secondFloatingIP := floatingIPLookup(false)
+	secondFloatingIP.path = "/v2.0/floatingips?port_id=port-2"
+
+	endpoint := newTeardownOpenstack(t,
+		novaLookup(`{"servers":[]}`), twoPorts,
+		floatingIPLookup(false), teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusNoContent, ""},
+		secondFloatingIP, teardownRequest{http.MethodDelete, "/v2.0/ports/port-2", http.StatusNoContent, ""},
+		novaLookup(`{"servers":[]}`),
+		novaLookup(`{"servers":[]}`), portLookup(false), novaLookup(`{"servers":[]}`),
+	)
+	cli := contractRetryClient(t, contractOpenstackIdentity())
+	server := teardownServer()
+
+	require.ErrorIs(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server), provisioners.ErrYield)
+	require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
 }
 
 func TestDeleteServerRetainsLateCreate(t *testing.T) {
