@@ -154,6 +154,45 @@ var _ = Describe("Server Management", func() {
 		})
 	})
 
+	Context("When updating a server's user data", func() {
+		Describe("Given a changed value that is not valid cloud-init", func() {
+			It("rejects the change with an actionable 422 and preserves the stored value", func() {
+				api.SkipUnlessOpenStackRegion(regionClient, ctx, config)
+				api.SkipUnlessInternalAPIConfigured(regionClient)
+				api.SkipUnlessServerFixtureConfigured(config)
+
+				networkID := api.MustResolveSharedNetwork(regionClient, ctx).Metadata.Id
+				userData := []byte("#cloud-config\npackages: []\n")
+				createReq := api.NewServerPayload(networkID, testFlavorID(), testImageID()).WithUserData(userData).Build()
+				created, cleanup := api.MustCreateServer(regionClient, ctx, createReq)
+				DeferCleanup(cleanup)
+
+				Eventually(func(g Gomega) {
+					got, err := regionClient.GetServer(ctx, created.Metadata.Id)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(got.Spec.UserData).To(Equal(&userData))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
+
+				update := api.ServerUpdateFromRead(created).Build()
+				invalidUserData := []byte("echo hello")
+				update.Spec.UserData = &invalidUserData
+
+				apiError, err := regionClient.UpdateServerExpectError(ctx, created.Metadata.Id, update, http.StatusUnprocessableEntity)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(apiError.Error).To(Equal(coreapi.UnprocessableContent))
+				Expect(apiError.ErrorDescription).To(ContainSubstring("cloud-init"))
+				Expect(apiError.ErrorDescription).To(ContainSubstring("unsupported userData format"))
+
+				Consistently(func(g Gomega) {
+					got, err := regionClient.GetServer(ctx, created.Metadata.Id)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(got.Metadata.Id).To(Equal(created.Metadata.Id))
+					g.Expect(got.Spec.UserData).To(Equal(&userData))
+				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
+			})
+		})
+	})
+
 	Context("When creating a server pinned to provider infrastructure", Ordered, func() {
 		var networkID string
 

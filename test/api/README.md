@@ -4,6 +4,15 @@ Integration (`//go:build integration`) and e2e (`//go:build e2e`) suites live un
 `suites/`; shared helpers and fixtures live in this package. Configuration is loaded from
 `test/.env` (see `.env.example`).
 
+## User-data updates
+
+The slow `Server user data` e2e specs require a cloud-init image and console
+output support. Set `TEST_SERVER_USER_DATA_REBUILD` to match the region's
+`serverController.userDataRebuild`; the API does not expose that setting.
+The disabled case observes the guest for two minutes after settlement.
+The clearing case checks API state and, when enabled, rebuild settlement;
+console output cannot reliably prove absence of data from a particular boot.
+
 ## Shared test network
 
 Precondition suites (servers, load balancers, file storage, …) do not each create their own
