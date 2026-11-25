@@ -2724,7 +2724,7 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 	return openstackSecurityGroup, nil
 }
 
-func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server, projectID string) (*ports.Port, error) {
+func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
 	log := log.FromContext(ctx)
 
 	network, err := p.lookupNetwork(ctx, client, server.Namespace, server.Spec.Networks[0].ID.String())
@@ -2752,7 +2752,7 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		}
 	}
 
-	serverPorts, err := client.FindServerPorts(ctx, projectID, server)
+	serverPorts, err := client.FindServerPorts(ctx, server)
 	if err != nil {
 		return nil, err
 	}
@@ -3350,7 +3350,7 @@ func (p *Provider) reconcileServerForCreate(ctx context.Context, client ServerIn
 // found server or creates a missing one via the augmented copy. The result
 // reports whether the port converged. See reconcileServerForCreate and the
 // README's Server Observation section.
-func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName, projectID string, preflight serverCreatePreflight) (types.ServerCreateResult, error) {
+func (p *Provider) createServer(ctx context.Context, networking NetworkingInterface, compute ServerObservationInterface, identity *unikornv1.Identity, server *unikornv1.Server, options *types.ServerCreateOptions, keyName string, preflight serverCreatePreflight) (types.ServerCreateResult, error) {
 	var result types.ServerCreateResult
 
 	// Observe first, so a Neutron fault cannot stop the projection, the
@@ -3365,7 +3365,7 @@ func (p *Provider) createServer(ctx context.Context, networking NetworkingInterf
 		return result, err
 	}
 
-	port, err := p.reconcileServerPort(ctx, networking, server, projectID)
+	port, err := p.reconcileServerPort(ctx, networking, server)
 	if err != nil {
 		return result, err
 	}
@@ -3401,7 +3401,7 @@ func (p *Provider) CreateServer(ctx context.Context, identity *unikornv1.Identit
 		return types.ServerCreateResult{}, err
 	}
 
-	return p.createServer(ctx, networking, compute, identity, server, options, resolveServerKeyName(server, openstackIdentity), ptr.Deref(openstackIdentity.Spec.ProjectID, ""), p.serverCreatePlacementPreflight(identity, compute))
+	return p.createServer(ctx, networking, compute, identity, server, options, resolveServerKeyName(server, openstackIdentity), p.serverCreatePlacementPreflight(identity, compute))
 }
 
 func resolveServerKeyName(server *unikornv1.Server, identity *unikornv1.OpenstackIdentity) string {
@@ -3503,12 +3503,7 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	openstackIdentity, err := p.GetOpenstackIdentity(ctx, identity)
-	if err != nil {
-		return err
-	}
-
-	serverPorts, err := networking.FindServerPorts(ctx, ptr.Deref(openstackIdentity.Spec.ProjectID, ""), server)
+	serverPorts, err := networking.FindServerPorts(ctx, server)
 	if err != nil {
 		return err
 	}

@@ -115,7 +115,7 @@ func portLookup(present bool) teardownRequest {
 		body = `{"ports":[{"id":"port-1","name":"server-server-1"}]}`
 	}
 
-	return teardownRequest{http.MethodGet, "/v2.0/ports?name=server-server-1&project_id=test-project-id", http.StatusOK, body}
+	return teardownRequest{http.MethodGet, "/v2.0/ports?name=server-server-1", http.StatusOK, body}
 }
 
 func floatingIPLookup(present bool) teardownRequest {

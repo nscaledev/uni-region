@@ -603,8 +603,7 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   port is reused without a `PUT`, while private-IP status projection still runs.
 - Neutron can commit a server port create long after the client timed out,
   so a Server can have several ports named `server-<id>`.
-  Port lookup returns every exact match in the identity's project, and fails
-  rather than list without a project ID. Reconcile uses the first match.
+  Port lookup returns every exact match. Reconcile uses the first match.
   Server delete deletes every match with its floating IP, and keeps ownership
   for another pass after deleting any, until a pass finds none. A Server ID
   reused by a later Server is on the same network, so that Server picks up

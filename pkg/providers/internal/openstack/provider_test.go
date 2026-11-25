@@ -1608,7 +1608,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return(nil, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return(nil, nil)
 		networking.EXPECT().CreateServerPort(t.Context(), server, openstackNetwork.ID, []string{openstackSecurityGroup.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1632,7 +1632,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{currentPort}, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1674,7 +1674,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup2)).Return(openstackSecurityGroup2, nil)
-		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{currentPort}, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1704,7 +1704,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{currentPort}, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
 
@@ -1727,7 +1727,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup2)).Return(openstackSecurityGroup2, nil)
-		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{currentPort}, nil)
 		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID, openstackSecurityGroup2.ID}, []ports.AddressPair{}).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -1753,7 +1753,7 @@ func TestReconcileServerPort(t *testing.T) {
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
 		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
-		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{currentPort}, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{currentPort}, nil)
 		networking.EXPECT().UpdatePort(t.Context(), openstackServerPort.ID, []string{openstackSecurityGroup.ID}, desiredAddressPairs).Return(openstackServerPort, nil)
 
 		p := openstack.NewTestProvider(client, regionFixture())
@@ -2460,7 +2460,7 @@ func TestCreateServerCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
 
 	networking := mock.NewMockNetworkingInterface(c)
 	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
-	networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{*openstackServerPort}, nil)
+	networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{*openstackServerPort}, nil)
 	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
 
 	compute := mock.NewMockServerObservationInterface(c)
@@ -2545,7 +2545,7 @@ func TestCreateServerObservesFirst(t *testing.T) {
 
 		networking := mock.NewMockNetworkingInterface(c)
 		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
-		networking.EXPECT().FindServerPorts(t.Context(), openstack.TestProjectID, server).Return([]ports.Port{*openstackServerPort}, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{*openstackServerPort}, nil)
 		networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(nil, coreerrors.ErrResourceNotFound)
 
 		p := openstack.NewTestProvider(client, regionFixture())
