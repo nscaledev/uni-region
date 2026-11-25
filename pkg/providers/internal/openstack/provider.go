@@ -2752,15 +2752,15 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		}
 	}
 
-	port, err := client.GetServerPort(ctx, server)
+	serverPorts, err := client.FindServerPorts(ctx, server)
 	if err != nil {
-		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil, err
-		}
+		return nil, err
+	}
 
+	if len(serverPorts) == 0 {
 		log.V(1).Info("creating port")
 
-		port, err = client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, addressPairs)
+		port, err := client.CreateServerPort(ctx, server, network.ID, securityGroupIDs, addressPairs)
 		if err != nil {
 			return nil, err
 		}
@@ -2769,6 +2769,10 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 
 		return port, nil
 	}
+
+	// Several ports can match when a create committed after the client timed
+	// out. Reconcile uses the first, as before; Server delete removes them all.
+	port := &serverPorts[0]
 
 	if serverPortRequiresUpdate(port, securityGroupIDs, addressPairs) {
 		log.V(1).Info("updating port")
@@ -2782,6 +2786,33 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
 
 	return port, nil
+}
+
+// deleteServerPort deletes a server port's floating IP and then the port,
+// treating anything already gone as deleted.
+func deleteServerPort(ctx context.Context, networking NetworkingInterface, port *ports.Port) error {
+	log := log.FromContext(ctx)
+
+	floatingip, err := networking.GetFloatingIP(ctx, port.ID)
+	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+		return err
+	}
+
+	if floatingip != nil {
+		log.V(1).Info("deleting floating ip", "floatingIPID", floatingip.ID)
+
+		if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+			return err
+		}
+	}
+
+	log.V(1).Info("deleting port", "portID", port.ID)
+
+	if err := networking.DeletePort(ctx, port.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+		return err
+	}
+
+	return nil
 }
 
 func sliceSetsEqual[T comparable](a, b []T) bool {
@@ -3472,41 +3503,31 @@ func (p *Provider) DeleteServer(ctx context.Context, identity *unikornv1.Identit
 		return err
 	}
 
-	port, err := networking.GetServerPort(ctx, server)
-	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
+	serverPorts, err := networking.FindServerPorts(ctx, server)
+	if err != nil {
 		return err
 	}
 
-	//nolint:nestif
-	if port != nil {
-		floatingip, err := networking.GetFloatingIP(ctx, port.ID)
-		if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return err
-		}
-
-		if floatingip != nil {
-			log.V(1).Info("deleting floating ip")
-
-			if err := networking.DeleteFloatingIP(ctx, floatingip.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
-				return err
-			}
-		}
-
-		log.V(1).Info("deleting port")
-
-		if err := networking.DeletePort(ctx, port.ID); err != nil && !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
+	for i := range serverPorts {
+		if err := deleteServerPort(ctx, networking, &serverPorts[i]); err != nil {
 			return err
 		}
 	}
 
 	// A create can become visible while networking is removed. Keep ownership
-	// until a lookup after port removal confirms no matching server remains.
+	// until a lookup after port removal confirms no matching server remains,
+	// and until a pass finds no ports, so a port create that commits late is
+	// still deleted.
 	if _, err := compute.GetServer(ctx, server); err != nil {
-		if errors.Is(err, coreerrors.ErrResourceNotFound) {
-			return nil
+		if !errors.Is(err, coreerrors.ErrResourceNotFound) {
+			return err
 		}
 
-		return err
+		if len(serverPorts) > 0 {
+			return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a fresh lookup to find no server ports")
+		}
+
+		return nil
 	}
 
 	return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "waiting for a provider server discovered during network cleanup")

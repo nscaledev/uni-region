@@ -548,19 +548,19 @@ func (mr *MockPortInterfaceMockRecorder) DeletePort(ctx, portID any) *gomock.Cal
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeletePort", reflect.TypeOf((*MockPortInterface)(nil).DeletePort), ctx, portID)
 }
 
-// GetServerPort mocks base method.
-func (m *MockPortInterface) GetServerPort(ctx context.Context, server *v1alpha1.Server) (*ports.Port, error) {
+// FindServerPorts mocks base method.
+func (m *MockPortInterface) FindServerPorts(ctx context.Context, server *v1alpha1.Server) ([]ports.Port, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetServerPort", ctx, server)
-	ret0, _ := ret[0].(*ports.Port)
+	ret := m.ctrl.Call(m, "FindServerPorts", ctx, server)
+	ret0, _ := ret[0].([]ports.Port)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// GetServerPort indicates an expected call of GetServerPort.
-func (mr *MockPortInterfaceMockRecorder) GetServerPort(ctx, server any) *gomock.Call {
+// FindServerPorts indicates an expected call of FindServerPorts.
+func (mr *MockPortInterfaceMockRecorder) FindServerPorts(ctx, server any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServerPort", reflect.TypeOf((*MockPortInterface)(nil).GetServerPort), ctx, server)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindServerPorts", reflect.TypeOf((*MockPortInterface)(nil).FindServerPorts), ctx, server)
 }
 
 // ListRouterPorts mocks base method.
@@ -863,6 +863,21 @@ func (mr *MockNetworkingInterfaceMockRecorder) ExternalNetworks(ctx any) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExternalNetworks", reflect.TypeOf((*MockNetworkingInterface)(nil).ExternalNetworks), ctx)
 }
 
+// FindServerPorts mocks base method.
+func (m *MockNetworkingInterface) FindServerPorts(ctx context.Context, server *v1alpha1.Server) ([]ports.Port, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FindServerPorts", ctx, server)
+	ret0, _ := ret[0].([]ports.Port)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// FindServerPorts indicates an expected call of FindServerPorts.
+func (mr *MockNetworkingInterfaceMockRecorder) FindServerPorts(ctx, server any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FindServerPorts", reflect.TypeOf((*MockNetworkingInterface)(nil).FindServerPorts), ctx, server)
+}
+
 // GetFloatingIP mocks base method.
 func (m *MockNetworkingInterface) GetFloatingIP(ctx context.Context, portID string) (*floatingips.FloatingIP, error) {
 	m.ctrl.T.Helper()
@@ -921,21 +936,6 @@ func (m *MockNetworkingInterface) GetSecurityGroup(ctx context.Context, security
 func (mr *MockNetworkingInterfaceMockRecorder) GetSecurityGroup(ctx, securityGroup any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSecurityGroup", reflect.TypeOf((*MockNetworkingInterface)(nil).GetSecurityGroup), ctx, securityGroup)
-}
-
-// GetServerPort mocks base method.
-func (m *MockNetworkingInterface) GetServerPort(ctx context.Context, server *v1alpha1.Server) (*ports.Port, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetServerPort", ctx, server)
-	ret0, _ := ret[0].(*ports.Port)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetServerPort indicates an expected call of GetServerPort.
-func (mr *MockNetworkingInterfaceMockRecorder) GetServerPort(ctx, server any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetServerPort", reflect.TypeOf((*MockNetworkingInterface)(nil).GetServerPort), ctx, server)
 }
 
 // GetSubnet mocks base method.

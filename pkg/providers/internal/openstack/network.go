@@ -734,7 +734,10 @@ func serverName(server *unikornv1.Server) string {
 	return "server-" + server.Name
 }
 
-func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Server) (*ports.Port, error) {
+// FindServerPorts returns every port named for the server. There is normally
+// one, but a create that timed out on the client can still commit in Neutron,
+// so callers must handle several.
+func (c *NetworkClient) FindServerPorts(ctx context.Context, server *unikornv1.Server) ([]ports.Port, error) {
 	_, span := traceStart(ctx, "GET /network/v2.0/ports")
 	defer span.End()
 
@@ -756,19 +759,9 @@ func (c *NetworkClient) GetServerPort(ctx context.Context, server *unikornv1.Ser
 		return nil, err
 	}
 
-	if len(result) == 0 {
-		return nil, errors.ErrResourceNotFound
-	}
-
-	index := slices.IndexFunc(result, func(x ports.Port) bool {
-		return x.Name == name
-	})
-
-	if index < 0 {
-		return nil, errors.ErrResourceNotFound
-	}
-
-	return &result[index], nil
+	return slices.DeleteFunc(result, func(x ports.Port) bool {
+		return x.Name != name
+	}), nil
 }
 
 func (c *NetworkClient) CreateServerPort(ctx context.Context, server *unikornv1.Server, networkID string, securityGroupIDs []string, allowedAddressPairs []ports.AddressPair) (*ports.Port, error) {

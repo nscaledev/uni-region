@@ -601,6 +601,13 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   issuing an update. An omitted desired address-pair MAC is compared as the
   port's current MAC, matching Neutron's materialized response. A converged
   port is reused without a `PUT`, while private-IP status projection still runs.
+- Neutron can commit a server port create long after the client timed out,
+  so a Server can have several ports named `server-<id>`.
+  Port lookup returns every exact match. Reconcile uses the first match.
+  Server delete deletes every match with its floating IP, and keeps ownership
+  for another pass after deleting any, until a pass finds none. A Server ID
+  reused by a later Server is on the same network, so that Server picks up
+  ports the earlier one leaked and deletes them all when it is deleted.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
 - Subnet updates always send both the DNS nameserver and host route lists, so
