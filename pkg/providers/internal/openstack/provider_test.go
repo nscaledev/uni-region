@@ -1644,6 +1644,31 @@ func TestReconcileServerPort(t *testing.T) {
 		require.Nil(t, server.Status.MACAddress)
 	})
 
+	t.Run("SeveralUsesTheFirstAndDeletesNothing", func(t *testing.T) {
+		t.Parallel()
+
+		server := server.DeepCopy()
+		first := *openstackServerPort
+		first.SecurityGroups = []string{openstackSecurityGroup.ID}
+
+		late := first
+		late.ID = "late-port"
+		late.FixedIPs = []ports.IP{{IPAddress: "10.0.0.99"}}
+
+		// No delete expectation is set, so deleting either port fails the mock.
+		networking := mock.NewMockNetworkingInterface(c)
+		networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+		networking.EXPECT().GetSecurityGroup(t.Context(), securityGroupMatcher(securityGroup)).Return(openstackSecurityGroup, nil)
+		networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{first, late}, nil)
+
+		p := openstack.NewTestProvider(client, regionFixture())
+
+		port, err := openstack.ReconcileServerPort(t.Context(), p, networking, server)
+		require.NoError(t, err)
+		require.Equal(t, first.ID, port.ID)
+		require.Equal(t, serverPortIP, *server.Status.PrivateIP)
+	})
+
 	t.Run("ItIgnoresSecurityGroupAndAddressPairOrder", func(t *testing.T) {
 		t.Parallel()
 

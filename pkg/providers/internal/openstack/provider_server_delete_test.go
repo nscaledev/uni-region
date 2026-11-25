@@ -273,6 +273,26 @@ func TestDeleteServerDeletesEveryPort(t *testing.T) {
 	require.NoError(t, teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), server))
 }
 
+// TestDeleteServerKeepsOwnershipWhenAPortDeleteFails verifies a port delete
+// that fails with anything but 404 is returned, so the Server is kept and the
+// next pass retries every port.
+func TestDeleteServerKeepsOwnershipWhenAPortDeleteFails(t *testing.T) {
+	t.Parallel()
+
+	twoPorts := portLookup(true)
+	twoPorts.body = `{"ports":[{"id":"port-1","name":"server-server-1"},{"id":"port-2","name":"server-server-1"}]}`
+
+	endpoint := newTeardownOpenstack(t,
+		novaLookup(`{"servers":[]}`), twoPorts,
+		floatingIPLookup(false), teardownRequest{http.MethodDelete, "/v2.0/ports/port-1", http.StatusInternalServerError, `{}`},
+	)
+	cli := contractRetryClient(t, contractOpenstackIdentity())
+
+	err := teardownProvider(cli, endpoint).DeleteServer(t.Context(), contractIdentity(), teardownServer())
+	require.Error(t, err)
+	require.NotErrorIs(t, err, provisioners.ErrYield)
+}
+
 func TestDeleteServerRetainsLateCreate(t *testing.T) {
 	t.Parallel()
 
