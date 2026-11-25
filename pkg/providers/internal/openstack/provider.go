@@ -2376,8 +2376,6 @@ func (p *Provider) CreateSecurityGroup(ctx context.Context, identity *unikornv1.
 
 // DeleteSecurityGroup deletes a security group.
 func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.Identity, securityGroup *unikornv1.SecurityGroup) error {
-	log := log.FromContext(ctx)
-
 	provisioned, err := p.openstackIdentityProvisioned(ctx, identity)
 	if err != nil {
 		return err
@@ -2401,6 +2399,12 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 		return err
 	}
 
+	return deleteSecurityGroup(ctx, networking, securityGroup)
+}
+
+func deleteSecurityGroup(ctx context.Context, networking NetworkingInterface, securityGroup *unikornv1.SecurityGroup) error {
+	log := log.FromContext(ctx)
+
 	openstackSecurityGroup, err := networking.GetSecurityGroup(ctx, securityGroup)
 	if err != nil && !errors.Is(err, coreerrors.ErrResourceNotFound) {
 		return err
@@ -2410,6 +2414,13 @@ func (p *Provider) DeleteSecurityGroup(ctx context.Context, identity *unikornv1.
 		log.V(1).Info("deleting security group")
 
 		if err := networking.DeleteSecurityGroup(ctx, openstackSecurityGroup.ID); err != nil {
+			// Neutron refuses with SecurityGroupInUse while a port still uses the
+			// group. Retry quietly and say why instead of reporting an
+			// unexpected error.
+			if gophercloud.ResponseCodeIs(err, http.StatusConflict) {
+				return provisioners.Yield(unikornv1core.ConditionReasonDeprovisioning, "security group is still in use by a port")
+			}
+
 			return err
 		}
 	}

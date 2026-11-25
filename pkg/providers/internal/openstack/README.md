@@ -608,6 +608,11 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   for another pass after deleting any, until a pass finds none. A Server ID
   reused by a later Server is on the same network, so that Server picks up
   ports the earlier one leaked and deletes them all when it is deleted.
+- Neutron refuses to delete a security group that a port still uses. That
+  409 `SecurityGroupInUse` is returned as a yield with reason `Deprovisioning`
+  and the message "security group is still in use by a port", so the delete
+  retries at the fixed yield interval and the status says why, instead of
+  reporting an unexpected error.
 - Provider networks that require VLAN segmentation use the local VLAN allocator
   because OpenStack does not allocate those IDs for us.
 - Subnet updates always send both the DNS nameserver and host route lists, so

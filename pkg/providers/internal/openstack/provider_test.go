@@ -1829,6 +1829,61 @@ func TestTransient(t *testing.T) {
 	}
 }
 
+// TestDeleteSecurityGroupYieldsWhileInUse verifies Neutron's 409
+// SecurityGroupInUse becomes a quiet retry with a message that says why,
+// while any other delete failure is still returned as an error.
+func TestDeleteSecurityGroupYieldsWhileInUse(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		deleteErr error
+		wantYield bool
+	}{
+		{
+			name:      "InUse",
+			deleteErr: gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusConflict},
+			wantYield: true,
+		},
+		{
+			name:      "OtherFailure",
+			deleteErr: gophercloud.ErrUnexpectedResponseCode{Actual: http.StatusInternalServerError},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			securityGroup := securityGroupFixture()
+			openstackSecurityGroup := openstackSecurityGroupFixture(securityGroup)
+
+			c := gomock.NewController(t)
+
+			networking := mock.NewMockNetworkingInterface(c)
+			networking.EXPECT().GetSecurityGroup(t.Context(), securityGroup).Return(openstackSecurityGroup, nil)
+			networking.EXPECT().DeleteSecurityGroup(t.Context(), openstackSecurityGroup.ID).Return(test.deleteErr)
+
+			err := openstack.DeleteSecurityGroupWithClient(t.Context(), networking, securityGroup)
+			require.Error(t, err)
+
+			if !test.wantYield {
+				require.NotErrorIs(t, err, provisioners.ErrYield)
+
+				return
+			}
+
+			require.ErrorIs(t, err, provisioners.ErrYield)
+
+			var provisioningError *provisioners.Error
+
+			require.ErrorAs(t, err, &provisioningError)
+			require.Equal(t, corev1.ConditionReasonDeprovisioning, provisioningError.Reason())
+			require.Equal(t, "security group is still in use by a port", provisioningError.Message())
+		})
+	}
+}
+
 // TestReconcileFloatingIP tests a resource is created when one isn't present.
 func TestReconcileFloatingIP(t *testing.T) {
 	t.Parallel()
