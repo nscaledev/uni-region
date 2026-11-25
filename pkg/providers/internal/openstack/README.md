@@ -603,11 +603,15 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   port is reused without a `PUT`, while private-IP status projection still runs.
 - Neutron can commit a server port create long after the client timed out,
   so a Server can have several ports named `server-<id>`.
-  Port lookup returns every exact match. Reconcile uses the first match.
-  Server delete deletes every match with its floating IP, and keeps ownership
-  for another pass after deleting any, until a pass finds none. A Server ID
-  reused by a later Server is on the same network, so that Server picks up
-  ports the earlier one leaked and deletes them all when it is deleted.
+  Port lookup returns every exact match. Reconcile keeps one port, the one
+  attached to a device, else the oldest, choosing from what Neutron reports
+  rather than from status. Once a port is attached it deletes the others with
+  their floating IPs, never deleting an attached port; until then it deletes
+  nothing, because while Nova builds, the port it was given may not be the
+  oldest. Server delete deletes every match, and keeps ownership for
+  another pass after deleting any, until a pass finds none. A Server ID reused
+  by a later Server is on the same network, so that Server cleans up ports the
+  earlier one leaked.
 - Neutron refuses to delete a security group that a port still uses. That
   409 `SecurityGroupInUse` is returned as a yield with reason `Deprovisioning`
   and the message "security group is still in use by a port", so the delete

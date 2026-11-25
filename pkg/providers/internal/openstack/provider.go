@@ -2735,6 +2735,7 @@ func (p *Provider) lookupSecurityGroup(ctx context.Context, securityGroups Secur
 	return openstackSecurityGroup, nil
 }
 
+//nolint:cyclop
 func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInterface, server *unikornv1.Server) (*ports.Port, error) {
 	log := log.FromContext(ctx)
 
@@ -2781,9 +2782,10 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 		return port, nil
 	}
 
-	// Several ports can match when a create committed after the client timed
-	// out. Reconcile uses the first, as before; Server delete removes them all.
-	port := &serverPorts[0]
+	port, err := keepOneServerPort(ctx, client, serverPorts)
+	if err != nil {
+		return nil, err
+	}
 
 	if serverPortRequiresUpdate(port, securityGroupIDs, addressPairs) {
 		log.V(1).Info("updating port")
@@ -2797,6 +2799,59 @@ func (p *Provider) reconcileServerPort(ctx context.Context, client NetworkingInt
 	server.Status.PrivateIP = ptr.To(port.FixedIPs[0].IPAddress)
 
 	return port, nil
+}
+
+// keepOneServerPort returns the port the server keeps and deletes the others.
+// Several ports exist when a create committed after the client timed out. The
+// kept port is the one attached to a device, else the oldest, so the choice is
+// stable across reconciles and a late port never replaces one in use. Nothing
+// is deleted until a port is attached: while Nova is still building, the port
+// it was given may not be the oldest.
+func keepOneServerPort(ctx context.Context, networking NetworkingInterface, serverPorts []ports.Port) (*ports.Port, error) {
+	if len(serverPorts) == 1 {
+		return &serverPorts[0], nil
+	}
+
+	log := log.FromContext(ctx)
+
+	keep := chooseServerPort(serverPorts)
+
+	if serverPorts[keep].DeviceID == "" {
+		return &serverPorts[keep], nil
+	}
+
+	for i := range serverPorts {
+		// An attached port is in use, so it is never deleted here.
+		if i == keep || serverPorts[i].DeviceID != "" {
+			continue
+		}
+
+		log.Info("deleting duplicate server port", "portID", serverPorts[i].ID, "keptPortID", serverPorts[keep].ID)
+
+		if err := deleteServerPort(ctx, networking, &serverPorts[i]); err != nil {
+			return nil, err
+		}
+	}
+
+	return &serverPorts[keep], nil
+}
+
+// chooseServerPort returns the index of the port to keep: the one attached to
+// a device, else the oldest. It reads only what Neutron reports, never status.
+func chooseServerPort(serverPorts []ports.Port) int {
+	if i := slices.IndexFunc(serverPorts, func(x ports.Port) bool { return x.DeviceID != "" }); i >= 0 {
+		return i
+	}
+
+	oldest := 0
+
+	for i := range serverPorts {
+		if serverPorts[i].CreatedAt.Before(serverPorts[oldest].CreatedAt) {
+			oldest = i
+		}
+	}
+
+	return oldest
 }
 
 // deleteServerPort deletes a server port's floating IP and then the port,
