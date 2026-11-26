@@ -108,12 +108,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
     the user's own server.
 - SSH injection is a create-time server decision. OpenStack receives the
   identity key name only for the resolved `identityKeypair` mode; `ca` and
-  `none` omit Nova `key_name`. Image rebuild omits both `key_name` and
-  `user_data`, so Nova preserves the stored keypair and create-time user data
-  (including the managed SSH-CA cloud-init baked in at create) and rebuilt guests
-  stay create-equivalent. Updated user data therefore takes effect on server
-  replacement, not rebuild — Nova accepts `user_data` on rebuild from
-  microversion 2.57, deferred until gophercloud's `RebuildOpts` carries the field.
+  `none` omit Nova `key_name`. Rebuild preserves the original keypair; its
+  cloud-init payload follows the [user-data policy](#user-data-record).
 - A desired server image change is reconciled with Nova rebuild only once the
   server has booted at least once, decided from Nova's `launched_at`
   (`OS-SRV-USG:launched_at`) read fresh on the same `GetServer` — never from the
@@ -143,6 +139,12 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
 - `reconcileServerImage` decides entirely from the fresh `GetServer` on the same
   pass.
 
+  It also compares Nova's record of the customer user data with the desired
+  value (see [User-Data Record](#user-data-record)). With user-data rebuilds
+  on, a mismatch follows the same launched and quiescent gates as an image
+  mismatch. The record and payload policy is defined in
+  [User-Data Record](#user-data-record).
+
   Nova commits the image ref and `task_state` together. `nova/compute/api.py` sets
   `task_state = REBUILDING` and `image_ref = image_href` on one object and saves them
   with `expected_task_state=[None]` — a database compare-and-swap — *before*
@@ -155,18 +157,20 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   against a rebuilding server with a 409 before that. All of this is decided in Nova's
   API layer above the driver, so it holds for Ironic exactly as for libvirt.
 
-  The pass order, deciding only from the fresh read:
+  The pass order, deciding only from the fresh read. A server has *drifted*
+  when its ref differs from the desired image or Nova's user-data record
+  differs from the desired one:
 
   | | Condition | Action |
   |---|---|---|
   | R1 | `Spec.Image == nil` | user action required |
   | R2 | image ref unreadable | **recheck** |
   | R3 | ref == desired, rebuild task active | yield |
-  | R3′ | ref == desired, `ERROR`, launched | **recheck** |
-  | R3″ | ref == desired, otherwise | done |
-  | R4 | ref != desired, `launched_at` zero | yield |
-  | R4′ | ref != desired, any task active | yield |
-  | R4″ | ref != desired, quiescent | **submit**, or recheck if the image is gone |
+  | R3′ | not drifted, `ERROR`, launched | **recheck** |
+  | R3″ | not drifted, otherwise | done |
+  | R4 | drifted, `launched_at` zero | yield |
+  | R4′ | drifted, any task active | yield |
+  | R4″ | drifted, quiescent | **submit**, or recheck if the image is gone |
 
   Every yielding row returns `provisioners.Yield` with a `Provisioning` reason
   and a message naming the wait, so the row a server is waiting on is readable
@@ -244,8 +248,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   instance on another host without touching it — so `provisioning` is honest;
   after a failed one the spec image is not running. Both reports are true
   regardless of who initiated the operation, and no destructive row can fire on a
-  foreign operation (R4″ requires a diverged ref, which a foreign rebuild does not
-  present). Nothing is latched: when a foreign recovery returns the server to
+  foreign operation that preserves the desired image and user-data metadata:
+  R4″ requires drift in one of those values. Nothing is latched: when a foreign recovery returns the server to
   `ACTIVE` on the converged ref, the next pass walks to R3″ and the server reads
   `provisioned` again. What this costs is attribution in the *messages* — a failed
   evacuation reports the same cause-neutral message as a failed rebuild — which is
@@ -288,8 +292,8 @@ The full operator procedure lives in [./ADMIN.md](./ADMIN.md).
   decided on (see Server Observation) and re-asserts the accepted stamp while a
   rebuild it submitted is still in flight (R3).
 - Nova rebuild retains the server UUID, network ports and IP relationships,
-  attached data volumes, flavor, metadata, and placement, but recreates the
-  root disk. It stays on the same compute host; evacuation is a separate
+  attached data volumes, flavor, metadata (resent with the updated
+  [user-data record](#user-data-record)), and placement, but recreates the root disk. It stays on the same compute host; evacuation is a separate
   operator workflow.
 - Server delete is held while Nova reports the server as `BUILD` with
   `task_state` `spawning`, or `REBUILD` with `rebuild_spawning`. Ironic has no
@@ -704,6 +708,161 @@ Each pass on a booted server also reads Neutron: the network, each security
 group, the port and its floating IP, so four or more requests per server per
 period, about 130 a second at 2000 servers with one group each (modelled, not
 measured). They are not shared the way the Nova list is.
+
+## User-Data Record
+
+Nova server metadata `region:system:user_data_hash`, or the baseline key
+described below where that supersedes it, is the only record of the
+customer user data Nova last accepted: the SHA-256 of `spec.userData` before
+managed cloud-init augmentation, so a change to the augmentation does not
+rebuild every server. Every write of it also writes
+`region:system:user_data_generation`, the Server's `metadata.generation`, which
+unlike the digest never returns to an earlier value. The second colon prevents
+customer tags from colliding with the record, since `MetadataKey` produces keys
+with exactly one colon.
+
+The server controller's `--server-user-data-rebuild` flag (chart value
+`serverController.userDataRebuild`) decides whether a change is applied.
+Rebuild sends `user_data` only when the flag is on and the customer's digest
+differs from the recorded value. It sends the effective payload, including
+managed cloud-init augmentation, while recording only the customer's digest.
+An image-only rebuild keeps Nova's stored user data whatever the flag.
+An absent record is treated as matching current intent, without applying it.
+The record is kept either way, so servers can be recorded before rebuilds are
+turned on. While the controller's flag is off:
+
+- the controller does not apply a change: once the image is converged and
+  Nova allows the write, it records the new value as a baseline, so turning
+  rebuilds on later does not normally apply changes made meanwhile (see the
+  [activation risk](#activation-risk)). A change made after
+  the check below whose write is still deferred when rebuilds are turned on is
+  applied by rebuild;
+- an image rebuild records the current digest, treating the change as
+  applied even when rebuilds are turned on later;
+- `ERROR` advice does not offer changing user data.
+
+Run the check below, then enable the controller's flag and wait for its rollout
+and leader-lease handover. The controller runs one replica under leader
+election, so its flag changes when the new pod takes the lease after the old
+pod has stopped. A change the old pod handled before then is recorded without
+being applied, as
+in the first point above. Before turning the flag on, every managed
+Server's Nova record must hold its current user data: `UserDataRecorded=True`
+with `observedGeneration` equal to the Server's `metadata.generation` (see the
+condition below). Run this against every Region cluster; it must print no
+Servers:
+
+```sh
+kubectl get servers.region.unikorn-cloud.org -A -o json |
+  jq -r '.items[] | .metadata.generation as $g |
+    select(any(.status.conditions[]?; .type == "UserDataRecorded" and
+      .status == "True" and .observedGeneration == $g) | not) |
+    [.metadata.namespace, .metadata.name] | @tsv'
+```
+
+This check is the only guard against enabling rebuilds with an unrecorded
+server. A change accepted for such a server is recorded, not applied. Servers
+created after deployment carry the record in their Nova create request.
+A launched non-writable server is recorded only once its provider state is
+cleared (see below).
+
+<a id="activation-risk"></a>
+
+There is a one-off risk at activation, even for a server that passed the
+check: when the controller flag is turned on, a server whose user data
+changed while the flag was off may be rebuilt once, applying its latest user
+data, if an earlier baseline write to Nova stalled for more than the client
+timeout and committed after a later one. A server whose user data did not
+change after this release was deployed is not affected. The generation
+fence still prevents a late baseline from causing a second rebuild. The
+window in which a late baseline goes unnoticed can extend by up to the
+[kept-list lifetime](#kept-lists).
+
+The record is written:
+
+- on create, with the rest of the server metadata;
+- in every rebuild request. Nova's `rebuild` (`nova/compute/api.py`) applies
+  the request metadata with `task_state` and `image_ref` and commits them in
+  one `instance.save(expected_task_state=[None])`, so the record is durable
+  exactly when Nova accepts the rebuild, and a lost status write cannot cause a
+  second destructive rebuild. Rebuild metadata replaces the whole set, so the
+  request resends the existing entries;
+- outside a rebuild, for a server created before the record or a change made
+  while the controller's flag is off, by the merging
+  `POST /servers/{id}/metadata` once the image is converged (on a drifted
+  image the rebuild writes it). This write goes to a separate key,
+  `region:system:user_data_baseline_hash`, as `<digest>/<generation>`, where
+  `<generation>` is the value of `region:system:user_data_generation` it
+  supersedes, empty if there is none. The baseline is read in place of the
+  record only while `<generation>` still matches it. A rebuild writes the
+  record and generation and drops the baseline. A deferred write never triggers
+  a rebuild for user data. Non-writable states complete without the record and
+  are checked again by periodic reconciliation; the launched `ERROR` recheck
+  still applies.
+
+Nova's `update_instance_metadata` is guarded by `check_instance_lock` and
+`check_instance_state(vm_state=[ACTIVE, PAUSED, SUSPENDED, STOPPED],
+task_state=None)`, and answers 409 outside those vm states, notably in
+`ERROR`, which rebuild accepts; `task_state=None` means Nova does not check
+the task. The provider writes only when Nova reports `ACTIVE`, `PAUSED`,
+`SUSPENDED` or `SHUTOFF` and the server is unlocked, including during a
+foreign task. An errored legacy server still reaches the R3′ recheck.
+A 409 it still gets from a race yields. Consumed references are released
+when the provider reports the port converged, including while this write is
+retried. Other failures remain ordinary errors.
+
+Nova saves metadata without a condition, so a write the provider gave up on
+(the 60s client timeout, or a reset connection) can commit after later writes.
+A baseline that commits after a rebuild names the generation the rebuild
+replaced, so it is ignored and cannot cause a second rebuild, even when later
+rebuilds have returned the digest to an earlier value. For a baseline that
+commits over a later baseline, see the [activation risk](#activation-risk).
+
+A launched non-writable legacy server (shelved, rescued, locked, etc.) gets
+no record until its provider state clears. Periodic polling then reconciles
+and records its user data without a spec edit or controller restart, subject
+to the [kept-list freshness rules](#kept-lists). A launched `ERROR`, including
+one with a task set, is rechecked; changing the image allows a rebuild once
+quiescent, which writes the record.
+
+The next poll observes recovery from `ERROR` if the provider state clears.
+Changing the image or replacing the server are also remedies. Changing
+user data is also available when rebuilds are enabled and Nova holds a record:
+without one, the controller baselines a change rather than applying it.
+Recovery never restores destroyed root-disk contents.
+
+The Server status condition `UserDataRecorded=True` says Nova holds the record.
+Whenever a pass knows the Nova server carries the key (read on `GetServer`, or
+written by this pass) the provider sets the condition in memory. Its
+`observedGeneration` is the Server's generation when the record holds that
+generation's user data, and zero otherwise, as while a change waits for its
+baseline write or rebuild. The rollout check above needs both status and
+generation. The controller decides from Nova's record, not this condition.
+The reconciler persists status and retries failed writes.
+A lost status write does not repeat a rebuild: the
+next pass restores the condition from Nova's durable key.
+
+| Nova record | UserDataRecorded | Meaning | Reconcile |
+|---|---|---|---|
+| absent | not True | created before the record | writes a baseline once the image is converged and Nova allows it, then the condition; never rebuilds for user data |
+| present | not True | status write pending | sets the condition to True; compares the key |
+| present | True | steady state | compares the key |
+
+A key deleted from Nova out of band under a recorded Server is not supported:
+the next converged pass records the current spec, so a change the API accepted
+before that pass is not applied.
+
+Retirement requires every managed Server's record to hold its current user
+data, checked with the query above.
+
+Remove `recordLegacyUserData`, `serverMetadataWritable`, the missing-record
+fallback in `reconcileServerImage`, plus
+`UpdateServerMetadata` from the client, interfaces, mocks and test stub.
+Remove the condition, its helpers and setters only if otherwise unused.
+Remove orphaned constants, migration tests and docs.
+Keep the Nova keys, how they are read, and the create/rebuild writes. Afterwards, a server with neither key
+must be an error requiring operator intervention, never rebuild drift:
+comparing it as an empty digest would rebuild and reimage the server.
 
 ## Credential Sessions
 

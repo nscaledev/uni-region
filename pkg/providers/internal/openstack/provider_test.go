@@ -2259,7 +2259,7 @@ func TestReconcileVolume(t *testing.T) {
 		})
 	}
 
-	// The monitor cleared the size for a volume whose backing storage has gone;
+	// Reconciliation cleared the size for a volume whose backing storage has gone;
 	// the pass must too, or a stale size outlives the volume it described.
 	t.Run("ItClearsTheSizeWhenMissing", func(t *testing.T) {
 		t.Parallel()
@@ -2368,6 +2368,7 @@ func TestReconcileServer(t *testing.T) {
 	t.Cleanup(c.Finish)
 
 	server := serverFixture(withImage)
+	server.Generation = 7
 	network := networkFixture()
 
 	openstackNetwork := openstackNetworkFixture(network)
@@ -2393,6 +2394,10 @@ func TestReconcileServer(t *testing.T) {
 		"identity:organization_id": organizationID,
 		"identity:project_id":      projectID,
 		"region:region_id":         regionID,
+		// SHA-256 of the fixture's empty user data and the Server generation,
+		// spelled out because Nova persists them.
+		"region:system:user_data_hash":       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"region:system:user_data_generation": "7",
 	}
 
 	t.Run("ItDoesntExist", func(t *testing.T) {
@@ -2457,10 +2462,12 @@ func TestReconcileServerPreflight(t *testing.T) {
 		"projectID":      projectID,
 		"regionID":       regionID,
 		// Namespaced duplicates.
-		"region:server_id":         server.Name,
-		"identity:organization_id": organizationID,
-		"identity:project_id":      projectID,
-		"region:region_id":         regionID,
+		"region:server_id":                   server.Name,
+		"identity:organization_id":           organizationID,
+		"identity:project_id":                projectID,
+		"region:region_id":                   regionID,
+		"region:system:user_data_hash":       types.UserDataHash(server.Spec.UserData),
+		"region:system:user_data_generation": "0",
 	}
 
 	t.Run("ItYieldsBeforeCreate", func(t *testing.T) {
@@ -2636,6 +2643,53 @@ func TestCreateServerObservesFirst(t *testing.T) {
 	})
 }
 
+func TestRebuildCopyBackPreservesPortAndFloatingIPStatus(t *testing.T) {
+	t.Parallel()
+
+	network := networkFixture()
+	client := getClient(t, []client.Object{network})
+
+	c := gomock.NewController(t)
+	t.Cleanup(c.Finish)
+
+	server := serverFixture(withNetwork(network), withFloatingIP)
+	server.Spec.Image = &regionv1.ServerImage{ID: idstest.MustParseImageID(rebuildNewImageID)}
+	server.Status.ProvisionedAt = ptr.To(metav1.Now())
+
+	openstackNetwork := openstackNetworkFixture(network)
+	openstackSubnet := openstackSubnetFixture(network, openstackNetwork)
+	openstackServerPort := openstackServerPortFixture(server, openstackNetwork, openstackSubnet)
+	openstackFloatingIP := openstackFloatingIPFixture(openstackServerPort)
+
+	options := &types.ServerCreateOptions{UserData: []byte("#cloud-config\nssh_authorized_keys: []\n"), RebuildOnUserData: true}
+
+	networking := mock.NewMockNetworkingInterface(c)
+	networking.EXPECT().GetNetwork(t.Context(), networkMatcher(network)).Return(openstackNetwork, nil)
+	networking.EXPECT().FindServerPorts(t.Context(), server).Return([]ports.Port{*openstackServerPort}, nil)
+	networking.EXPECT().GetFloatingIP(t.Context(), openstackServerPort.ID).Return(openstackFloatingIP, nil)
+
+	rebuild := rebuildOptionsFor(options.UserData)
+	rebuild.UseUserData = false
+	rebuild.Metadata = rebuildMetadata(server.Spec.UserData)
+
+	compute := mock.NewMockServerObservationInterface(c)
+	compute.EXPECT().GetServer(t.Context(), gomock.Any()).Return(novaRebuildServer("ACTIVE", rebuildOldImageID), nil)
+	compute.EXPECT().RebuildServer(t.Context(), "server-1", rebuild).Return(novaRebuildServer("REBUILD", rebuildNewImageID), nil)
+
+	p := openstack.NewTestProvider(client, regionFixture())
+
+	_, err := openstack.CreateServerWithClients(t.Context(), p, networking, compute, identityFixture(), server, options, "")
+	require.ErrorIs(t, err, provisioners.ErrYield, "the accepted rebuild is in flight, so the pass yields")
+
+	// (a) the port/FIP status writes must survive the copy-back.
+	require.Equal(t, ptr.To(serverPortIP), server.Status.PrivateIP, "copy-back must not revert PrivateIP written by port reconciliation")
+	require.Equal(t, ptr.To(openstackFloatingIP.FloatingIP), server.Status.PublicIP, "copy-back must not revert PublicIP written by floating IP reconciliation")
+
+	// (b) the rebuild's accepted status stamp must propagate back to the caller.
+	requireRebuildAcceptedStamp(t, server)
+	requireUserDataRecorded(t, server, true)
+}
+
 // TestImageTagRoundTrip tests the round-trip conversion of tags:
 // types.Image.Tags -> createImageMetadata -> Glance properties -> imageTags -> map[string]string.
 func TestImageTagRoundTrip(t *testing.T) {
@@ -2777,10 +2831,12 @@ func TestReconcileServerTags(t *testing.T) {
 			"projectID":      projectID,
 			"regionID":       regionID,
 			// Namespaced system keys.
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"region:server_id":                   server.Name,
+			"identity:organization_id":           organizationID,
+			"identity:project_id":                projectID,
+			"region:region_id":                   regionID,
+			"region:system:user_data_hash":       types.UserDataHash(server.Spec.UserData),
+			"region:system:user_data_generation": "0",
 		}
 
 		compute := mock.NewMockServerObservationInterface(c)
@@ -2813,14 +2869,16 @@ func TestReconcileServerTags(t *testing.T) {
 
 		// The system key must win — value must be the real organizationID.
 		expectedMetadata := map[string]string{
-			"serverID":                 server.Name,
-			"organizationID":           organizationID,
-			"projectID":                projectID,
-			"regionID":                 regionID,
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"serverID":                           server.Name,
+			"organizationID":                     organizationID,
+			"projectID":                          projectID,
+			"regionID":                           regionID,
+			"region:server_id":                   server.Name,
+			"identity:organization_id":           organizationID,
+			"identity:project_id":                projectID,
+			"region:region_id":                   regionID,
+			"region:system:user_data_hash":       types.UserDataHash(server.Spec.UserData),
+			"region:system:user_data_generation": "0",
 		}
 
 		compute := mock.NewMockServerObservationInterface(c)
@@ -2858,15 +2916,17 @@ func TestReconcileServerTags(t *testing.T) {
 		openstackServer := openstackServerFixture(server)
 
 		expectedMetadata := map[string]string{
-			"fabric:pkey":              "0x0600",
-			"serverID":                 server.Name,
-			"organizationID":           organizationID,
-			"projectID":                projectID,
-			"regionID":                 regionID,
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"fabric:pkey":                        "0x0600",
+			"serverID":                           server.Name,
+			"organizationID":                     organizationID,
+			"projectID":                          projectID,
+			"regionID":                           regionID,
+			"region:server_id":                   server.Name,
+			"identity:organization_id":           organizationID,
+			"identity:project_id":                projectID,
+			"region:region_id":                   regionID,
+			"region:system:user_data_hash":       types.UserDataHash(server.Spec.UserData),
+			"region:system:user_data_generation": "0",
 		}
 
 		compute := mock.NewMockServerObservationInterface(c)
@@ -2897,15 +2957,17 @@ func TestReconcileServerTags(t *testing.T) {
 		openstackServer := openstackServerFixture(server)
 
 		expectedMetadata := map[string]string{
-			"fabric:pkey":              "0x0a00",
-			"serverID":                 server.Name,
-			"organizationID":           organizationID,
-			"projectID":                projectID,
-			"regionID":                 regionID,
-			"region:server_id":         server.Name,
-			"identity:organization_id": organizationID,
-			"identity:project_id":      projectID,
-			"region:region_id":         regionID,
+			"fabric:pkey":                        "0x0a00",
+			"serverID":                           server.Name,
+			"organizationID":                     organizationID,
+			"projectID":                          projectID,
+			"regionID":                           regionID,
+			"region:server_id":                   server.Name,
+			"identity:organization_id":           organizationID,
+			"identity:project_id":                projectID,
+			"region:region_id":                   regionID,
+			"region:system:user_data_hash":       types.UserDataHash(server.Spec.UserData),
+			"region:system:user_data_generation": "0",
 		}
 
 		compute := mock.NewMockServerObservationInterface(c)

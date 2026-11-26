@@ -33,19 +33,23 @@ Distinctive behaviour:
   resets the counter, whatever happens to it in the cloud
 - clears or updates consumed-resource references during reprovision and teardown
 
-Create recovery and image rebuild recovery deliberately use different state:
+Create recovery and rebuild recovery deliberately use different state:
 
-| Initial create failure | Image rebuild failure |
+| Initial create failure | Image or user-data rebuild failure |
 |---|---|
 | Server never launched | Server previously launched |
 | Delete/recreate, bounded by the existing flag | Nothing to recover |
-| `ProviderCreateFailures` | No persisted state |
+| `ProviderCreateFailures` | None here; Nova metadata records accepted user data |
 | Exhaustion is operator-terminal | The failure surfaces on the `Available` and `Active` conditions |
 | Edge wake: `ProviderCreateFailure` via `providerCreateFailureUpdate` | No wake needed: the poll re-reads the server |
 
-The image reconcile lives in the OpenStack provider's existing-server path and
+The rebuild reconcile lives in the OpenStack provider's existing-server path and
 leaves the create retry counter and predicate code untouched. It decides only from
 the fresh provider read; see the provider README for the row-by-row pass order.
+When the provider reports that Nova holds the server's
+[user-data record](../../../providers/internal/openstack/README.md#user-data-record),
+the provider sets `UserDataRecorded=True` in Server status. The reconciler
+persists it with the rest of status and retries a failed write.
 
 Settlement for the create path is watch-predicate-driven (`pkg/managers/server`)
 over a helper exported from this package: `providerCreateFailureUpdate` over
@@ -101,12 +105,14 @@ it, and returning one would show a booted server as errored for a pass.
 
 After boot the CA may therefore be deleted, as it could between passes before
 servers polled. Deleting it does not revoke it: the booted guest keeps the key it
-was given, and a rebuild keeps the stored user data, CA part included, because
-it leaves the user data as Nova holds it. A booted server whose CA is gone
+was given, and an image-only rebuild keeps the stored user data, CA part included
+(see the provider's [payload policy](../../../providers/internal/openstack/README.md#user-data-record)).
+A booted server whose CA is gone
 builds its create options without the CA part instead of failing, so it is not
 `Errored` for ever; a server Nova lost is then re-created without CA logins,
-because its user deleted the CA. The CA is still read on every pass, from the
-informer cache, so a re-create picks it up while it exists. Before boot a
+because its user deleted the CA. A user-data change after that deletion also
+rebuilds without the CA part, as a re-create does. The CA is still read on every
+pass, from the informer cache, so a re-create picks it up while it exists. Before boot a
 missing CA stays an error.
 
 Deprovisioning retains consumed-resource references and the Server's finalizer

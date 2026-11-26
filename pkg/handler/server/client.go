@@ -181,6 +181,9 @@ func (c *Client) Update(ctx context.Context, organizationID identityids.Organiza
 	// whereas v1 has always accepted and ignored image changes, so preserve the
 	// stored image and never 404 an update over a value that has no effect.
 	required.Spec.Image = current.Spec.Image.DeepCopy()
+	// User data is likewise a v2-only destructive rebuild input. Keep v1's
+	// accept-and-ignore update contract rather than allowing a PUT to arm it.
+	required.Spec.UserData = slices.Clone(current.Spec.UserData)
 
 	if err := conversion.UpdateObjectMetadata(required, current, identitycommon.IdentityMetadataMutator); err != nil {
 		return nil, fmt.Errorf("%w: failed to merge metadata", err)

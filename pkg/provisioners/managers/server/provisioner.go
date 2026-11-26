@@ -58,6 +58,8 @@ type Options struct {
 	// ProviderCreateMaxAttempts bounds provider server create attempts before
 	// surfacing an error on the Server.
 	ProviderCreateMaxAttempts int32
+	// RebuildOnUserData makes a user-data change rebuild the server.
+	RebuildOnUserData bool
 
 	// metrics are attached by the controller factory once the meter exists.
 	// Nil until then, and nil in tests.
@@ -83,6 +85,7 @@ func (o *Options) AddFlags(f *pflag.FlagSet) {
 	}
 
 	f.Int32Var(&o.ProviderCreateMaxAttempts, "provider-create-max-attempts", o.ProviderCreateMaxAttempts, "Maximum provider server create attempts before surfacing an error")
+	f.BoolVar(&o.RebuildOnUserData, "server-user-data-rebuild", false, "Rebuild servers when their user data changes")
 }
 
 // Provisioner encapsulates control plane provisioning.

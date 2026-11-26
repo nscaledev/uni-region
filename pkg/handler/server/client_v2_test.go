@@ -336,7 +336,7 @@ func testServerWithSSHCertificateAuthority() *regionv1.Server {
 		caID     = "ca-1"
 	)
 
-	return &regionv1.Server{
+	server := &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
@@ -361,6 +361,8 @@ func testServerWithSSHCertificateAuthority() *regionv1.Server {
 			SSHCertificateAuthorityID: ptr.To(caID),
 		},
 	}
+
+	return server
 }
 
 func testSecurityGroupInNetwork(networkID, securityGroupID string) *regionv1.SecurityGroup {
@@ -1255,8 +1257,8 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 	}{
 		{name: "omitted clears", status: http.StatusAccepted},
 		{name: "null clears", field: `,"userData":null`, status: http.StatusAccepted},
+		{name: "change accepted without a record", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: replacement, status: http.StatusAccepted},
 		{name: "empty value clears", field: `,"userData":""`, status: http.StatusAccepted},
-		{name: "value replaces", field: `,"userData":"` + base64.StdEncoding.EncodeToString(replacement) + `"`, want: replacement, status: http.StatusAccepted},
 		{name: "unchanged legacy skips validation", field: `,"userData":"` + base64.StdEncoding.EncodeToString(legacy) + `"`, want: legacy, status: http.StatusAccepted},
 		{name: "changed invalid data is rejected", field: `,"userData":"` + base64.StdEncoding.EncodeToString([]byte("echo changed")) + `"`, want: legacy, status: http.StatusUnprocessableEntity},
 		{name: "invalid base64 is rejected", field: `,"userData":"!"`, want: legacy, status: http.StatusBadRequest},
@@ -1266,8 +1268,11 @@ func TestServerPutV2UserDataPersistence(t *testing.T) {
 
 			resource := testServerV2(srvServerID)
 			resource.Spec.UserData = legacy
+
 			k8sClient := newSrvFakeClient(t, testSrvNetworkWithProject(srvProjectID), resource).Build()
-			h := handler.NewServerV2Handler(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace})
+			h, err := handler.New(common.ClientArgs{Client: k8sClient, Namespace: srvNamespace}, &handler.Options{})
+			require.NoError(t, err)
+
 			body := fmt.Sprintf(`{"metadata":{"name":%q},"spec":{"flavorId":%q,"imageId":%q%s}}`, resource.Name, srvFlavorID, srvImageID, test.field)
 			ctx := withPrincipal(rbac.NewContext(t.Context(), aclWithSrvUpdate()))
 			request := httptest.NewRequestWithContext(ctx, http.MethodPut, "/", strings.NewReader(body))
@@ -2478,8 +2483,9 @@ func TestServerSatisfyProviderCreateGateRequiresPermission(t *testing.T) {
 	require.Empty(t, updated.Status.ProviderCreateGates)
 }
 
+// testServerV2 returns a Server whose user data the controller has recorded.
 func testServerV2(serverID string) *regionv1.Server {
-	return &regionv1.Server{
+	server := &regionv1.Server{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      serverID,
 			Namespace: srvNamespace,
@@ -2499,6 +2505,8 @@ func testServerV2(serverID string) *regionv1.Server {
 			Networks: []regionv1.ServerNetworkSpec{{ID: idstest.MustParseNetworkID(srvNetworkID)}},
 		},
 	}
+
+	return server
 }
 
 func TestServerGetV2Raw_NotFound(t *testing.T) {

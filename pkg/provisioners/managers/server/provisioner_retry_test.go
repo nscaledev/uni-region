@@ -19,6 +19,7 @@ package server_test
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -436,21 +437,33 @@ var errTestProviderRead = errors.New("provider read failed")
 func TestProvision_LaunchedServerHealthErrorDoesNotRetryCreate(t *testing.T) {
 	t.Parallel()
 
-	ctrl := gomock.NewController(t)
+	for _, rebuildOnUserData := range []bool{false, true} {
+		t.Run(strconv.FormatBool(rebuildOnUserData), func(t *testing.T) {
+			t.Parallel()
 
-	server := retryServer(withProviderCreateFailure)
-	launchedAt := metav1.NewTime(time.Now().Add(-time.Minute))
-	server.Status.LaunchedAt = &launchedAt
+			ctrl := gomock.NewController(t)
 
-	provider := mocktypes.NewMockProvider(ctrl)
-	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).Return(types.ServerCreateResult{PortConverged: true}, nil)
+			server := retryServer(withProviderCreateFailure)
+			launchedAt := metav1.NewTime(time.Now().Add(-time.Minute))
+			server.Status.LaunchedAt = &launchedAt
 
-	cli := retryClient(t, retryIdentity(), server)
-	prov := retryProvisioner(t, server, nil, provider)
+			provider := mocktypes.NewMockProvider(ctrl)
+			provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), server, gomock.Any()).
+				DoAndReturn(func(_ context.Context, _ *regionv1.Identity, _ *regionv1.Server, options *types.ServerCreateOptions) (types.ServerCreateResult, error) {
+					require.Equal(t, rebuildOnUserData, options.RebuildOnUserData)
 
-	require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
-	require.Zero(t, server.Status.ProviderCreateFailures)
-	require.False(t, server.Status.ProviderCreateRetrying)
+					return types.ServerCreateResult{PortConverged: true}, nil
+				})
+
+			cli := retryClient(t, retryIdentity(), server)
+			options := &serverprovisioner.Options{RebuildOnUserData: rebuildOnUserData}
+			prov := retryProvisioner(t, server, options, provider)
+
+			require.NoError(t, prov.Provision(coreclient.NewContext(t.Context(), cli)))
+			require.Zero(t, server.Status.ProviderCreateFailures)
+			require.False(t, server.Status.ProviderCreateRetrying)
+		})
+	}
 }
 
 // TestProvision_ProvisionedServerHealthErrorDoesNotRetryCreate proves the

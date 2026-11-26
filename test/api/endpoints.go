@@ -298,6 +298,11 @@ func (e *Endpoints) GetServer(serverID string) string {
 		url.PathEscape(serverID))
 }
 
+// GetServerConsoleOutput returns the endpoint for retrieving a server's console log.
+func (e *Endpoints) GetServerConsoleOutput(serverID string) string {
+	return fmt.Sprintf("/api/v2/servers/%s/consoleoutput", url.PathEscape(serverID))
+}
+
 // GetServerSSHKey returns the endpoint for retrieving a server's generated SSH private key.
 func (e *Endpoints) GetServerSSHKey(serverID string) string {
 	return fmt.Sprintf("/api/v2/servers/%s/sshkey",

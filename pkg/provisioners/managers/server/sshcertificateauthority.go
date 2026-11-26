@@ -81,7 +81,8 @@ func shellQuote(s string) string {
 
 func (p *Provisioner) serverCreateOptions(ctx context.Context, cli client.Client) (*types.ServerCreateOptions, error) {
 	options := &types.ServerCreateOptions{
-		UserData: p.server.Spec.UserData,
+		UserData:          p.server.Spec.UserData,
+		RebuildOnUserData: p.options != nil && p.options.RebuildOnUserData,
 	}
 
 	if p.server.Spec.SSHCertificateAuthorityID == nil {

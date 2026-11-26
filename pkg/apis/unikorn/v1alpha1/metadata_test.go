@@ -68,6 +68,12 @@ func TestMetadataKey(t *testing.T) {
 			input: "instance-id",
 			ok:    false,
 		},
+		{name: "CustomerHash", input: "region.example.com/user-data-hash", expected: "region:user_data_hash", ok: true},
+		{name: "SystemKeyRejected", input: "region.example.com/system:user-data-hash", ok: false},
+		{name: "SystemServiceRejected", input: "region:system.example.com/user-data-hash", ok: false},
+		{name: "SystemHyphen", input: "region.example.com/system-user-data-hash", expected: "region:system_user_data_hash", ok: true},
+		{name: "ColonInDomain", input: "region.system:example.com/user-data-hash", expected: "region:user_data_hash", ok: true},
+		{name: "OtherDomain", input: "compute.example.com/instance-id", expected: "compute:instance_id", ok: true},
 	}
 
 	for _, c := range cases {

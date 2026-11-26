@@ -20,6 +20,9 @@ spec:
         args:
         {{- include "unikorn.core.flags" . | nindent 8 }}
         {{- include "unikorn.otlp.flags" . | nindent 8 }}
+        {{- if .Values.serverController.userDataRebuild }}
+        - --server-user-data-rebuild
+        {{- end }}
         {{- range $i, $arg := .Values.serverController.extraFlags }}
         - {{ $arg }}
         {{- end }}

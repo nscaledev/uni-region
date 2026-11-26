@@ -1330,7 +1330,25 @@ func (c *APIClient) SatisfyServerProviderCreateGate(ctx context.Context, serverI
 	return nil
 }
 
-// UpdateServer updates a server. Changing the image ID triggers an in-place rebuild.
+// GetServerConsoleOutput retrieves a server's console log.
+func (c *APIClient) GetServerConsoleOutput(ctx context.Context, serverID string) (*regionopenapi.ConsoleOutput, error) {
+	path := c.endpoints.GetServerConsoleOutput(serverID)
+
+	//nolint:bodyclose // DoInternalRegionRequest handles response body closing internally
+	_, respBody, err := c.DoInternalRegionRequest(ctx, http.MethodGet, path, nil, http.StatusOK)
+	if err != nil {
+		return nil, fmt.Errorf("getting server console output: %w", err)
+	}
+
+	var output regionopenapi.ConsoleOutput
+	if err := json.Unmarshal(respBody, &output); err != nil {
+		return nil, fmt.Errorf("unmarshaling server console output: %w", err)
+	}
+
+	return &output, nil
+}
+
+// UpdateServer updates a server, expecting HTTP 202.
 func (c *APIClient) UpdateServer(ctx context.Context, serverID string, request regionopenapi.ServerV2Update) (*regionopenapi.ServerV2Read, error) {
 	path := c.endpoints.UpdateServer(serverID)
 

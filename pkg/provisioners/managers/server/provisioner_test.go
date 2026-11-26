@@ -246,3 +246,53 @@ func TestProvisionEmitsOnAYieldingPass(t *testing.T) {
 	require.ErrorIs(t, prov.Provision(ctx), provisioners.ErrYield)
 	require.Len(t, sink.entriesWithMsg("lifecycle"), 1, "a yielding pass must still report what it observed")
 }
+
+// provisionAfterGet runs one pass over the server as the reconciler reads it.
+func provisionAfterGet(t *testing.T, provider *mocktypes.MockProvider, ctrl *gomock.Controller) (client.Client, *regionv1.Server, metav1.ObjectMeta, error) {
+	t.Helper()
+
+	providers := mockproviders.NewMockProviders(ctrl)
+	providers.EXPECT().LookupCloud(testRegionID).Return(provider, nil)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, regionv1.AddToScheme(scheme))
+
+	restMapper := apimeta.NewDefaultRESTMapper([]schema.GroupVersion{regionv1.SchemeGroupVersion})
+	restMapper.Add(regionv1.SchemeGroupVersion.WithKind("Server"), apimeta.RESTScopeNamespace)
+
+	initial := testProvisionServer()
+
+	cli := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithRESTMapper(restMapper).
+		WithObjects(initial, testProvisionIdentity()).
+		WithStatusSubresource(&regionv1.Server{}).
+		Build()
+
+	server := &regionv1.Server{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(initial), server))
+	metadata := *server.ObjectMeta.DeepCopy()
+
+	err := serverprovisioner.NewForTest(server, providers, nil).Provision(coreclient.NewContext(t.Context(), cli))
+
+	return cli, server, metadata, err
+}
+
+// TestProvisionLeavesMetadataWithoutRecord pins that a pass that does not
+// establish the record writes no metadata.
+func TestProvisionLeavesMetadataWithoutRecord(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+
+	provider := mocktypes.NewMockProvider(ctrl)
+	provider.EXPECT().CreateServer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(types.ServerCreateResult{PortConverged: true}, nil)
+
+	cli, server, metadata, err := provisionAfterGet(t, provider, ctrl)
+	require.NoError(t, err)
+
+	stored := &regionv1.Server{}
+	require.NoError(t, cli.Get(t.Context(), client.ObjectKeyFromObject(server), stored))
+	require.Equal(t, metadata, stored.ObjectMeta)
+	require.False(t, stored.UserDataRecorded())
+}
