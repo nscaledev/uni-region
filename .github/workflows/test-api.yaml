@@ -44,6 +44,7 @@ on:
           - 'Image Discovery'
           - 'External Network Discovery'
           - 'File Storage Management'
+          - 'File Storage directory quotas'
           - 'Block Storage'
           - 'Network Management'
           - 'SecurityGroup'
