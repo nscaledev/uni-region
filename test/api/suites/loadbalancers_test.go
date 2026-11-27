@@ -57,6 +57,32 @@ func deferLoadBalancerCleanup(loadBalancerID *string) {
 	})
 }
 
+// updateLoadBalancer reads the load balancer, applies mutate to its spec and PUTs
+// it, and returns the read it updated and the PUT response. The controller also
+// writes the load balancer, so the PUT's optimistic lock can answer 409, which the
+// API documents as retryable; a retry reads it again.
+func updateLoadBalancer(loadBalancerID string, mutate func(*regionopenapi.LoadBalancerV2Spec)) (*regionopenapi.LoadBalancerV2Read, *regionopenapi.LoadBalancerV2Read) {
+	var current, updated *regionopenapi.LoadBalancerV2Read
+
+	Eventually(func(g Gomega) {
+		var err error
+
+		current, err = regionClient.GetLoadBalancer(ctx, loadBalancerID)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		spec := current.Spec
+		mutate(&spec)
+
+		updated, err = regionClient.UpdateLoadBalancer(ctx, loadBalancerID, regionopenapi.LoadBalancerV2Update{
+			Metadata: coreapi.ResourceWriteMetadata{Name: current.Metadata.Name},
+			Spec:     spec,
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+	}).WithTimeout(time.Minute).WithPolling(time.Second).Should(Succeed())
+
+	return current, updated
+}
+
 var _ = Describe("LoadBalancer", func() {
 	Context("When managing load balancer lifecycle", Ordered, func() {
 		var (
@@ -160,24 +186,16 @@ var _ = Describe("LoadBalancer", func() {
 			})
 
 			It("accepts updates to allowed CIDRs and pool members", func() {
-				current, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
-
 				allowedCidrs := []string{"172.30.0.0/16"}
 				updatedMembers := []regionopenapi.LoadBalancerMemberV2{
 					{Address: "172.30.1.20", Port: 8080},
 					{Address: "172.30.1.21", Port: 8080},
 				}
 
-				spec := current.Spec
-				spec.Listeners[0].AllowedCidrs = &allowedCidrs
-				spec.Listeners[0].Pool.Members = updatedMembers
-
-				putResp, err := regionClient.UpdateLoadBalancer(ctx, lbID, regionopenapi.LoadBalancerV2Update{
-					Metadata: coreapi.ResourceWriteMetadata{Name: current.Metadata.Name},
-					Spec:     spec,
+				_, putResp := updateLoadBalancer(lbID, func(spec *regionopenapi.LoadBalancerV2Spec) {
+					spec.Listeners[0].AllowedCidrs = &allowedCidrs
+					spec.Listeners[0].Pool.Members = updatedMembers
 				})
-				Expect(err).NotTo(HaveOccurred())
 				Expect(putResp.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
 				Expect(*putResp.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
@@ -194,18 +212,11 @@ var _ = Describe("LoadBalancer", func() {
 			})
 
 			It("accepts an update toggling publicIP to false", func() {
-				current, err := regionClient.GetLoadBalancer(ctx, lbID)
-				Expect(err).NotTo(HaveOccurred())
+				current, putResp := updateLoadBalancer(lbID, func(spec *regionopenapi.LoadBalancerV2Spec) {
+					spec.PublicIP = ptr.To(false)
+				})
 				originalVIP = current.Status.VipAddress
 
-				spec := current.Spec
-				spec.PublicIP = ptr.To(false)
-
-				putResp, err := regionClient.UpdateLoadBalancer(ctx, lbID, regionopenapi.LoadBalancerV2Update{
-					Metadata: coreapi.ResourceWriteMetadata{Name: current.Metadata.Name},
-					Spec:     spec,
-				})
-				Expect(err).NotTo(HaveOccurred())
 				Expect(putResp.Spec.PublicIP).NotTo(BeNil())
 				Expect(*putResp.Spec.PublicIP).To(BeFalse())
 			})
