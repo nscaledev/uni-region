@@ -67,7 +67,7 @@ jobs:
           *) echo "::error::environment must be dev|uat, got '$ENVIRONMENT'"; exit 1;;
         esac
         case "${FOCUS:-All}" in
-          All|'Region Discovery'|'Flavor Discovery'|'Image Discovery'|'External Network Discovery'|'File Storage Management'|'Block Storage'|'Network Management'|'SecurityGroup'|'LoadBalancer') ;;
+          All|'Region Discovery'|'Flavor Discovery'|'Image Discovery'|'External Network Discovery'|'File Storage Management'|'File Storage directory quotas'|'Block Storage'|'Network Management'|'SecurityGroup'|'LoadBalancer') ;;
           *) echo "::error::unknown focus '$FOCUS'"; exit 1;;
         esac
 
