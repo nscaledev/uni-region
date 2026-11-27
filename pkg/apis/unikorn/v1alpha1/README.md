@@ -121,7 +121,8 @@ stored objects rely on for linkage, migration, and operational coordination.
   subresource) holding hard capacity and inode limits for one directory. It is
   a separate resource, not inline in `FileStorage.spec`, because per-rule usage
   changes every few minutes and one bad quota must not degrade the File Storage.
-  Only the CRD exists today: there is no handler, OpenAPI, or controller yet.
+  The nested v2 API is served by `pkg/handler/storage`; the controller and
+  usage monitor live in `uni-storage` and are disabled by default in its chart.
   Contract: `uni-storage/docs/directory-quotas/api-crd-design.md`.
 - Quota `spec.fileStorageID` and `spec.path` are immutable. `path` is required
   and reuses the snapshot `protectedPath` pattern, length, and `.`/`..` rule;

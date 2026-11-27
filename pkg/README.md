@@ -51,8 +51,10 @@ The useful way to read it is not as a directory tree, but as one system:
   to blocking snapshots before parent deprovisioning.
 - `FileStorageDirectoryQuota` is the internal CRD for hard capacity and inode
   limits on one directory of a File Storage, with default user/group limits and
-  up to 20 per-subject rules. Only the [resource model](./apis/unikorn/v1alpha1/README.md)
-  exists so far; the API handler and the `uni-storage` controller come later.
+  up to 20 per-subject rules. The [resource model](./apis/unikorn/v1alpha1/README.md)
+  and its [nested v2 API](./handler/storage/README.md#directory-quotas) live
+  here; the controller and usage monitor that apply and observe them live in
+  `uni-storage` and are disabled by default in its chart.
 - `Server` now carries the internal attach-existing-only block volume intent
   and observed per-volume attachment rows. The provider boundary and OpenStack
   Nova attach/detach implementation exist; the Volume provisioner projects

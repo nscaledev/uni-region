@@ -18,8 +18,6 @@ limitations under the License.
 package storage
 
 import (
-	"strings"
-
 	unikorncorev1 "github.com/unikorn-cloud/core/pkg/apis/unikorn/v1alpha1"
 	coreopenapi "github.com/unikorn-cloud/core/pkg/openapi"
 	"github.com/unikorn-cloud/core/pkg/server/errors"
@@ -234,13 +232,7 @@ func validateSnapshotPolicyProtectedPath(protectedPath *string) error {
 		return nil
 	}
 
-	for _, component := range strings.Split(*protectedPath, "/") {
-		if component == "." || component == ".." {
-			return errors.HTTPUnprocessableContent("protectedPath must not contain . or .. path components")
-		}
-	}
-
-	return nil
+	return validatePathComponents("protectedPath", *protectedPath)
 }
 
 // validateSnapshotPolicyProtectedPaths enforces immutable protected paths for

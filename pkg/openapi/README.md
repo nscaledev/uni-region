@@ -116,8 +116,10 @@ the place for unbounded per-subject data. POST and PUT return the
 complete resource with 202; PUT replaces limits and the whole rule list.
 `directoryLimits` is bounded by the File Storage size and, for nested quotas,
 by the quotas on parent directories and subdirectories (422 otherwise). The
-path is set on create only: the update request has no path. DELETE removes the limits only, never the directory or its
-data. The handler is not implemented yet: every operation returns 501.
+path is set on create only: the update request has no path. DELETE removes the
+limits only, never the directory or its data. The
+[storage handler](../handler/storage/README.md#directory-quotas) implements the
+operations; the `uni-storage` controller applies them.
 
 Keeping the schema unified matters because it allows:
 

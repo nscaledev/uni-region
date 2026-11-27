@@ -66,7 +66,7 @@ func (c *Client) CreateSnapshot(ctx context.Context, storageID regionids.FileSto
 
 	authz.Declare(ctx, target)
 
-	parent, err := c.getSnapshotParent(ctx, storageID)
+	parent, err := c.getParentFileStorage(ctx, storageID)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (c *Client) CreateSnapshot(ctx context.Context, storageID regionids.FileSto
 	}
 
 	if err := rbac.AllowProjectScopeCreateReaderOn(ctx, c.Identity, target, parent); err != nil {
-		return nil, snapshotAuthorizationError(err)
+		return nil, childAuthorizationError(err)
 	}
 
 	if parent.DeletionTimestamp != nil {
@@ -186,7 +186,7 @@ func (c *Client) DeleteSnapshot(ctx context.Context, storageID regionids.FileSto
 	target.ObjectName = resource.Labels[coreconstants.NameLabel]
 
 	if err := rbac.AllowProjectScopeReaderOn(ctx, target, resource); err != nil {
-		return snapshotAuthorizationError(err)
+		return childAuthorizationError(err)
 	}
 
 	// Expiration hides even a paused, errored, or already-terminating CR. This
@@ -215,13 +215,13 @@ func (c *Client) DeleteSnapshot(ctx context.Context, storageID regionids.FileSto
 func (c *Client) ListSnapshots(ctx context.Context, storageID regionids.FileStorageID, params openapi.GetApiV2FilestorageFilestorageIDSnapshotsParams) (openapi.FileStorageSnapshotsV2Read, error) {
 	now := c.Clock.Now()
 
-	parent, err := c.getSnapshotParent(ctx, storageID)
+	parent, err := c.getParentFileStorage(ctx, storageID)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := rbac.AllowProjectScopeReader(ctx, snapshotEndpoint, identityapi.Read, parent); err != nil {
-		return nil, snapshotAuthorizationError(err)
+		return nil, childAuthorizationError(err)
 	}
 
 	selector := labels.SelectorFromSet(map[string]string{
@@ -280,7 +280,7 @@ func (c *Client) GetSnapshot(ctx context.Context, storageID regionids.FileStorag
 	}
 
 	if err := rbac.AllowProjectScopeReader(ctx, snapshotEndpoint, identityapi.Read, result); err != nil {
-		return nil, snapshotAuthorizationError(err)
+		return nil, childAuthorizationError(err)
 	}
 
 	if !snapshotMatchesParentID(result, storageID) || snapshotExpired(result, now) {
@@ -322,31 +322,6 @@ func convertSnapshotList(in *regionv1.FileStorageSnapshotList) openapi.FileStora
 	}
 
 	return out
-}
-
-func snapshotAuthorizationError(err error) error {
-	if errors.IsForbidden(err) {
-		return errors.HTTPNotFound().WithError(err)
-	}
-
-	return err
-}
-
-// getSnapshotParent fetches the parent File Storage by ID.
-func (c *Client) getSnapshotParent(ctx context.Context, storageID regionids.FileStorageID) (*regionv1.FileStorage, error) {
-	parent := &regionv1.FileStorage{}
-	if err := c.Client.Get(ctx, client.ObjectKey{
-		Namespace: c.Namespace,
-		Name:      storageID.String(),
-	}, parent); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup snapshot parent", err)
-	}
-
-	return parent, nil
 }
 
 func snapshotMatchesParentID(snapshot *regionv1.FileStorageSnapshot, storageID regionids.FileStorageID) bool {
