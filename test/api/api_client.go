@@ -598,6 +598,94 @@ func (c *APIClient) DeleteFileStorageSnapshot(ctx context.Context, parentID, sna
 	}
 }
 
+// ListFileStorageDirectoryQuotas lists Directory Quotas of a file storage resource.
+func (c *APIClient) ListFileStorageDirectoryQuotas(ctx context.Context, parentID string, tags ...string) (regionopenapi.FileStorageDirectoryQuotasV2Read, error) {
+	return coreclient.ListResource[regionopenapi.FileStorageDirectoryQuotaV2Read](
+		ctx,
+		c.regionClient,
+		c.endpoints.ListFileStorageDirectoryQuotas(parentID, tags...),
+		coreclient.ResponseHandlerConfig{
+			ResourceType:   "filestoragedirectoryquotas",
+			ResourceID:     parentID,
+			ResourceIDType: "file storage",
+		},
+	)
+}
+
+// CreateFileStorageDirectoryQuota creates a Directory Quota and expects 202.
+func (c *APIClient) CreateFileStorageDirectoryQuota(ctx context.Context, parentID string, request regionopenapi.FileStorageDirectoryQuotaV2Create) (*regionopenapi.FileStorageDirectoryQuotaV2Read, error) {
+	return c.writeFileStorageDirectoryQuota(ctx, http.MethodPost, c.endpoints.CreateFileStorageDirectoryQuota(parentID), request)
+}
+
+// UpdateFileStorageDirectoryQuota replaces a Directory Quota's limits and expects 202.
+// A 409 from the optimistic lock is returned as an error for the caller to retry.
+func (c *APIClient) UpdateFileStorageDirectoryQuota(ctx context.Context, parentID, quotaID string, request regionopenapi.FileStorageDirectoryQuotaV2Update) (*regionopenapi.FileStorageDirectoryQuotaV2Read, error) {
+	return c.writeFileStorageDirectoryQuota(ctx, http.MethodPut, c.endpoints.FileStorageDirectoryQuota(parentID, quotaID), request)
+}
+
+func (c *APIClient) writeFileStorageDirectoryQuota(ctx context.Context, method, path string, request any) (*regionopenapi.FileStorageDirectoryQuotaV2Read, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling directory quota request: %w", err)
+	}
+
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	_, response, err := c.DoRegionRequest(ctx, method, path, bytes.NewReader(body), http.StatusAccepted)
+	if err != nil {
+		return nil, fmt.Errorf("writing file storage directory quota: %w", err)
+	}
+
+	var quota regionopenapi.FileStorageDirectoryQuotaV2Read
+	if err := json.Unmarshal(response, &quota); err != nil {
+		return nil, fmt.Errorf("unmarshaling file storage directory quota: %w", err)
+	}
+
+	return &quota, nil
+}
+
+// GetFileStorageDirectoryQuota gets a Directory Quota by ID under its parent.
+// Returns ErrResourceNotFound if the quota is not visible under that parent.
+func (c *APIClient) GetFileStorageDirectoryQuota(ctx context.Context, parentID, quotaID string) (*regionopenapi.FileStorageDirectoryQuotaV2Read, error) {
+	//nolint:bodyclose // DoRequest handles response body closing internally.
+	resp, respBody, err := c.regionClient.DoRequest(ctx, http.MethodGet, c.endpoints.FileStorageDirectoryQuota(parentID, quotaID), nil, 0)
+	if err != nil {
+		return nil, fmt.Errorf("getting file storage directory quota: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var quota regionopenapi.FileStorageDirectoryQuotaV2Read
+		if err := json.Unmarshal(respBody, &quota); err != nil {
+			return nil, fmt.Errorf("unmarshaling file storage directory quota: %w", err)
+		}
+
+		return &quota, nil
+	case http.StatusNotFound:
+		return nil, fmt.Errorf("file storage directory quota '%s': %w", quotaID, coreclient.ErrResourceNotFound)
+	default:
+		return nil, fmt.Errorf("getting file storage directory quota: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
+// DeleteFileStorageDirectoryQuota records deletion intent. A missing quota
+// returns ErrResourceNotFound; a terminating one is still accepted.
+func (c *APIClient) DeleteFileStorageDirectoryQuota(ctx context.Context, parentID, quotaID string) error {
+	//nolint:bodyclose // DoRegionRequest closes the response body internally.
+	resp, _, err := c.DoRegionRequest(ctx, http.MethodDelete, c.endpoints.FileStorageDirectoryQuota(parentID, quotaID), nil, 0)
+	if err != nil {
+		return fmt.Errorf("deleting file storage directory quota: %w", err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusAccepted:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("file storage directory quota '%s': %w", quotaID, coreclient.ErrResourceNotFound)
+	default:
+		return fmt.Errorf("deleting file storage directory quota: status %d: %w", resp.StatusCode, coreclient.ErrUnexpectedStatus)
+	}
+}
+
 // CreateFileStorageSnapshotExpectError returns the canonical error body for a typed create request.
 func (c *APIClient) CreateFileStorageSnapshotExpectError(ctx context.Context, parentID string, request regionopenapi.FileStorageSnapshotV2Create, expectedStatus int) (*coreapi.Error, error) {
 	body, err := json.Marshal(request)

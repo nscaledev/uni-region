@@ -110,6 +110,31 @@ func (e *Endpoints) DeleteFileStorageSnapshot(filestorageID, snapshotID string) 
 		url.PathEscape(filestorageID), url.PathEscape(snapshotID))
 }
 
+// ListFileStorageDirectoryQuotas returns the nested Directory Quota collection.
+func (e *Endpoints) ListFileStorageDirectoryQuotas(filestorageID string, tags ...string) string {
+	path := fmt.Sprintf("/api/v2/filestorage/%s/directoryquotas", url.PathEscape(filestorageID))
+	if len(tags) == 0 {
+		return path
+	}
+
+	query := url.Values{}
+	for _, tag := range tags {
+		query.Add("tag", tag)
+	}
+
+	return path + "?" + query.Encode()
+}
+
+// CreateFileStorageDirectoryQuota returns the nested Directory Quota create endpoint.
+func (e *Endpoints) CreateFileStorageDirectoryQuota(filestorageID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s/directoryquotas", url.PathEscape(filestorageID))
+}
+
+// FileStorageDirectoryQuota returns one Directory Quota under its parent, for get, update and delete.
+func (e *Endpoints) FileStorageDirectoryQuota(filestorageID, quotaID string) string {
+	return fmt.Sprintf("/api/v2/filestorage/%s/directoryquotas/%s", url.PathEscape(filestorageID), url.PathEscape(quotaID))
+}
+
 // UpdateFileStorage returns the endpoint for updating a specific file storage resource.
 func (e *Endpoints) UpdateFileStorage(filestorageID string) string {
 	return fmt.Sprintf("/api/v2/filestorage/%s",
