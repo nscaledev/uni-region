@@ -161,7 +161,8 @@ related dependencies rather than from nested path scope.
   reason `Provisioning` and message "awaiting reconciliation of the current
   specification". Exceptions: deletion stays `deprovisioning`, never-evaluated
   stays `pending`, and a paused server (`spec.pause`) does not restamp and
-  reads `provisioning` while paused. The v1 read shares the helper.
+  reads `provisioning` while paused. The v1 and v2 reads both use the shared
+  [`common.ProjectScopedReadMetadata`](../common/README.md#projectscopedreadmetadata).
   `provisioned` means settled — which the sole consumer, uni-compute's instance
   settlement gate, relies on — and the target image is not realized until the
   rebuild converges. A rebuild

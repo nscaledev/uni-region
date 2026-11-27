@@ -133,9 +133,19 @@ func (c *LoadBalancer) StatusConditionRead(t unikornv1core.ConditionType) (*meta
 }
 
 // SetProvisioningCondition sets the Available condition with a reason drawn from
-// the provisioning vocabulary.
+// the provisioning vocabulary. The condition records the spec generation it was
+// evaluated against on every outcome, so a reader can tell a result for the
+// current spec from one left over from a previous spec.
 func (c *LoadBalancer) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+	setProvisioningCondition(&c.Status.Conditions, c.Generation, status, reason, message)
+}
+
+// ProvisioningConditionCurrent reports whether the Available condition was
+// evaluated against the current spec generation. A missing condition or an
+// unstamped (zero) generation is not current: it cannot be verified, so it must
+// not be read as a result for this spec.
+func (c *LoadBalancer) ProvisioningConditionCurrent() bool {
+	return provisioningConditionCurrent(c.Status.Conditions, c.Generation)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
@@ -216,13 +226,7 @@ func (c *Server) StatusConditionRead(t unikornv1core.ConditionType) (*metav1.Con
 // evaluated against on every outcome, so a reader can tell a result for the
 // current spec from one left over from a previous spec.
 func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
-	meta.SetStatusCondition(&c.Status.Conditions, metav1.Condition{
-		Type:               string(unikornv1core.ConditionAvailable),
-		Status:             metav1.ConditionStatus(status),
-		ObservedGeneration: c.Generation,
-		Reason:             string(reason),
-		Message:            message,
-	})
+	setProvisioningCondition(&c.Status.Conditions, c.Generation, status, reason, message)
 }
 
 // ProvisioningConditionCurrent reports whether the Available condition was
@@ -231,12 +235,30 @@ func (c *Server) SetProvisioningCondition(status corev1.ConditionStatus, reason 
 // not be read as a result for this spec. Current says nothing about success;
 // the condition's status and reason carry that.
 func (c *Server) ProvisioningConditionCurrent() bool {
-	condition := meta.FindStatusCondition(c.Status.Conditions, string(unikornv1core.ConditionAvailable))
+	return provisioningConditionCurrent(c.Status.Conditions, c.Generation)
+}
+
+// setProvisioningCondition sets the Available condition stamped with the spec
+// generation it was evaluated against.
+func setProvisioningCondition(conditions *[]metav1.Condition, generation int64, status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
+	meta.SetStatusCondition(conditions, metav1.Condition{
+		Type:               string(unikornv1core.ConditionAvailable),
+		Status:             metav1.ConditionStatus(status),
+		ObservedGeneration: generation,
+		Reason:             string(reason),
+		Message:            message,
+	})
+}
+
+// provisioningConditionCurrent reports whether the Available condition carries
+// a non-zero stamp for the given generation.
+func provisioningConditionCurrent(conditions []metav1.Condition, generation int64) bool {
+	condition := meta.FindStatusCondition(conditions, string(unikornv1core.ConditionAvailable))
 	if condition == nil {
 		return false
 	}
 
-	return condition.ObservedGeneration != 0 && condition.ObservedGeneration == c.Generation
+	return condition.ObservedGeneration != 0 && condition.ObservedGeneration == generation
 }
 
 // SetHealthCondition sets the Healthy condition with a reason drawn from the

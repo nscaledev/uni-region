@@ -26,6 +26,23 @@ domain-specific resource handlers.
   - member uniqueness
   - health-check constraints
 - requested VIP validation is tied to the selected network's prefix
+- `provisioningStatus=provisioned` in a read means the controller completed a
+  successful pass for the spec generation shown in that read, and such a pass
+  requires Octavia `ACTIVE` with matching listeners, pools, members and
+  monitors. A result stamped for an earlier generation, or unstamped (written
+  before stamping existed), reads `provisioning` with reason `Provisioning` and
+  message "awaiting reconciliation of the current specification", so the
+  response to an accepted update that changes the spec of an evaluated load
+  balancer reads `provisioning`. A metadata-only update (name or description)
+  leaves the generation unchanged and keeps the current result. Exceptions:
+  deletion stays `deprovisioning` and never-evaluated stays `pending`. A paused
+  load balancer (`spec.pause`), including one paused at upgrade, is not
+  restamped and reads `provisioning` until unpaused and reconciled; an
+  unreachable provider likewise keeps a stale result reading `provisioning`
+  for the outage. Reads go straight to the API server, so every read after
+  such an update shows the new spec and reads `provisioning` until the
+  controller has applied it.
+  See [`common.ProjectScopedReadMetadata`](../common/README.md#projectscopedreadmetadata).
 
 ## Invariants And Guard Rails
 

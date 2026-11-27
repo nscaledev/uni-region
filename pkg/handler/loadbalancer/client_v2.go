@@ -155,7 +155,7 @@ func convertListenerListV2(in []regionv1.LoadBalancerListener) []openapi.LoadBal
 
 func convertV2(in *regionv1.LoadBalancer) *openapi.LoadBalancerV2Read {
 	return &openapi.LoadBalancerV2Read{
-		Metadata: conversion.ProjectScopedResourceReadMetadata(in, in.Spec.Tags),
+		Metadata: handlercommon.ProjectScopedReadMetadata(in, in.Spec.Tags),
 		Spec: openapi.LoadBalancerV2Spec{
 			PublicIP:  ptr.To(in.Spec.PublicIP),
 			Listeners: convertListenerListV2(in.Spec.Listeners),

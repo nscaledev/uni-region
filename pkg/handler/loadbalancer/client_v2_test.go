@@ -44,6 +44,7 @@ import (
 	idstest "github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -543,6 +544,91 @@ func TestGetV2ReturnsEmptyPoolMembers(t *testing.T) {
 	data, err := json.Marshal(result)
 	require.NoError(t, err)
 	require.Contains(t, string(data), "\"members\":[]")
+}
+
+func testLoadBalancerWithProvisioningResult(t *testing.T, specGeneration, conditionGeneration int64, status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason) *regionv1.LoadBalancer {
+	t.Helper()
+
+	resource := testLoadBalancerResource(t, true)
+	resource.Generation = conditionGeneration
+	resource.SetProvisioningCondition(status, reason, "message")
+	resource.Generation = specGeneration
+
+	return resource
+}
+
+// TestGetV2ProvisioningStatusFreshness pins that a read does not present a
+// result recorded for a previous spec generation as convergence, while a
+// current result keeps its own outcome, and deletion and pending are unaffected.
+func TestGetV2ProvisioningStatusFreshness(t *testing.T) {
+	t.Parallel()
+
+	unstamped := testLoadBalancerResource(t, true)
+	unstamped.Generation = 1
+	unikornv1core.UpdateCondition(&unstamped.Status.Conditions, unikornv1core.ConditionAvailable, corev1.ConditionTrue, string(unikornv1core.ConditionReasonProvisioned), "provisioned")
+
+	noCondition := testLoadBalancerResource(t, true)
+	noCondition.Generation = 1
+
+	deleting := testLoadBalancerWithProvisioningResult(t, 2, 1, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned)
+	deleting.DeletionTimestamp = ptr.To(metav1.Now())
+	deleting.Finalizers = []string{"test"}
+
+	for _, tc := range []struct {
+		name       string
+		resource   *regionv1.LoadBalancer
+		wantStatus coreapi.ResourceProvisioningStatus
+		wantReason *coreapi.ProvisioningStatusReason
+	}{
+		{"stale provisioned", testLoadBalancerWithProvisioningResult(t, 2, 1, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{"current provisioned", testLoadBalancerWithProvisioningResult(t, 2, 2, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned), coreapi.ResourceProvisioningStatusProvisioned, ptr.To(coreapi.ProvisioningStatusReasonProvisioned)},
+		{"current provisioning", testLoadBalancerWithProvisioningResult(t, 3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonProvisioning), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{"current errored", testLoadBalancerWithProvisioningResult(t, 3, 3, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusError, ptr.To(coreapi.ProvisioningStatusReasonErrored)},
+		{"stale errored", testLoadBalancerWithProvisioningResult(t, 2, 1, corev1.ConditionFalse, unikornv1core.ConditionReasonErrored), coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{"unstamped provisioned", unstamped, coreapi.ResourceProvisioningStatusProvisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioning)},
+		{"no condition", noCondition, coreapi.ResourceProvisioningStatusPending, nil},
+		{"deleting", deleting, coreapi.ResourceProvisioningStatusDeprovisioning, ptr.To(coreapi.ProvisioningStatusReasonProvisioned)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			client := loadbalancer.New(common.ClientArgs{
+				Client:    newLBFakeClientBuilder(t, tc.resource).Build(),
+				Namespace: lbNamespace,
+			})
+
+			result, err := client.GetV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read)), idstest.MustParseLoadBalancerID(lbLoadBalancerID))
+			require.NoError(t, err)
+			require.Equal(t, tc.wantStatus, result.Metadata.ProvisioningStatus)
+
+			if tc.wantReason == nil {
+				require.Nil(t, result.Metadata.ProvisioningStatusDetail)
+
+				return
+			}
+
+			require.NotNil(t, result.Metadata.ProvisioningStatusDetail)
+			require.Equal(t, *tc.wantReason, result.Metadata.ProvisioningStatusDetail.Reason)
+		})
+	}
+}
+
+// TestListV2ReportsStaleProvisioningAsProvisioning pins that list reads share
+// the freshness projection with get.
+func TestListV2ReportsStaleProvisioningAsProvisioning(t *testing.T) {
+	t.Parallel()
+
+	resource := testLoadBalancerWithProvisioningResult(t, 2, 1, corev1.ConditionTrue, unikornv1core.ConditionReasonProvisioned)
+
+	client := loadbalancer.New(common.ClientArgs{
+		Client:    newLBFakeClientBuilder(t, resource).Build(),
+		Namespace: lbNamespace,
+	})
+
+	result, err := client.ListV2(rbac.NewContext(t.Context(), projectACL(identityapi.Read)), openapi.GetApiV2LoadbalancersParams{})
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Equal(t, coreapi.ResourceProvisioningStatusProvisioning, result[0].Metadata.ProvisioningStatus)
 }
 
 func TestUpdateV2(t *testing.T) {
