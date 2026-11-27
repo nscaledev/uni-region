@@ -51,8 +51,15 @@ import (
 
 const directoryQuotaEndpoint = "region:filestoragedirectoryquotas:v2"
 
+// directoryQuotaIDNamespace is the fixed UUIDv5 namespace of Directory Quota
+// IDs, so they cannot collide with another resource type hashed from the same
+// File Storage (specification appendix A.1). Changing it changes every ID.
+//
+//nolint:gochecknoglobals
+var directoryQuotaIDNamespace = uuid.MustParse("981ad53a-40b7-4b1d-aeea-7f223b4a9094")
+
 // CreateDirectoryQuota records Directory Quota intent; the controller applies it.
-// The ID is derived from the parent and path, so Kubernetes rejects a second
+// The ID is derived from the parent ID and path, so Kubernetes rejects a second
 // quota on the same path, including while the first is terminating.
 func (c *Client) CreateDirectoryQuota(ctx context.Context, storageID regionids.FileStorageID, request *openapi.FileStorageDirectoryQuotaV2Create) (*openapi.FileStorageDirectoryQuotaV2Read, error) {
 	target := authz.Target{
@@ -297,7 +304,7 @@ func (c *Client) generateDirectoryQuota(ctx context.Context, scope identityids.P
 
 	resource := &regionv1.FileStorageDirectoryQuota{
 		ObjectMeta: conversion.NewDeterministicObjectMetadata(metadata, c.Namespace,
-			uuid.UUID(storageID), path).
+			directoryQuotaIDNamespace, storageID.String()+"/"+path).
 			WithLabel(constants.FileStorageLabel, storageID.String()).
 			WithLabel(constants.RegionLabel, regionID).
 			WithLabel(constants.ResourceAPIVersionLabel, constants.MarshalAPIVersion(2)).

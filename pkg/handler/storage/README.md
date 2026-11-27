@@ -182,7 +182,9 @@ controller applies the limits.
   create and list authorize against the parent's project, while get, update and
   delete authorize the quota's own project without requiring the parent.
   Missing, inaccessible and wrong-parent quotas return canonical 404.
-- The ID is a deterministic UUID derived from the parent ID and the path, so
+- The ID is a deterministic UUID hashed from the parent ID and the path under
+  a namespace of its own, so it never equals a snapshot ID of the same File
+  Storage (snapshots hash their name under the parent ID), and
   Kubernetes rejects a second quota on the same path with 409, including while
   the first is terminating. Creating under a deleting parent also returns 409.
 - Creation sets a blocking owner reference, so File Storage's foreground delete

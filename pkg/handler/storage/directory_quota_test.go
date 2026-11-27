@@ -21,11 +21,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	coreconstants "github.com/unikorn-cloud/core/pkg/constants"
 	coreapi "github.com/unikorn-cloud/core/pkg/openapi"
 	coreerrors "github.com/unikorn-cloud/core/pkg/server/errors"
+	coreutil "github.com/unikorn-cloud/core/pkg/util"
 	identityauth "github.com/unikorn-cloud/identity/pkg/middleware/authorization"
 	identityapi "github.com/unikorn-cloud/identity/pkg/openapi"
 	"github.com/unikorn-cloud/identity/pkg/principal"
@@ -127,6 +129,21 @@ func TestCreateDirectoryQuotaReturnsPendingResource(t *testing.T) {
 	read, err := c.GetDirectoryQuota(ctx, parentID, idstest.MustParseFileStorageDirectoryQuotaID(got.Metadata.Id))
 	require.NoError(t, err)
 	require.Equal(t, got.Spec, read.Spec)
+}
+
+// A snapshot ID is hashed from the parent ID and the snapshot name, so a quota
+// on a path equal to a snapshot name must not get the same ID.
+func TestCreateDirectoryQuotaIDDiffersFromSnapshotID(t *testing.T) {
+	t.Parallel()
+
+	c := snapshotReadClient(t, snapshotParent())
+	ctx := allDirectoryQuotaOperations(t.Context(), "creator@example.com")
+
+	got, err := c.CreateDirectoryQuota(ctx, idstest.MustParseFileStorageID(snapshotParentID), directoryQuotaRequest("home"))
+	require.NoError(t, err)
+	require.NotEqual(t, coreutil.GenerateDeterministicResourceID(uuid.MustParse(snapshotParentID), "home"), got.Metadata.Id)
+	// Golden vector: the ID is public, so its derivation must not drift.
+	require.Equal(t, "e1539e84-c31b-547f-87e9-82522d3d3352", got.Metadata.Id)
 }
 
 func TestCreateDirectoryQuotaConflicts(t *testing.T) {
