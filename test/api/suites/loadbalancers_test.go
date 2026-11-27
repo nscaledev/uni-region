@@ -78,6 +78,10 @@ var _ = Describe("LoadBalancer", func() {
 			members := []regionopenapi.LoadBalancerMemberV2{
 				{Address: "172.30.1.10", Port: 8080},
 			}
+			updatedMembers := []regionopenapi.LoadBalancerMemberV2{
+				{Address: "172.30.1.20", Port: 8080},
+				{Address: "172.30.1.21", Port: 8080},
+			}
 			var originalVIP *regionopenapi.Ipv4Address
 			var deletedLBID string
 
@@ -164,10 +168,6 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				allowedCidrs := []string{"172.30.0.0/16"}
-				updatedMembers := []regionopenapi.LoadBalancerMemberV2{
-					{Address: "172.30.1.20", Port: 8080},
-					{Address: "172.30.1.21", Port: 8080},
-				}
 
 				spec := current.Spec
 				spec.Listeners[0].AllowedCidrs = &allowedCidrs
@@ -181,6 +181,11 @@ var _ = Describe("LoadBalancer", func() {
 				Expect(putResp.Spec.Listeners[0].AllowedCidrs).NotTo(BeNil())
 				Expect(*putResp.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 				Expect(putResp.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				// The response carries the new spec while the stored result is
+				// still for the previous one, so it must not read as converged.
+				Expect(putResp.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioning))
+				Expect(putResp.Metadata.ProvisioningStatusDetail).NotTo(BeNil())
+				Expect(putResp.Metadata.ProvisioningStatusDetail.Reason).To(Equal(coreapi.ProvisioningStatusReasonProvisioning))
 
 				// The API server reads single-resource GETs through the controller-runtime cache,
 				// so an immediate GET after PUT can briefly observe the pre-update object.
@@ -191,6 +196,17 @@ var _ = Describe("LoadBalancer", func() {
 					g.Expect(*roundTrip.Spec.Listeners[0].AllowedCidrs).To(Equal(allowedCidrs))
 					g.Expect(roundTrip.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
 				}).WithTimeout(5 * time.Second).WithPolling(250 * time.Millisecond).Should(Succeed())
+			})
+
+			It("eventually reports Provisioned with the updated members", func() {
+				// Status and members come from the same read, as a client polling
+				// for convergence checks them.
+				Eventually(func(g Gomega) {
+					got, err := regionClient.GetLoadBalancer(ctx, lbID)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(got.Metadata.ProvisioningStatus).To(Equal(coreapi.ResourceProvisioningStatusProvisioned))
+					g.Expect(got.Spec.Listeners[0].Pool.Members).To(Equal(updatedMembers))
+				}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
 			})
 
 			It("accepts an update toggling publicIP to false", func() {

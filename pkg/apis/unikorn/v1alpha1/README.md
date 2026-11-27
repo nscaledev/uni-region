@@ -260,14 +260,15 @@ stored objects rely on for linkage, migration, and operational coordination.
   unbootable image settles as `ACTIVE` on the target ref with no fault, the same
   as a perfect rebuild. So "the provider reports the server running that image"
   never means "the workload works".
-- `Server.SetProvisioningCondition` stamps `metadata.generation` into the
-  `Available` condition's `observedGeneration` on every outcome. A zero or
-  mismatched stamp means the result belongs to a previous spec:
-  `Server.ProvisioningConditionCurrent` returns false, and the REST read
+- `Server` and `LoadBalancer` `SetProvisioningCondition` stamp
+  `metadata.generation` into the `Available` condition's `observedGeneration`
+  on every outcome. A zero or mismatched stamp means the result belongs to a
+  previous spec: `Server.ProvisioningConditionCurrent` and
+  `LoadBalancer.ProvisioningConditionCurrent` return false, and the REST read
   projects it as `provisioning`. Enforced at the REST boundary only; internal
   readers still key off the reason.
-- `Server` has no `status.observedGeneration`. Core decides what to do with
-  each pass from its outcome.
+- Neither `Server` nor `LoadBalancer` has a `status.observedGeneration`. Core
+  decides what to do with each pass from its outcome.
 
 ## Caveats
 

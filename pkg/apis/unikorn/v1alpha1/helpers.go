@@ -133,9 +133,19 @@ func (c *LoadBalancer) StatusConditionRead(t unikornv1core.ConditionType) (*meta
 }
 
 // SetProvisioningCondition sets the Available condition with a reason drawn from
-// the provisioning vocabulary.
+// the provisioning vocabulary. The condition records the spec generation it was
+// evaluated against on every outcome, so a reader can tell a result for the
+// current spec from one left over from a previous spec.
 func (c *LoadBalancer) SetProvisioningCondition(status corev1.ConditionStatus, reason unikornv1core.ProvisioningConditionReason, message string) {
-	unikornv1core.UpdateCondition(&c.Status.Conditions, unikornv1core.ConditionAvailable, status, string(reason), message)
+	setProvisioningCondition(&c.Status.Conditions, c.Generation, status, reason, message)
+}
+
+// ProvisioningConditionCurrent reports whether the Available condition was
+// evaluated against the current spec generation. A missing condition or an
+// unstamped (zero) generation is not current: it cannot be verified, so it must
+// not be read as a result for this spec.
+func (c *LoadBalancer) ProvisioningConditionCurrent() bool {
+	return provisioningConditionCurrent(c.Status.Conditions, c.Generation)
 }
 
 // ResourceLabels generates a set of labels to uniquely identify the resource
