@@ -2,8 +2,9 @@
 
 ## Purpose
 
-`pkg/handler/common` defines shared handler dependencies and Identity allocation
-delegation for the region handler layer.
+`pkg/handler/common` defines shared handler dependencies, Identity allocation
+delegation, and the shared provisioning-status read projection for the region
+handler layer.
 
 `ClientArgs` is a pragmatic package-level contract for the ambient capabilities
 that most handlers need.
@@ -51,10 +52,25 @@ one case that needs a resource's scope before its own check; whatever it
 returns must be authorized before use. See the
 [handler README's Authorization section](../README.md#authorization).
 
+### ProjectScopedReadMetadata
+
+`ProjectScopedReadMetadata` wraps core's project-scoped read metadata. Core
+derives `provisioningStatus` from the `Available` condition alone, which between
+a spec update and the next reconcile still holds the previous spec's result. A
+result not stamped with the current `metadata.generation` therefore reads as
+`provisioning`, with reason `Provisioning` and message "awaiting reconciliation
+of the current specification". A deleting resource stays `deprovisioning` and a
+never-evaluated one stays `pending`.
+
+A resource opts in by stamping its `Available` condition with the evaluated
+generation and implementing `ProvisioningResult`; see the
+[API types README](../../apis/unikorn/v1alpha1/README.md).
+
 ## Invariants And Guard Rails
 
-- This package owns shared wiring and Identity allocation delegation. It does
-  not own resource-specific allocation requirements or lifecycle behavior.
+- This package owns shared wiring, Identity allocation delegation, and the
+  shared provisioning-status read projection. It does not own
+  resource-specific allocation requirements or lifecycle behavior.
 - `ClientArgs` is a shared handler-layer constructor contract with wide fan-out
   across concrete handler packages and top-level server wiring.
 - The dependency bundle is intentionally coarse-grained for practicality, but it
