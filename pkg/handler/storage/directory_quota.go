@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -94,6 +95,10 @@ func (c *Client) CreateDirectoryQuota(ctx context.Context, storageID regionids.F
 		return nil, err
 	}
 
+	if err := c.validateDirectoryQuotaHierarchy(ctx, storageID, &parent.Spec.Size, request.Spec.Path, spec.DirectoryLimits); err != nil {
+		return nil, err
+	}
+
 	resource, err := c.generateDirectoryQuota(ctx, parent, parent.Labels[constants.RegionLabel], storageID, &request.Metadata, request.Spec.Path, spec)
 	if err != nil {
 		return nil, err
@@ -125,7 +130,7 @@ func (c *Client) UpdateDirectoryQuota(ctx context.Context, storageID regionids.F
 		return nil, errors.HTTPConflict()
 	}
 
-	if err := validateDirectoryQuota(&request.Spec); err != nil {
+	if err := c.validateDirectoryQuotaUpdate(ctx, storageID, current.Spec.Path, &request.Spec); err != nil {
 		return nil, err
 	}
 
@@ -385,6 +390,79 @@ func validateDirectoryQuota(spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec)
 	}
 
 	return validateDirectoryQuotaCeiling(spec, rules)
+}
+
+// validateDirectoryQuotaUpdate also checks the hierarchy. A quota whose parent
+// is gone is about to be garbage collected, so its size check is skipped.
+func (c *Client) validateDirectoryQuotaUpdate(ctx context.Context, storageID regionids.FileStorageID, path string, spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec) error {
+	if err := validateDirectoryQuota(spec); err != nil {
+		return err
+	}
+
+	var size *resource.Quantity
+
+	parent, err := c.getParentFileStorage(ctx, storageID)
+
+	switch {
+	case err == nil:
+		size = &parent.Spec.Size
+	case !errors.IsHTTPNotFound(err):
+		return err
+	}
+
+	return c.validateDirectoryQuotaHierarchy(ctx, storageID, size, path, spec.DirectoryLimits)
+}
+
+// validateDirectoryQuotaHierarchy rejects directoryLimits above the File
+// Storage size or an ancestor quota's directoryLimits, or below a descendant's.
+// Every ancestor and descendant is compared, not only the nearest, so a quota
+// without directoryLimits in between hides nothing. Quotas being deleted are
+// ignored: their limits are going away.
+// shortcut: concurrent writes can still break the hierarchy, the controller must re-validate.
+func (c *Client) validateDirectoryQuotaHierarchy(ctx context.Context, storageID regionids.FileStorageID, size *resource.Quantity, path string, limits *openapi.FileStorageDirectoryQuotaLimits) error {
+	if limits == nil {
+		return nil
+	}
+
+	if size != nil && limits.CapacityBytes != nil && *limits.CapacityBytes > size.Value() {
+		return errors.HTTPUnprocessableContent("directoryLimits.capacityBytes must not exceed the File Storage size")
+	}
+
+	quotas := &regionv1.FileStorageDirectoryQuotaList{}
+
+	selector := labels.SelectorFromSet(map[string]string{constants.FileStorageLabel: storageID.String()})
+	if err := c.Client.List(ctx, quotas, &client.ListOptions{Namespace: c.Namespace, LabelSelector: selector}); err != nil {
+		return fmt.Errorf("%w: unable to list directory quotas", err)
+	}
+
+	for i := range quotas.Items {
+		if other := &quotas.Items[i]; other.DeletionTimestamp == nil && directoryQuotaMatchesParentID(other, storageID) {
+			if err := validateNestedDirectoryQuota(path, limits, other); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateNestedDirectoryQuota compares limits on path with one other quota,
+// which matters only when it is on a parent directory or a subdirectory.
+func validateNestedDirectoryQuota(path string, limits *openapi.FileStorageDirectoryQuotaLimits, other *regionv1.FileStorageDirectoryQuota) error {
+	otherLimits := convertDirectoryQuotaLimits(other.Spec.DirectoryLimits)
+	if otherLimits == nil {
+		return nil
+	}
+
+	if strings.HasPrefix(path, other.Spec.Path+"/") && exceedsLimit(limits, otherLimits) {
+		return errors.HTTPUnprocessableContent("directoryLimits must not exceed the directoryLimits of a quota on a parent directory")
+	}
+
+	if strings.HasPrefix(other.Spec.Path, path+"/") && exceedsLimit(otherLimits, limits) {
+		return errors.HTTPUnprocessableContent("directoryLimits must not be below the directoryLimits of a quota on a subdirectory")
+	}
+
+	return nil
 }
 
 func validateDirectoryQuotaSubjects(rules openapi.FileStorageDirectoryQuotaRules) error {

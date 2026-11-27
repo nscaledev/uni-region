@@ -40,6 +40,7 @@ import (
 	"github.com/unikorn-cloud/region/pkg/ids/idstest"
 	"github.com/unikorn-cloud/region/pkg/openapi"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -87,7 +88,7 @@ func snapshotParent() *regionv1.FileStorage {
 			coreconstants.OrganizationLabel: testOrgID,
 			coreconstants.ProjectLabel:      testProjID,
 		},
-	}}
+	}, Spec: regionv1.FileStorageSpec{Size: resource.MustParse("1Pi")}}
 }
 
 func manualSnapshot(id, name string) *regionv1.FileStorageSnapshot {

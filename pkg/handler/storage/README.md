@@ -196,6 +196,14 @@ controller applies the limits.
   or id), and no default or rule limit above `directoryLimits`, compared per
   dimension. Each failure returns 422, as does a CRD validation rejection on
   create or update.
+- Create and update also check `directoryLimits` against what is outside the
+  request, each failure returning 422: `capacityBytes` must not exceed the
+  File Storage size, and a nested quota must not exceed the `directoryLimits`
+  of any quota on a parent directory, nor go below those of any quota on a
+  subdirectory, per dimension. Quotas being deleted are ignored. The check
+  reads then writes, so concurrent requests can still break the hierarchy; the
+  controller must re-validate. Shrinking a File Storage below a quota is not
+  rejected. Update skips the size check when the parent File Storage is gone.
 - PUT replaces everything except the path, which the update request does not
   carry: the stored path is kept. It preserves pause and the creator, records
   the modifier, and uses an optimistic lock (409 on a concurrent change or while

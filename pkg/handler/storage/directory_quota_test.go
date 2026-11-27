@@ -460,6 +460,71 @@ func TestUpdateDirectoryQuota(t *testing.T) {
 	})
 }
 
+// TestDirectoryQuotaHierarchy covers the limits a request is checked against
+// outside itself: the File Storage size and the quotas above and below its path.
+// The stored quota on home/alice has a 1 TiB capacity limit; the File Storage is 1 PiB.
+func TestDirectoryQuotaHierarchy(t *testing.T) {
+	t.Parallel()
+
+	const otherQuotaID = "a6666666-6666-4666-a666-666666666666"
+
+	parentID := idstest.MustParseFileStorageID(snapshotParentID)
+	capacity := func(bytes int64) *openapi.FileStorageDirectoryQuotaLimits {
+		return &openapi.FileStorageDirectoryQuotaLimits{CapacityBytes: ptr.To(bytes)}
+	}
+
+	for _, test := range []struct {
+		name     string
+		path     string
+		limits   *openapi.FileStorageDirectoryQuotaLimits
+		deleting bool
+		valid    bool
+	}{
+		{name: "above the File Storage size", path: "scratch", limits: capacity(1<<50 + 1)},
+		{name: "equal to the File Storage size", path: "scratch", limits: capacity(1 << 50), valid: true},
+		{name: "child above its ancestor", path: "home/alice/data", limits: capacity(1<<40 + 1)},
+		{name: "child equal to its ancestor", path: "home/alice/data", limits: capacity(1 << 40), valid: true},
+		{name: "child bounded in another dimension only", path: "home/alice/data", limits: &openapi.FileStorageDirectoryQuotaLimits{Inodes: ptr.To[int64](1 << 50)}, valid: true},
+		{name: "ancestor below its descendant", path: "home", limits: capacity(1<<40 - 1)},
+		{name: "ancestor equal to its descendant", path: "home", limits: capacity(1 << 40), valid: true},
+		{name: "path sharing only a name prefix", path: "home/alice2", limits: capacity(1 << 41), valid: true},
+		{name: "ancestor being deleted is ignored", path: "home/alice/data", limits: capacity(1 << 41), deleting: true, valid: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			other := storedDirectoryQuota(otherQuotaID, "alice", "home/alice")
+			if test.deleting {
+				other.DeletionTimestamp = ptr.To(metav1.Now())
+				other.Finalizers = []string{coreconstants.Finalizer}
+			}
+
+			// The same limits must be judged the same way on create and on update.
+			target := storedDirectoryQuota(snapshotID, "target", test.path)
+			ctx := allDirectoryQuotaOperations(t.Context(), "editor@example.com")
+
+			_, createErr := snapshotReadClient(t, snapshotParent(), other).CreateDirectoryQuota(ctx, parentID, &openapi.FileStorageDirectoryQuotaV2Create{
+				Metadata: coreapi.ResourceWriteMetadata{Name: "target"},
+				Spec:     openapi.FileStorageDirectoryQuotaV2CreateSpec{Path: test.path, DirectoryLimits: test.limits},
+			})
+			_, updateErr := snapshotReadClient(t, snapshotParent(), other, target).UpdateDirectoryQuota(ctx, parentID, idstest.MustParseFileStorageDirectoryQuotaID(snapshotID), &openapi.FileStorageDirectoryQuotaV2Update{
+				Metadata: coreapi.ResourceWriteMetadata{Name: "target"},
+				Spec:     openapi.FileStorageDirectoryQuotaV2UpdateSpec{DirectoryLimits: test.limits},
+			})
+
+			if test.valid {
+				require.NoError(t, createErr)
+				require.NoError(t, updateErr)
+
+				return
+			}
+
+			requireHTTPStatus(t, createErr, coreerrors.IsUnprocessableContent)
+			requireHTTPStatus(t, updateErr, coreerrors.IsUnprocessableContent)
+		})
+	}
+}
+
 func TestDeleteDirectoryQuota(t *testing.T) {
 	t.Parallel()
 
