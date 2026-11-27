@@ -19,6 +19,7 @@ region service addresses through its public API:
 | `SSHCertificateAuthorityID` | SSH certificate authorities |
 | `FileStorageID` | file storage |
 | `FileStorageSnapshotID` | manual File Storage snapshot name slots |
+| `FileStorageDirectoryQuotaID` | File Storage directory quotas |
 | `ImageID` | images |
 | `FlavorID` | flavors |
 
@@ -36,7 +37,8 @@ binding time before any handler is reached. Non-UUID path values produce a
 These types run from the router down to the provider layer — not the API layer
 alone. The region service mints UUIDs for its own CRD-backed resources (`Region`,
 `Identity`, `Network`, `SecurityGroup`, `LoadBalancer`, `Volume`, `Server`,
-`SSHCertificateAuthority`, `FileStorage`, `FileStorageSnapshot`) and addresses provider-owned
+`SSHCertificateAuthority`, `FileStorage`, `FileStorageSnapshot`,
+`FileStorageDirectoryQuota`) and addresses provider-owned
 `Image`/`Flavor` resources by their provider-assigned UUIDs. They appear on:
 
 - the generated OpenAPI surface (path parameters and request/response body fields);

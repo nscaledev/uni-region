@@ -186,6 +186,23 @@ func (v *FileStorageSnapshotID) UnmarshalText(b []byte) error {
 	return unmarshalUUID((*uuid.UUID)(v), b)
 }
 
+// FileStorageDirectoryQuotaID is a UUID-backed identifier for File Storage
+// directory quotas.
+//
+// +kubebuilder:validation:Type=string
+// +kubebuilder:validation:Format=uuid
+//
+//nolint:recvcheck // UnmarshalText must be a pointer receiver; String/MarshalText are value receivers for fmt.Stringer compatibility.
+type FileStorageDirectoryQuotaID uuid.UUID
+
+func (v FileStorageDirectoryQuotaID) String() string { return uuid.UUID(v).String() }
+func (v FileStorageDirectoryQuotaID) MarshalText() ([]byte, error) {
+	return uuid.UUID(v).MarshalText()
+}
+func (v *FileStorageDirectoryQuotaID) UnmarshalText(b []byte) error {
+	return unmarshalUUID((*uuid.UUID)(v), b)
+}
+
 // ImageID is a UUID-backed identifier for images. The platform addresses images by
 // their provider-assigned UUID; it is a distinct named type so the compiler prevents
 // accidental interchange with any other ID type. UnmarshalText delegates to uuid.UUID,
@@ -341,6 +358,17 @@ func ParseFileStorageSnapshotID(s string) (FileStorageSnapshotID, error) {
 	}
 
 	return FileStorageSnapshotID(id), nil
+}
+
+// ParseFileStorageDirectoryQuotaID parses s as a UUID into a FileStorageDirectoryQuotaID,
+// returning an error if s is not a valid UUID.
+func ParseFileStorageDirectoryQuotaID(s string) (FileStorageDirectoryQuotaID, error) {
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return FileStorageDirectoryQuotaID{}, err
+	}
+
+	return FileStorageDirectoryQuotaID(id), nil
 }
 
 // ParseImageID parses s as a UUID into an ImageID, returning

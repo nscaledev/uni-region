@@ -106,6 +106,19 @@ Expired DELETE returns canonical 404 without mutation, including for an already
 deleting CR. Generated types, clients, router, and embedded schema all derive
 from `server.spec.yaml`.
 
+Directory Quota v2 contracts (`/api/v2/filestorage/{filestorageID}/directoryquotas`)
+map to the `FileStorageDirectoryQuota` CRD. The API takes capacity as
+`capacityBytes` (the CRD holds a `resource.Quantity`), merges the controller's
+rule status and the usage monitor's per-rule usage into `status.rules`. The
+meaning of `metadata.healthStatus` is deliberately not specified yet, and usage
+of subjects limited only by the default limits is not reported: the CRD is not
+the place for unbounded per-subject data. POST and PUT return the
+complete resource with 202; PUT replaces limits and the whole rule list.
+`directoryLimits` is bounded by the File Storage size and, for nested quotas,
+by the quotas on parent directories and subdirectories (422 otherwise). The
+path is set on create only: the update request has no path. DELETE removes the limits only, never the directory or its
+data. The handler is not implemented yet: every operation returns 501.
+
 Keeping the schema unified matters because it allows:
 
 - one generated client/server contract
