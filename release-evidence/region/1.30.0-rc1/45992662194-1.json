@@ -1,0 +1,18 @@
+{
+  "component": "region",
+  "version": "1.30.0-rc1",
+  "correlation_id": "45992662194-1",
+  "source_run": "https://github.com/nscaledev/k8s-cluster-nks/actions/runs/45992662194",
+  "run_url": "https://github.com/nscaledev/uni-region/actions/runs/45992699681",
+  "suite_result": "success",
+  "summary": {
+    "component": "uni-region",
+    "environment": "uat",
+    "expected_version": "1.30.0-rc1",
+    "tested_version": "v1.30.0-rc1",
+    "ref": "v1.30.0-rc1",
+    "gate_result": "passed",
+    "run_url": "https://github.com/nscaledev/uni-region/actions/runs/45992699681",
+    "timestamp": "2026-11-27T11:46:22Z"
+  }
+}
