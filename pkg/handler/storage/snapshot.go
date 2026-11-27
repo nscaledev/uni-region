@@ -324,31 +324,6 @@ func convertSnapshotList(in *regionv1.FileStorageSnapshotList) openapi.FileStora
 	return out
 }
 
-func childAuthorizationError(err error) error {
-	if errors.IsForbidden(err) {
-		return errors.HTTPNotFound().WithError(err)
-	}
-
-	return err
-}
-
-// getParentFileStorage fetches the parent File Storage of a child resource by ID.
-func (c *Client) getParentFileStorage(ctx context.Context, storageID regionids.FileStorageID) (*regionv1.FileStorage, error) {
-	parent := &regionv1.FileStorage{}
-	if err := c.Client.Get(ctx, client.ObjectKey{
-		Namespace: c.Namespace,
-		Name:      storageID.String(),
-	}, parent); err != nil {
-		if kerrors.IsNotFound(err) {
-			return nil, errors.HTTPNotFound().WithError(err)
-		}
-
-		return nil, fmt.Errorf("%w: unable to lookup parent file storage", err)
-	}
-
-	return parent, nil
-}
-
 func snapshotMatchesParentID(snapshot *regionv1.FileStorageSnapshot, storageID regionids.FileStorageID) bool {
 	return snapshot.Spec.FileStorageID == storageID &&
 		snapshot.Labels[constants.FileStorageLabel] == storageID.String()

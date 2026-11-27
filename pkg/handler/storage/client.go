@@ -24,6 +24,7 @@ import (
 	"math/big"
 	"net"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -802,4 +803,42 @@ func authorizeFileStorageClassRead(ctx context.Context, resource *regionv1.FileS
 	}
 
 	return rbac.AllowOrganizationScopeOn(ctx, authz.Target{Endpoint: "region:filestorageclass:v2", Operation: authz.Read}, organizationID)
+}
+
+// validatePathComponents rejects . and .. components in a relative path field.
+func validatePathComponents(field, path string) error {
+	for _, component := range strings.Split(path, "/") {
+		if component == "." || component == ".." {
+			return errors.HTTPUnprocessableContent(field + " must not contain . or .. path components")
+		}
+	}
+
+	return nil
+}
+
+// childAuthorizationError hides a child resource the caller may not access as
+// not found.
+func childAuthorizationError(err error) error {
+	if errors.IsForbidden(err) {
+		return errors.HTTPNotFound().WithError(err)
+	}
+
+	return err
+}
+
+// getParentFileStorage fetches the parent File Storage of a child resource by ID.
+func (c *Client) getParentFileStorage(ctx context.Context, storageID regionids.FileStorageID) (*regionv1.FileStorage, error) {
+	parent := &regionv1.FileStorage{}
+	if err := c.Client.Get(ctx, client.ObjectKey{
+		Namespace: c.Namespace,
+		Name:      storageID.String(),
+	}, parent); err != nil {
+		if kerrors.IsNotFound(err) {
+			return nil, errors.HTTPNotFound().WithError(err)
+		}
+
+		return nil, fmt.Errorf("%w: unable to lookup parent file storage", err)
+	}
+
+	return parent, nil
 }
