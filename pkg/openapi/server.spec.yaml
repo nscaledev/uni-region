@@ -4595,7 +4595,7 @@ components:
       items:
         $ref: '#/components/schemas/fileStorageDirectoryQuotaRule'
     fileStorageDirectoryQuotaV2CreateSpec:
-      description: Directory Quota settings on create. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+      description: Directory Quota settings on create. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422. directoryLimits.capacityBytes may not exceed the File Storage size. Quotas may be nested, and directoryLimits may not exceed the directoryLimits of a quota on a parent directory, nor be lower than those of a quota on a subdirectory, compared separately for capacityBytes and inodes. A request that breaks either rule is rejected with 422.
       type: object
       additionalProperties: false
       required:
@@ -4624,7 +4624,7 @@ components:
         spec:
           $ref: '#/components/schemas/fileStorageDirectoryQuotaV2CreateSpec'
     fileStorageDirectoryQuotaV2UpdateSpec:
-      description: Directory Quota settings on update. The path cannot change, so it is not part of an update. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422.
+      description: Directory Quota settings on update. The path cannot change, so it is not part of an update. At least one of directoryLimits, defaultUserLimits, defaultGroupLimits or a non-empty rules list is required; a request without any is rejected with 422. When directoryLimits is set, no default or rule limit may exceed it, compared separately for capacityBytes and inodes; a request that does is rejected with 422. directoryLimits.capacityBytes may not exceed the File Storage size. Quotas may be nested, and directoryLimits may not exceed the directoryLimits of a quota on a parent directory, nor be lower than those of a quota on a subdirectory, compared separately for capacityBytes and inodes. A request that breaks either rule is rejected with 422.
       type: object
       additionalProperties: false
       properties:
