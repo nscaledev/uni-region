@@ -189,8 +189,10 @@ controller applies the limits.
   the first is terminating. Creating under a deleting parent also returns 409.
 - Creation sets a blocking owner reference, so File Storage's foreground delete
   removes its quotas first, and adds the core finalizer before the controller
-  can observe the CR. Until a controller removes that finalizer, deleted quotas
-  stay terminating, and so does a parent File Storage being deleted.
+  can observe the CR. The `uni-storage` quota controller removes it after
+  deprovisioning. Where that controller is not enabled (it is off by default
+  in the `uni-storage` chart), deleted quotas stay terminating, and so does a
+  parent File Storage being deleted.
 - The handler enforces what the schema cannot: no `.`/`..` path components, at
   least one limit or a non-empty rule list, no repeated subject (kind plus name
   or id), and no default or rule limit above `directoryLimits`, compared per
