@@ -678,12 +678,13 @@ func WaitForLoadBalancerProvisioned(c *APIClient, ctx context.Context, lbID stri
 }
 
 // WaitForLoadBalancerGone polls until GET for the load balancer returns the
-// expected not-found error.
+// expected not-found error. Deleting a load balancer that is still provisioning
+// can take longer than two minutes, so this allows as long as provisioning does.
 func WaitForLoadBalancerGone(c *APIClient, ctx context.Context, lbID string) {
 	Eventually(func() error {
 		_, err := c.GetLoadBalancer(ctx, lbID)
 		return err
-	}).WithTimeout(2*time.Minute).WithPolling(2*time.Second).
+	}).WithTimeout(5*time.Minute).WithPolling(2*time.Second).
 		Should(And(HaveOccurred(), MatchError(coreclient.ErrResourceNotFound)),
 			"load balancer should eventually be deleted")
 }
