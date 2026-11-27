@@ -208,8 +208,8 @@ controller applies the limits.
   rejected. Update skips the size check when the parent File Storage is gone.
 - PUT replaces everything except the path, which the update request does not
   carry: the stored path is kept. It preserves pause and the creator, records
-  the modifier, and uses an optimistic lock (409 on a concurrent change or while
-  deleting).
+  the modifier, and uses an optimistic lock (409 on a concurrent change, or
+  while the quota or its parent File Storage is deleting).
 - `capacityBytes` maps to a binary `resource.Quantity` and back as whole bytes.
 - Reads list `status.rules` in spec rule order, merging the stored rule status
   and per-rule usage by subject. A rule with no stored status, or with status

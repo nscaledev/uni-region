@@ -392,8 +392,9 @@ func validateDirectoryQuota(spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec)
 	return validateDirectoryQuotaCeiling(spec, rules)
 }
 
-// validateDirectoryQuotaUpdate also checks the hierarchy. A quota whose parent
-// is gone is about to be garbage collected, so its size check is skipped.
+// validateDirectoryQuotaUpdate also checks the hierarchy and rejects an update
+// under a deleting parent. A quota whose parent is gone is about to be garbage
+// collected, so its size check is skipped.
 func (c *Client) validateDirectoryQuotaUpdate(ctx context.Context, storageID regionids.FileStorageID, path string, spec *openapi.FileStorageDirectoryQuotaV2UpdateSpec) error {
 	if err := validateDirectoryQuota(spec); err != nil {
 		return err
@@ -404,6 +405,8 @@ func (c *Client) validateDirectoryQuotaUpdate(ctx context.Context, storageID reg
 	parent, err := c.getParentFileStorage(ctx, storageID)
 
 	switch {
+	case err == nil && parent.DeletionTimestamp != nil:
+		return errors.HTTPConflict()
 	case err == nil:
 		size = &parent.Spec.Size
 	case !errors.IsHTTPNotFound(err):

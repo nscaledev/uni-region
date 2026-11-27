@@ -451,6 +451,17 @@ func TestUpdateDirectoryQuota(t *testing.T) {
 		requireHTTPStatus(t, err, coreerrors.IsConflict)
 	})
 
+	t.Run("parent deleting", func(t *testing.T) {
+		t.Parallel()
+
+		parent := snapshotParent()
+		parent.DeletionTimestamp = ptr.To(metav1.Now())
+		parent.Finalizers = []string{coreconstants.Finalizer}
+		c := snapshotReadClient(t, parent, storedDirectoryQuota(snapshotID, "home", "home"))
+		_, err := c.UpdateDirectoryQuota(allDirectoryQuotaOperations(t.Context(), "editor@example.com"), parentID, quotaID, directoryQuotaUpdateRequest())
+		requireHTTPStatus(t, err, coreerrors.IsConflict)
+	})
+
 	t.Run("read only caller", func(t *testing.T) {
 		t.Parallel()
 
